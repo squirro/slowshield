@@ -1,0 +1,19 @@
+{% import "macros.html.j2" as m with context %}
+<section class="card htmx-region" id="blocklist-region">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Package</th><th>Versions</th><th>Source</th><th>Advisory</th><th>Reason</th><th>Since</th></tr></thead>
+    <tbody>
+    {% for b in rows %}
+      <tr><td>{{ m.eco(b.ecosystem) }} {{ m.pkg_link(b.ecosystem, b.name) }}</td>
+          <td>{% if b.version %}<code>{{ b.version }}</code>{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all{% endif %}</td>
+          <td>{{ b.source }}</td><td>{{ m.advisory(b) }}</td>
+          <td class="details">{{ (b.reason or "")|truncate(140) }}</td><td>{{ ago(b.first_seen) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ m.pager(page, has_next, "/ui/blocklist", {"q": q, "eco": eco, "source": source, "scope": scope}, "/ui/partials/blocklist") }}
+  {% else %}<p class="empty">No entries match.</p>{% endif %}
+</section>

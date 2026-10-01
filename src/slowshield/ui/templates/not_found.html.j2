@@ -1,0 +1,7 @@
+{% extends "base.html.j2" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Not found</h1>
+  <p class="muted">{% if what == "package" %}SlowShield has not seen <code>{{ name }}</code> ({{ eco_label.get(eco, eco) }}) yet. It appears here once someone resolves it through the proxy.{% else %}Unknown {{ what }}.{% endif %}</p>
+  <p><a href="/ui/packages">← Back to packages</a></p></div></div>
+{% endblock %}

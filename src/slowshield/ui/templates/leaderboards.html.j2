@@ -1,0 +1,54 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Leaderboards{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Leaderboards</h1><p class="muted">What your organisation installs, what is trending, and where the policy kicks in.</p></div>
+  <div class="controls">{{ m.eco_filter(eco, "/ui/leaderboards", {"range": w.key}) }}{{ m.range_picker(w.key, "/ui/leaderboards", {"eco": eco}) }}</div>
+</div>
+<div class="grid-2">
+  <section class="card">
+    <header class="card-head"><h2>Most installed</h2></header>
+    {% if downloads %}<table class="table compact"><thead><tr><th>#</th><th>Package</th><th class="num">Installs</th><th></th></tr></thead><tbody>
+    {% for r in downloads %}<tr><td class="muted">{{ loop.index }}</td><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.s|num }}</td><td>{{ hbar(r.s, dl_peak) }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No installs in this period.</p>{% endif %}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>Most bandwidth</h2></header>
+    {% if bandwidth %}<table class="table compact"><thead><tr><th>#</th><th>Package</th><th class="num">Data</th><th></th></tr></thead><tbody>
+    {% for r in bandwidth %}<tr><td class="muted">{{ loop.index }}</td><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.b|bytes }}</td><td>{{ hbar(r.b, bw_peak) }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No installs in this period.</p>{% endif %}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>Trending</h2><span class="muted small">vs. previous {{ w.key }}</span></header>
+    {% if trending %}<table class="table compact"><thead><tr><th>#</th><th>Package</th><th class="num">Installs</th><th class="num">Change</th></tr></thead><tbody>
+    {% for r in trending %}<tr><td class="muted">{{ loop.index }}</td><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.serves|num }}</td>
+      <td class="num">{% if r.growth == inf %}<span class="delta flat">new</span>{% else %}{{ m.delta(r.growth) }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">Not enough data to compare yet.</p>{% endif %}
+  </section>
+  <section class="card" id="new">
+    <header class="card-head"><h2>New dependencies</h2><span class="muted small">first installed in this period — worth a review</span></header>
+    {% if new_deps %}<table class="table compact"><thead><tr><th>Package</th><th>First installed</th><th class="num">Installs</th></tr></thead><tbody>
+    {% for r in new_deps %}<tr><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.name) }}</td><td>{{ ago(r.first_served) }}</td><td class="num">{{ r.serves|num }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No new dependencies in this period.</p>{% endif %}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>Most often too new</h2><span class="muted small">downloads refused by the delay</span></header>
+    {% if age_gated %}<table class="table compact"><thead><tr><th>Package</th><th class="num">Refused</th><th class="num">Versions</th><th class="num">Clients</th></tr></thead><tbody>
+    {% for r in age_gated %}<tr><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.n|num }}</td><td class="num">{{ r.v }}</td><td class="num">{{ r.clients }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No downloads were refused for being too new.</p>{% endif %}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>Fail-open</h2><span class="muted small">brand-new packages served because nothing older existed</span></header>
+    {% if fail_open %}<table class="table compact"><thead><tr><th>Package</th><th class="num">Requests</th><th>Last</th></tr></thead><tbody>
+    {% for r in fail_open %}<tr><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.n|num }}</td><td>{{ ago(r.last) }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No fail-open serves.</p>{% endif %}
+  </section>
+  <section class="card span-all">
+    <header class="card-head"><h2>Blocked attempts</h2><span class="muted small">requests for known-malicious packages</span></header>
+    {% if blocked %}<table class="table compact"><thead><tr><th>Package</th><th class="num">Attempts</th><th class="num">Clients</th><th>Last</th></tr></thead><tbody>
+    {% for r in blocked %}<tr><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td><td class="num">{{ r.n|num }}</td><td class="num">{{ r.clients }}</td><td>{{ ago(r.last) }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="empty">No attempts to install known malware. 🎉</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

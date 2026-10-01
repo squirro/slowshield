@@ -1,0 +1,41 @@
+{% extends "base.html.j2" %}
+{% block title %}Setup{% endblock %}
+{% macro snippet(code, label="") -%}
+<div class="snippet">{% if label %}<span class="snippet-label">{{ label }}</span>{% endif %}
+<pre><code>{{ code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Client setup</h1><p class="muted">Point your package managers at SlowShield. New releases become installable {{ cfg.default_delay_days|round(1)|replace(".0", "") }} days after publication.</p></div>
+</div>
+<div class="grid-2">
+  <section class="card">
+    <header class="card-head"><h2>Python</h2>{% if not pypi_enabled %}<span class="badge">disabled</span>{% endif %}</header>
+    <p>Index URL: <code>{{ pypi_index }}</code></p>
+    {{ snippet("pip config set global.index-url " ~ pypi_index, "pip") }}
+    {{ snippet("# pyproject.toml\n[[tool.uv.index]]\nname = \"slowshield\"\nurl = \"" ~ pypi_index ~ "\"\ndefault = true", "uv") }}
+    {{ snippet("export UV_DEFAULT_INDEX=" ~ pypi_index, "uv (environment)") }}
+    {{ snippet("poetry source add --priority=primary slowshield " ~ pypi_index, "Poetry") }}
+    {{ snippet("# pyproject.toml\n[[tool.pdm.source]]\nname = \"pypi\"\nurl = \"" ~ pypi_index ~ "\"", "PDM") }}
+    {{ snippet("# Pipfile\n[[source]]\nurl = \"" ~ pypi_index ~ "\"\nverify_ssl = true\nname = \"slowshield\"", "Pipenv") }}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>JavaScript</h2>{% if not npm_enabled %}<span class="badge">disabled</span>{% endif %}</header>
+    <p>Registry URL: <code>{{ npm_registry }}</code></p>
+    {{ snippet("npm config set registry " ~ npm_registry, "npm") }}
+    {{ snippet("# .npmrc (project or ~)\nregistry=" ~ npm_registry, ".npmrc (npm, pnpm, bun)") }}
+    {{ snippet("pnpm config set registry " ~ npm_registry, "pnpm") }}
+    {{ snippet("# .yarnrc.yml (Yarn Berry)\nnpmRegistryServer: \"" ~ npm_registry ~ "\"", "Yarn") }}
+    {{ snippet("# bunfig.toml\n[install]\nregistry = \"" ~ npm_registry ~ "\"", "Bun") }}
+  </section>
+</div>
+<section class="card">
+  <header class="card-head"><h2>What to expect</h2></header>
+  <ul>
+    <li><strong>Too new:</strong> versions younger than the delay are hidden from indexes; downloading one directly (e.g. from a lockfile) returns <code>403</code> with a <code>Retry-After</code> header.</li>
+    <li><strong>Malware:</strong> packages or versions on the blocklist return <code>451 Unavailable For Legal Reasons</code> with the advisory in the body.</li>
+    <li><strong>Brand-new packages:</strong> if <em>no</em> version is old enough yet, SlowShield fails open and serves them, recording a fail-open event.</li>
+    <li><strong>Tampering:</strong> every artifact is fingerprinted on first download; if the bytes ever change, the download is aborted and the event recorded.</li>
+  </ul>
+</section>
+{% endblock %}

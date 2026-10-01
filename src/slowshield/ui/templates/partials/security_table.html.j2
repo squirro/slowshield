@@ -1,0 +1,31 @@
+{% import "macros.html.j2" as m with context %}
+<section class="card htmx-region" id="security-region">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>When</th><th>Event</th><th>Package</th><th>Version</th><th>Client</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for e in rows %}
+      <tr class="ev-row-{{ e.type }}">
+        <td title="{{ e.ts|ts }}">{{ ago(e.ts) }}</td>
+        <td>{{ m.event_badge(e.type) }}{% if e["count"] > 1 %} <span class="muted">×{{ e["count"] }}</span>{% endif %}</td>
+        <td>{{ m.eco(e.ecosystem) }} {{ m.pkg_link(e.ecosystem, e.package) }}</td>
+        <td>{% if e.version %}<code>{{ e.version }}</code>{% else %}—{% endif %}</td>
+        <td>{% if e.client_ip %}<a href="/ui/security{{ qs({'range': range, 'ip': e.client_ip}) }}">{{ e.client_ip }}</a>{% else %}—{% endif %}</td>
+        <td class="details">
+          {% set d = e.details %}
+          {% if d.advisory_id %}{% if d.url %}<a href="{{ d.url|href }}" rel="noopener noreferrer" target="_blank">{{ d.advisory_id }}</a>{% else %}{{ d.advisory_id }}{% endif %}{% endif %}
+          {% if d.reason %}<span class="muted">{{ d.reason|truncate(120) }}</span>{% endif %}
+          {% if d.published %}published {{ d.published }}, delay {{ d.delay_days }}d{% endif %}
+          {% if d.stored_sha256 %}<span class="mono small">stored {{ d.stored_sha256[:12] }}… observed {{ d.observed_sha256[:12] }}…</span>{% endif %}
+          {% if d.problems %}<span class="small">{{ d.problems|join("; ") }}</span>{% endif %}
+          {% if d.artifact %}<span class="mono small">{{ d.artifact }}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ m.pager(page, has_next, "/ui/security", {"range": range, "type": type, "eco": eco, "q": q, "ip": ip}, "/ui/partials/security") }}
+  {% else %}<p class="empty">No events match.</p>{% endif %}
+</section>

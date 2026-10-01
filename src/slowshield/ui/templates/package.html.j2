@@ -1,0 +1,93 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="crumbs"><a href="/ui/packages">Packages</a> / {{ m.eco(eco) }}</p>
+    <h1 class="pkg-title">{{ name }}</h1>
+    <p class="muted">
+      Delay policy: <strong>{{ delay|round(1)|replace(".0", "") }} days</strong>{% if delay != default_delay %} (exception; default is {{ default_delay|round(1)|replace(".0", "") }}){% endif %}
+      · <a href="{{ upstream_url }}" rel="noopener noreferrer" target="_blank">View on {{ eco_label[eco] }} ↗</a>
+    </p>
+  </div>
+  <div class="controls">{{ m.range_picker(w.key, request.url.path) }}</div>
+</div>
+
+{% if package_block %}
+<div class="banner error" role="alert"><strong>This whole package is blocked</strong> as malicious
+  ({{ package_block.source }} {{ m.advisory(package_block) }}){% if package_block.reason %}: {{ package_block.reason }}{% endif %}.
+  Installs fail with HTTP 451.</div>
+{% endif %}
+
+<section class="kpis small">
+  <div class="kpi"><div class="kpi-label">Installs (all time)</div><div class="kpi-value">{{ (pkg.serves if pkg else 0)|num }}</div></div>
+  <div class="kpi"><div class="kpi-label">Data served</div><div class="kpi-value">{{ (pkg.bytes if pkg else 0)|bytes }}</div></div>
+  <div class="kpi"><div class="kpi-label">First installed</div><div class="kpi-value small-value">{{ ago(pkg.first_served) if pkg and pkg.first_served else "never" }}</div></div>
+  <div class="kpi"><div class="kpi-label">Last installed</div><div class="kpi-value small-value">{{ ago(pkg.last_served) if pkg and pkg.last_served else "never" }}</div></div>
+  <div class="kpi hold"><div class="kpi-label">Versions held back</div><div class="kpi-value">{{ held }}</div></div>
+</section>
+
+<section class="card">
+  <header class="card-head"><h2>Downloads</h2><span class="muted small">last {{ w.key }}</span></header>
+  {{ chart }}
+</section>
+
+<section class="card">
+  <header class="card-head"><h2>Versions</h2><span class="muted small">{{ versions|length }} known</span></header>
+  {% if versions %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Version</th><th>Status</th><th>Published</th><th>Available</th><th class="num">Installs</th><th class="num">Data</th><th>Last installed</th></tr></thead>
+    <tbody>
+    {% for v in versions %}
+      <tr class="row-{{ v.status }}">
+        <td><code>{{ v.version }}</code></td>
+        <td>{{ m.status_badge(v.status) }}{% if v.block %} {{ m.advisory(v.block) }}{% endif %}</td>
+        <td>{{ v.published|ts if v.published else "—" }}</td>
+        <td>{% if v.status == "held" %}<span class="countdown">in {{ (v.until - now)|duration }}</span>{% elif v.status == "available" %}yes{% else %}—{% endif %}</td>
+        <td class="num">{{ v.serves|num }}</td>
+        <td class="num">{{ v.bytes|bytes }}</td>
+        <td>{{ ago(v.last_served) if v.last_served else "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">No version metadata recorded yet.</p>{% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <header class="card-head"><h2>Security events</h2><a href="/ui/security?q={{ name }}&amp;eco={{ eco }}">All →</a></header>
+    {% if events %}
+    <table class="table compact">
+      <thead><tr><th>When</th><th>Event</th><th>Version</th><th>Client</th></tr></thead>
+      <tbody>
+      {% for e in events %}
+        <tr><td>{{ ago(e.ts) }}</td><td>{{ m.event_badge(e.type) }}{% if e["count"] > 1 %} ×{{ e["count"] }}{% endif %}</td>
+            <td>{% if e.version %}<code>{{ e.version }}</code>{% else %}—{% endif %}</td><td>{{ e.client_ip or "—" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="empty">No events for this package.</p>{% endif %}
+  </section>
+  <section class="card">
+    <header class="card-head"><h2>Threat-feed entries</h2></header>
+    {% if blocks %}
+    <table class="table compact">
+      <thead><tr><th>Scope</th><th>Source</th><th>Advisory</th><th>Since</th></tr></thead>
+      <tbody>
+      {% for b in blocks %}
+        <tr{% if b.withdrawn %} class="withdrawn"{% endif %}>
+          <td>{% if b.version %}<code>{{ b.version }}</code>{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all versions{% endif %}</td>
+          <td>{{ b.source }}</td><td>{{ m.advisory(b) }}{% if b.withdrawn %} <span class="muted">(withdrawn)</span>{% endif %}</td>
+          <td>{{ b.first_seen|ts }}</td></tr>
+        {% if b.reason %}<tr class="reason"><td colspan="4">{{ b.reason }}</td></tr>{% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="empty">No feed has flagged this package.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Packages{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Packages</h1><p class="muted">Every package your organisation resolved through SlowShield.</p></div>
+  <div class="controls">{{ m.range_picker(w.key, "/ui/packages", {"q": q, "eco": eco, "sort": sort}) }}</div>
+</div>
+<form class="filters" action="/ui/packages" method="get" role="search"
+      hx-get="/ui/partials/packages" hx-target="#packages-region" hx-swap="outerHTML"
+      hx-trigger="input changed delay:250ms, change">
+  <input type="hidden" name="range" value="{{ w.key }}">
+  <label class="search"><span class="sr-only">Search packages</span>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search packages…" autocomplete="off" spellcheck="false"></label>
+  <label><span class="sr-only">Ecosystem</span>
+    <select name="eco"><option value="">All ecosystems</option>
+      <option value="pypi"{% if eco == "pypi" %} selected{% endif %}>PyPI</option>
+      <option value="npm"{% if eco == "npm" %} selected{% endif %}>npm</option></select></label>
+  <label><span class="sr-only">Sort</span>
+    <select name="sort">
+      {% for s, label in [("serves", "Most installs"), ("bytes", "Most data"), ("recent", "Recently installed"), ("new", "Newest dependency"), ("seen", "Recently resolved"), ("name", "Name")] %}
+      <option value="{{ s }}"{% if sort == s %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select></label>
+  <noscript><button type="submit">Apply</button></noscript>
+</form>
+{% include "partials/packages_table.html.j2" %}
+{% endblock %}

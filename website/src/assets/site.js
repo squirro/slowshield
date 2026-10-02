@@ -3,22 +3,39 @@ const root = document.documentElement;
 root.classList.remove("no-js");
 root.classList.add("js");
 
-// Headline: show the variants in turn, one per visit (the first one is in the HTML for no-JS readers).
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Headline: a random variant first, then the others in a random order (each shown once before any repeats),
+// fading every six seconds. Without JavaScript the first one shows. With reduced motion it is a plain fade,
+// without the slide (see site.css).
 const headlines = [...document.querySelectorAll("[data-hl]")];
 if (headlines.length > 1) {
-  let pick = 0;
-  try {
-    const last = localStorage.getItem("ss-headline");
-    pick = last === null ? 0 : (Number.parseInt(last, 10) + 1) % headlines.length;
-    if (Number.isNaN(pick)) pick = 0;
-    localStorage.setItem("ss-headline", String(pick));
-  } catch {
-    pick = Math.floor(Math.random() * headlines.length); // storage blocked: still vary
-  }
-  headlines.forEach((el, i) => { el.hidden = i !== pick; });
+  const rand = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  const shuffled = (items) => {
+    const a = [...items];
+    for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  };
+  let current = rand(headlines.length);
+  let queue = [];
+  const next = () => {
+    if (!queue.length) queue = shuffled(headlines.keys()).filter((i) => i !== current);
+    current = queue.shift();
+    return current;
+  };
+  const show = (n) => headlines.forEach((el, i) => {
+    el.classList.toggle("on", i === n);
+    el.setAttribute("aria-hidden", String(i !== n));
+  });
+  headlines.forEach((el) => { el.hidden = false; });
+  headlines[0].parentElement.classList.add("rotating");
+  show(current);
+  let timer = 0;
+  const start = () => { timer = window.setInterval(() => show(next()), 6000); };
+  document.addEventListener("visibilitychange", () => { window.clearInterval(timer); if (!document.hidden) start(); });
+  start();
 }
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const scrollDriven = CSS.supports("animation-timeline: view()");
 
 // Fallback reveal for browsers without CSS scroll-driven animations.
@@ -77,13 +94,13 @@ document.querySelectorAll("[data-tabs]").forEach((tabs) => {
     const btn = e.target.closest('[role="tab"]');
     if (btn) select(btn);
   });
-  // Shell snippets: the visitor's last choice, else a guess from the OS (zsh on macOS, PowerShell on Windows).
+  // Shell snippets: the visitor's last choice, else a guess from the OS (zsh on macOS, bash elsewhere).
   if (shell) {
     let want = null;
     try { want = localStorage.getItem("ss-shell"); } catch { /* ignore */ }
     if (!want) {
       const os = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
-      want = os.includes("win") ? "powershell" : os.includes("mac") ? "zsh" : "bash";
+      want = os.includes("mac") ? "zsh" : "bash";
     }
     const btn = buttons.find((b) => b.dataset.shell === want);
     if (btn) select(btn, false);

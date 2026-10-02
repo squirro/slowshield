@@ -3,20 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SlowShield — deflect, don't obstruct</title>
+<title>SlowShield — safety through patience</title>
 <meta name="description" content="SlowShield is a free, open-source proxy for PyPI and npm. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
 <meta name="theme-color" content="#060915">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://slowshield.net/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
-<meta property="og:title" content="SlowShield — deflect, don't obstruct">
-<meta property="og:description" content="New releases wait. Malware never arrives. An open-source supply-chain shield for PyPI and npm — and soon everything that downloads.">
+<meta property="og:title" content="SlowShield — safety through patience">
+<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI and npm — and soon everything that downloads.">
 <meta property="og:url" content="https://slowshield.net/">
 <meta property="og:image" content="https://slowshield.net/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@SlowShieldProxy">
 <link rel="icon" href="/assets/favicon.ico" sizes="any">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
@@ -52,9 +53,14 @@
   <div class="hero-copy">
     <!-- One headline per visit, in turn (site.js); the first one without JavaScript. -->
     <h1 class="headline">
-      <span data-hl>Attacks move fast.<br><span class="grad">Your installs don't have to.</span></span>
-      <span data-hl hidden>Poisoned releases last hours.<br><span class="grad">SlowShield waits a week.</span></span>
-      <span data-hl hidden>Patience is a<br><span class="grad">security feature.</span></span>
+      <span data-hl data-fit="115" data-fit-sm="60">Known-bad<br class="br-sm"> is blocked.<br><span class="grad">Brand-new<br class="br-sm"> is held back.</span></span>
+      <span data-hl data-fit="121" data-fit-sm="81" hidden>Hacked by a<br class="br-sm"> dependency<br><span class="grad">you never chose.</span></span>
+      <span data-hl data-fit="112" data-fit-sm="76" hidden>Your lockfile<br class="br-sm"> is perfect.<br><span class="grad">Your Dockerfile<br class="br-sm"> isn't.</span></span>
+      <span data-hl data-fit="98" hidden>Time is the cheapest<br><span class="grad">malware scanner.</span></span>
+      <span data-hl data-fit="117" data-fit-sm="88" hidden>The malware was<br><span class="grad">two dependencies<br class="br-sm"> deep.</span></span>
+      <span data-hl data-fit="99" data-fit-sm="84" hidden>One forgotten pin<br><span class="grad">away from<br class="br-sm"> a breach.</span></span>
+      <span data-hl data-fit="111" data-fit-sm="73" hidden>Stay up to date.<br><span class="grad">Just not that<br class="br-sm"> up to date.</span></span>
+      <span data-hl data-fit="71" hidden>Safety through<br><span class="grad">patience.</span></span>
     </h1>
     <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI and npm. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
@@ -99,7 +105,7 @@
       <li class="qbox qbox-wide">
         <h3><span>3</span> Use it for everything</h3>
         <div class="tabs" data-tabs="shell">
-          <div class="tablist" role="tablist" aria-label="Shell"><button type="button" role="tab" aria-selected="true" aria-controls="sh-bash" id="t-sh-bash" data-shell="bash">bash</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-zsh" id="t-sh-zsh" data-shell="zsh" tabindex="-1">zsh</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-fish" id="t-sh-fish" data-shell="fish" tabindex="-1">fish</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-powershell" id="t-sh-powershell" data-shell="powershell" tabindex="-1">PowerShell</button></div>
+          <div class="tablist" role="tablist" aria-label="Shell"><button type="button" role="tab" aria-selected="true" aria-controls="sh-bash" id="t-sh-bash" data-shell="bash">bash</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-zsh" id="t-sh-zsh" data-shell="zsh" tabindex="-1">zsh</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-fish" id="t-sh-fish" data-shell="fish" tabindex="-1">fish</button></div>
 <div class="code" role="tabpanel" id="sh-bash" aria-labelledby="t-sh-bash"><pre><code>cat &gt;&gt; ~/.bashrc &lt;&lt;'EOF'
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
 export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
@@ -115,10 +121,6 @@ source ~/.zshrc</code></pre><button class="copy" type="button" data-copy>Copy</b
 <div class="code" role="tabpanel" id="sh-fish" aria-labelledby="t-sh-fish" hidden><pre><code>set -Ux PIP_INDEX_URL http://localhost:8080/pypi/simple/
 set -Ux UV_DEFAULT_INDEX http://localhost:8080/pypi/simple/
 set -Ux npm_config_registry http://localhost:8080/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-<div class="code" role="tabpanel" id="sh-powershell" aria-labelledby="t-sh-powershell" hidden><pre><code>[Environment]::SetEnvironmentVariable("PIP_INDEX_URL", "http://localhost:8080/pypi/simple/", "User")
-[Environment]::SetEnvironmentVariable("UV_DEFAULT_INDEX", "http://localhost:8080/pypi/simple/", "User")
-[Environment]::SetEnvironmentVariable("npm_config_registry", "http://localhost:8080/npm/", "User")
-# open a new terminal to pick them up</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
         </div>
         <p class="muted small">pip, uv and npm then go through SlowShield in every new terminal. Remove the lines to switch it off.</p>
       </li>
@@ -231,7 +233,7 @@ set -Ux npm_config_registry http://localhost:8080/npm/</code></pre><button class
 <!-- ============================== EDGE / CACHING ============================== -->
 <section class="edge" id="edge">
   <div class="section-head reveal">
-    <p class="eyebrow">A very fast caching proxy</p>
+    <p class="eyebrow">Keep your proxy close</p>
     <h2>Put one next to every team, server and build farm.</h2>
     <p class="lead">SlowShield is also a verified, very fast cache. Each instance is one small container — no database
       server, no coordination — so run a bunch of them: per office, per region, per CI cluster. Every artifact is
@@ -317,20 +319,93 @@ set -Ux npm_config_registry http://localhost:8080/npm/</code></pre><button class
     <li class="reveal">
       <h3><span>2</span> Point every machine at it</h3>
       <p>The same three settings everywhere: in each developer's shell, as <code>ENV</code> in your base images, and on every CI job.</p>
-      <div class="code"><pre><code># CI job (GitHub Actions shown), Dockerfile ENV and shell profiles use the same names
-env:
-  PIP_INDEX_URL: https://slowshield.example.com/pypi/simple/
-  UV_DEFAULT_INDEX: https://slowshield.example.com/pypi/simple/
-  npm_config_registry: https://slowshield.example.com/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
     </li>
     <li class="reveal">
       <h3><span>3</span> Close the side doors</h3>
-      <p>At the firewall or proxy, allow outbound HTTPS to the registries only from SlowShield. Or answer their names in your
-        internal DNS for everyone else. SlowShield itself needs:</p>
-      <div class="code"><pre><code>pypi.org  files.pythonhosted.org  registry.npmjs.org
-osv-vulnerabilities.storage.googleapis.com  api.github.com</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p>At the firewall or proxy, allow outbound HTTPS to the registries only from SlowShield, or answer their names in
+        your internal DNS for everyone else. SlowShield itself only needs the registries and its advisory feeds.</p>
     </li>
   </ol>
+</section>
+
+<!-- ============================== TAILSCALE ============================== -->
+<section class="tailscale" id="tailscale">
+  <div class="section-head reveal">
+    <p class="eyebrow">Works great with Tailscale</p>
+    <h2>Many SlowShields.<br>One name.</h2>
+    <p class="lead">Run a SlowShield in every region or office and put them all behind one
+      <a href="https://tailscale.com/docs/features/tailscale-services" rel="noopener noreferrer">Tailscale Service</a>.
+      Laptops, servers and CI runners on your tailnet use a single URL, and Tailscale sends each of them to an instance
+      that's up. Nothing is exposed to the internet, Tailscale takes care of the HTTPS certificate, and there's no load
+      balancer to run.</p>
+  </div>
+  <figure class="team-map ts-map reveal" aria-labelledby="ts-map-cap">
+    <svg viewBox="0 0 960 524" class="team-svg ts-svg" role="img" aria-labelledby="ts-map-t">
+      <title id="ts-map-t">Clients on the tailnet use one Tailscale Service name and reach their nearest SlowShield instance; each instance fetches from the public registries.</title>
+      <rect class="tm-zone" x="1" y="1" width="958" height="414" rx="22"/>
+      <text class="tm-zone-label" x="26" y="34">Your tailnet</text>
+      <path class="tm-link" d="M180 132 V248"/>
+      <path class="tm-link" d="M480 132 V248"/>
+      <path class="tm-link" d="M780 132 V248"/>
+      <g class="tm-client" transform="translate(80 58)"><rect width="200" height="74" rx="14"/><text x="100" y="31" class="tm-title tm-c">Team in Zurich</text><text x="100" y="54" class="tm-env tm-c">nearest: Frankfurt</text></g>
+      <g class="tm-client" transform="translate(380 58)"><rect width="200" height="74" rx="14"/><text x="100" y="31" class="tm-title tm-c">CI runners</text><text x="100" y="54" class="tm-env tm-c">nearest: Virginia</text></g>
+      <g class="tm-client" transform="translate(680 58)"><rect width="200" height="74" rx="14"/><text x="100" y="31" class="tm-title tm-c">Team in Sydney</text><text x="100" y="54" class="tm-env tm-c">nearest: Singapore</text></g>
+      <g class="ts-band"><rect x="40" y="166" width="880" height="58" rx="29"/>
+        <text class="ts-name" x="480" y="191">slowshield.your-tailnet.ts.net</text>
+        <text class="ts-svc" x="480" y="211">one Tailscale Service · svc:slowshield</text></g>
+      <use href="#ss-mark" class="tm-mark" x="134" y="248" width="92" height="92"/>
+      <use href="#ss-mark" class="tm-mark" x="434" y="248" width="92" height="92"/>
+      <use href="#ss-mark" class="tm-mark" x="734" y="248" width="92" height="92"/>
+      <text class="tm-label" x="180" y="362">Frankfurt</text><text class="tm-sub" x="180" y="381">eu-central-1</text>
+      <text class="tm-label" x="480" y="362">Virginia</text><text class="tm-sub" x="480" y="381">us-east-1</text>
+      <text class="tm-label" x="780" y="362">Singapore</text><text class="tm-sub" x="780" y="381">ap-southeast-1</text>
+      <path class="tm-out" d="M180 394 C180 432 480 420 480 456"/>
+      <path class="tm-out" d="M480 394 V456"/>
+      <path class="tm-out" d="M780 394 C780 432 480 420 480 456"/>
+      <g class="tm-reg" transform="translate(370 456)"><rect width="220" height="66" rx="16"/><text x="110" y="30" class="tm-title tm-c">Public registries</text>
+        <text x="110" y="52" class="tm-host">pypi.org · registry.npmjs.org</text></g>
+    </svg>
+    <figcaption id="ts-map-cap" class="sr-only">Every client uses the same Tailscale Service name and reaches the nearest SlowShield instance, which fetches from the public registries.</figcaption>
+  </figure>
+  <ol class="quick-steps ts-steps">
+    <li class="qbox reveal">
+      <h3><span>1</span> Run SlowShield on each host</h3>
+      <div class="code"><pre><code>docker run -d --restart unless-stopped -p 127.0.0.1:8080:8080 \
+  -v slowshield:/data \
+  -e SLOWSHIELD_PUBLIC_URL=https://slowshield.your-tailnet.ts.net \
+  registry.squirro.com/slowshield/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache; they
+        never need to talk to each other.</p>
+    </li>
+    <li class="qbox reveal">
+      <h3><span>2</span> Put them behind one service</h3>
+      <div class="code"><pre><code># on every host, once svc:slowshield (endpoint tcp:443) is defined in the admin console
+sudo tailscale up --advertise-tags=tag:slowshield
+sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">Hosts need a tag and Tailscale 1.86 or later. Before upgrading a host, drain it with
+        <code>tailscale serve drain</code>; the others take over.</p>
+    </li>
+    <li class="qbox reveal">
+      <h3><span>3</span> Let your tailnet in</h3>
+      <div class="code"><pre><code>"tagOwners": {
+  "tag:slowshield": ["autogroup:admin"],
+  "tag:ci":         ["autogroup:admin"]
+},
+"autoApprovers": {
+  "services": { "svc:slowshield": ["tag:slowshield"] }
+},
+"grants": [{
+  "src": ["autogroup:member", "tag:ci"],
+  "dst": ["svc:slowshield"],
+  "ip":  ["443"]
+}]</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">Add this to your tailnet policy file, then point the shell settings above at the service
+        URL. GitHub-hosted runners join for one job with the Tailscale GitHub Action.</p>
+    </li>
+  </ol>
+  <p class="ts-fine muted small reveal">Tailscale Services is available on every Tailscale plan. Sending each client to
+    its nearest instance uses Tailscale's regional routing (Premium and Enterprise plans, switched on in the admin
+    console). Without it, all clients use one instance and move to another if that one goes away.</p>
 </section>
 
 <!-- ============================== TEAMS ============================== -->
@@ -375,6 +450,45 @@ osv-vulnerabilities.storage.googleapis.com  api.github.com</code></pre><button c
       <p>Docker Compose, rootless Podman or a Helm chart. One small container plus Caddy for automatic TLS.
         No database server — SQLite is embedded.</p></article>
   </div>
+</section>
+
+<!-- ============================== AGENTS ============================== -->
+<section class="agents" id="agents">
+  <div class="section-head reveal">
+    <p class="eyebrow">Agent sandboxes</p>
+    <h2>Good for humans and agents.</h2>
+    <p class="lead">Don't let your autonomous agents trip into supply-chain attacks. Coding agents run
+      <code>pip install</code>, <code>npm install</code>, <code>npx</code> and <code>uvx</code> on their own, and nobody
+      reads the output. Give their sandboxes the same SlowShield as your laptops.</p>
+  </div>
+  <ul class="fit">
+    <li class="reveal"><strong>Agents reach for the newest version.</strong> They often start from a fresh sandbox
+      without a lockfile, so every run resolves <code>latest</code> again. SlowShield answers with the newest release
+      that is at least a week old.</li>
+    <li class="reveal"><strong>Hallucinated names get squatted.</strong> Models invent plausible package names, and
+      attackers register them. A name registered this week is held back like any other brand-new release.</li>
+    <li class="reveal"><strong>Nobody watches the install.</strong> Install scripts run unattended. Known malware is
+      refused with HTTP 451 and recorded with the client that asked for it, so you can see what an agent tried to
+      install.</li>
+  </ul>
+  <ol class="quick-steps agent-steps">
+    <li class="qbox reveal">
+      <h3><span>1</span> Set it in the sandbox image</h3>
+      <div class="code"><pre><code># Dockerfile of the agent's sandbox, devcontainer or CI image
+ENV PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/ \
+    UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/ \
+    npm_config_registry=https://slowshield.example.com/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">pip, uv, npm, npx and uvx all read these, so the agent needs no instructions.</p>
+    </li>
+    <li class="qbox reveal">
+      <h3><span>2</span> Let only SlowShield out</h3>
+      <div class="code"><pre><code># network allowlist of the sandbox (the syntax depends on the sandbox)
+slowshield.example.com
+# leave out pypi.org, files.pythonhosted.org and registry.npmjs.org</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">With the registries off the allowlist, an agent can't install around SlowShield, even
+        when it passes its own <code>--index-url</code>.</p>
+    </li>
+  </ol>
 </section>
 
 <!-- ============================== ECOSYSTEMS ============================== -->
@@ -436,14 +550,6 @@ osv-vulnerabilities.storage.googleapis.com  api.github.com</code></pre><button c
         <li>Homebrew &amp; GitHub Releases<span>and other direct downloads</span></li>
       </ul>
     </div>
-  </div>
-  <div class="why-hard reveal">
-    <h3>Not every registry works the same way</h3>
-    <ul>
-      <li><strong>Signed indexes.</strong> apt, apk and Homebrew sign their metadata, so a proxy can't quietly remove a version. SlowShield re-signs with your organisation's key, or refuses the download.</li>
-      <li><strong>Untrustworthy dates.</strong> Some timestamps are set by the author or the build (Go commit time, conda builds, Composer). SlowShield records when it first saw each version instead.</li>
-      <li><strong>Exact pins.</strong> Maven, Go and Nix resolve exact versions, so a too-new version means a clear refusal rather than a silent downgrade — which lines up with Renovate's and Dependabot's cooldowns.</li>
-    </ul>
   </div>
 </section>
 
@@ -524,20 +630,55 @@ npm config set registry https://slowshield.example.com/npm/</code></pre><button 
   <div class="story-card reveal">
     <figure class="author">
       <img src="/assets/toni.jpg" alt="Toni Birrer" width="200" height="200" loading="lazy" decoding="async">
-      <figcaption><strong>Toni Birrer</strong><span>Co-founder, <a href="https://squirro.com" rel="noopener noreferrer">Squirro</a></span></figcaption>
+      <figcaption><strong>Toni Birrer</strong><span>Co-founder, <a href="https://squirro.com" rel="noopener noreferrer">Squirro</a></span>
+        <span class="aside">Husband, father, and wrangler of three cats, two dogs and a growing number of AI agents.</span>
+        <span class="paws" aria-hidden="true">🐈 🐈 🐈 🤖 🐕 🐕</span></figcaption>
     </figure>
     <div class="author-story">
       <p class="eyebrow">The story</p>
       <h2>Built overnight, because we needed it.</h2>
       <p>In March 2026 the TeamPCP campaign turned trusted security tooling into a delivery mechanism: a compromised
-        Trivy release leaked CI credentials, and within days backdoored packages were landing on PyPI. It came
-        uncomfortably close to us.</p>
-      <p>That night I built the first SlowShield around one simple rule that would have stopped the whole thing:
-        <em>don't install anything younger than a week.</em> It has protected our teams at Squirro ever since. Now it is
-        open source, so it can protect yours.</p>
-      <p class="aside">Husband, father, and wrangler of three cats and two dogs. <span class="paws" aria-hidden="true">🐈 🐈 🐈 🐕 🐕</span></p>
+        Trivy release leaked CI credentials, and within days backdoored packages were landing on PyPI. Mere
+        minutes after one went live, one of our build servers pulled it. We caught it quickly and contained it before any
+        lateral movement, but it was too close for comfort.</p>
+      <p>That night I built the first SlowShield around one simple rule that would have kept those packages off our
+        machines: <em>don't install anything younger than a week.</em></p>
+      <p>Yes, many package managers now have built-in delay settings. They are a great way to start, but I don't even
+        trust myself to always have them set up.</p>
+      <p>So SlowShield has protected our teams at Squirro ever since. It has served millions of package downloads, and its cache
+        has saved us terabytes of bandwidth. Along the way it also learned to block known malware, verify every download
+        and show what gets installed where.</p>
+      <p>Now it's open source, so it can protect your team too.</p>
       <p class="muted squirro">SlowShield is maintained by the team at <a href="https://squirro.com" rel="noopener noreferrer">Squirro</a>,
         which builds enterprise AI search and GenAI solutions for regulated industries.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FOLLOW ============================== -->
+<section class="follow" id="follow">
+  <div class="follow-grid">
+    <div class="follow-card follow-main reveal">
+      <svg class="follow-icon" viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+      <div class="follow-text">
+        <p class="eyebrow">Get involved</p>
+        <h2>Something broken or missing?</h2>
+        <p class="muted">Open an issue on GitHub: bug reports, requests for the next ecosystem and notes on how you run
+          it all help. Pull requests are welcome too.</p>
+      </div>
+      <div class="follow-actions">
+        <a class="btn btn-primary" href="https://github.com/squirro/slowshield/issues/new/choose" rel="noopener noreferrer">Give feedback</a>
+        <a class="btn btn-ghost" href="https://github.com/squirro/slowshield/blob/main/CONTRIBUTING.md" rel="noopener noreferrer">How to contribute</a>
+      </div>
+    </div>
+    <div class="follow-card reveal">
+      <svg class="follow-icon" viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
+      <div class="follow-text">
+        <p class="eyebrow">Follow along</p>
+        <h2>@SlowShieldProxy on X</h2>
+        <p class="muted">Releases, roadmap updates and supply-chain security news, as it happens.</p>
+      </div>
+      <div class="follow-actions"><a class="btn btn-ghost" href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">Follow on X</a></div>
     </div>
   </div>
 </section>
@@ -554,15 +695,16 @@ npm config set registry https://slowshield.example.com/npm/</code></pre><button 
 </main>
 
 <footer class="footer">
-  <div class="footer-brand"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg> <span>SlowShield — <em>deflect, don't obstruct</em></span></div>
+  <div class="footer-brand"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg> <span>SlowShield — <em>safety through patience</em></span></div>
   <nav aria-label="Footer">
     <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
+    <a href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">X</a>
     <a href="https://github.com/squirro/slowshield/tree/main/docs" rel="noopener noreferrer">Docs</a>
     <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
     <a href="/brand/">Brand</a>
     <a href="https://github.com/squirro/slowshield/blob/main/LICENSE" rel="noopener noreferrer">Apache-2.0</a>
   </nav>
-  <p class="fine">© 2026 Squirro AG. SlowShield and the SlowShield shield mark are trademarks of Squirro AG.</p>
+  <p class="fine">SlowShield is open source under the Apache-2.0 licence and maintained by Squirro.</p>
 </footer>
 </body>
 </html>

@@ -5,6 +5,8 @@ name: Website
 #   PR closed            -> delete that Preview
 #   push to main         -> build -> production deploy -> smoke test against https://slowshield.net
 # Fork PRs only build and validate the site: no secrets, no preview.
+# Environment `preview` holds only the preview Worker's token (no branch restriction, so PR branches can
+# use it); `production` (main and release tags only) holds the production token.
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
@@ -87,7 +89,7 @@ jobs:
     permissions:
       contents: read # check out the Wrangler config and lockfile
     environment:
-      name: development
+      name: preview
       url: ${{ steps.preview.outputs.url }}
     steps:
       - name: Check out
@@ -144,7 +146,7 @@ jobs:
     permissions:
       contents: read # check out the Wrangler config and lockfile
     environment:
-      name: development
+      name: preview
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

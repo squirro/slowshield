@@ -21,6 +21,8 @@ performance reports.
 
 ### `development`: Harbor
 
+`development` is restricted to the `main` branch, so only builds of `main` can use the Harbor credentials.
+
 1. In Harbor, the private project `slowshield-dev`, with a tag retention policy (for example: keep the 30 most
    recent `sha-*`, always keep `main`).
 2. A robot account with push and pull on that project.

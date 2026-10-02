@@ -84,7 +84,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://slowshield.net/nope   # 404
 | Token | Scope | Role | GitHub environment |
 |---|---|---|---|
 | `github-website-production` | Specified Workers: `slowshield-website` | Editor | `production` |
-| `github-website-preview` | Specified Workers: `slowshield-website-preview` | Editor | `development` |
+| `github-website-preview` | Specified Workers: `slowshield-website-preview` | Editor | `preview` |
 
 Neither needs zone permissions, because the custom domain is attached in the dashboard. Give both an expiry
 date. If a per-Worker token turns out not to be allowed to create Previews, fall back to **Account > Workers
@@ -95,7 +95,8 @@ Scripts: Edit** for the preview token.
 1. Actions variable `CLOUDFLARE_ACCOUNT_ID` (not secret).
 2. Environment `production`: deployment branches *Selected* → `main` only; secret
    `CLOUDFLARE_API_TOKEN` = production token.
-3. Environment `development`: no branch restriction; secret `CLOUDFLARE_API_TOKEN` = preview token.
+3. Environment `preview`: no branch restriction (PR branches use it); secret `CLOUDFLARE_API_TOKEN` = preview
+   token, and nothing else: every same-repository branch can reach it.
 4. Before the repository goes public: Actions > General > Fork pull request workflows → "Require approval for
    all external contributors".
 

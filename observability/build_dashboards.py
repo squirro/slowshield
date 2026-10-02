@@ -19,17 +19,17 @@ from typing import Any
 OUT = Path(__file__).resolve().parent / "grafana" / "dashboards"
 SCHEMA_VERSION = 41
 
-# SlowShield palette (brand/tokens.css).
+# SlowShield palette: Night Field (brand/tokens.css), mid tones that read on Grafana's light and dark themes.
 C = {
-    "brand": "#0f6e5d",
-    "brand_light": "#3cc4a6",
-    "brand_deep": "#0b4f43",
-    "hold": "#d98a1c",
-    "hold_text": "#a44a07",
-    "danger": "#c0262d",
-    "tamper": "#a21caf",
-    "ok": "#137334",
-    "muted": "#5d6b63",
+    "brand": "#4a66ff",
+    "brand_light": "#8ea2ff",
+    "brand_deep": "#2a4bff",
+    "hold": "#8b72f0",
+    "hold_text": "#6447d6",
+    "danger": "#e0344c",
+    "tamper": "#d33fae",
+    "ok": "#2fa866",
+    "muted": "#7a84a6",
     "pypi": "#2f6fb3",
     "npm": "#cb3837",
 }
@@ -40,7 +40,7 @@ DECISION_COLORS = {
     "blocked": C["danger"],
     "tampered": C["tamper"],
     "integrity_mismatch": "#d946ef",
-    "not_found": "#8a9a91",
+    "not_found": "#8c93ad",
     "upstream_error": C["muted"],
 }
 EVENT_COLORS = {

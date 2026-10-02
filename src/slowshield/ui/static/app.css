@@ -1,45 +1,40 @@
 /* SlowShield UI. Colours are design tokens (see brand/tokens.css); no inline styles anywhere (strict CSP). */
 :root {
-  --bg: #f6f7f5;
+  --bg: #f2f4fb;
   --surface: #ffffff;
-  --surface-2: #eef1ee;
-  --border: #dde3de;
-  --text: #17201b;
-  --muted: #5d6b63;
-  --primary: #0f6e5d;
-  --primary-2: #13917a;
-  --primary-soft: #d8efe9;
-  --hold: #a44a07;
-  --hold-bright: #d98a1c;
-  --hold-soft: #fdf0dc;
-  --danger: #c0262d;
-  --danger-soft: #fbe3e3;
-  --tamper: #a21caf;
-  --tamper-soft: #f7e3f9;
-  --ok: #137334;
-  --ok-soft: #dcf3e3;
+  --surface-2: #eff2f8;
+  --border: #dce1f0;
+  --text: #0a0f24;
+  --muted: #56607f;
+  --primary: #2a4bff;
+  --primary-2: #2440d8;
+  --primary-soft: #e1e6ff;
+  --hold: #6447d6;
+  --hold-bright: #b2a3ea;  /* fail-open: half-tint of held, so it reads apart from too-new */
+  --hold-soft: #e9e5f9;
+  --danger: #c02238;
+  --danger-soft: #f6e0e3;
+  --tamper: #b4208c;
+  --tamper-soft: #f4e0ef;
+  --ok: #107445;
+  --ok-soft: #deece5;
   --pypi: #2f6fb3;
   --npm: #cb3837;
-  --grid: #e7ebe8;
+  --grid: #eaedf6;
   --radius: 10px;
-  --shadow: 0 1px 2px rgb(16 24 20 / 6%), 0 1px 1px rgb(16 24 20 / 4%);
+  --shadow: 0 1px 2px rgb(10 15 36 / 6%), 0 1px 1px rgb(10 15 36 / 4%);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
+/* Night Field (brand/tokens.css). Held is violet in this palette; the soft tints match the badge rule (14% / 22%). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1311; --surface: #141c19; --surface-2: #1b2521; --border: #26332e; --text: #e6ece8; --muted: #93a39a;
-    --primary: #3cc4a6; --primary-2: #5fd9bd; --primary-soft: #133a32; --hold: #f0a54a; --hold-bright: #f0a54a; --hold-soft: #3a2a12;
-    --danger: #f2686d; --danger-soft: #3d1a1c; --tamper: #e77ef2; --tamper-soft: #36183a; --ok: #4ccf7d; --ok-soft: #12321f;
-    --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #1f2a26; color-scheme: dark;
+    --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d1311; --surface: #141c19; --surface-2: #1b2521; --border: #26332e; --text: #e6ece8; --muted: #93a39a;
-  --primary: #3cc4a6; --primary-2: #5fd9bd; --primary-soft: #133a32; --hold: #f0a54a; --hold-bright: #f0a54a; --hold-soft: #3a2a12;
-  --danger: #f2686d; --danger-soft: #3d1a1c; --tamper: #e77ef2; --tamper-soft: #36183a; --ok: #4ccf7d; --ok-soft: #12321f;
-  --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #1f2a26; color-scheme: dark;
+  --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -64,6 +59,7 @@ h3 { font-size: 0.95rem; }
   border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 1.1rem; }
 .brand:hover { text-decoration: none; }
+.wordmark-img { height: 20px; width: auto; display: block; }
 .logo-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .logo-light { display: none; }
@@ -102,6 +98,11 @@ h3 { font-size: 0.95rem; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .kpis.small { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+/* Overview: twelve figures in three themed rows; 4, 3, 2 and 1 columns all divide 12, so rows stay full. */
+.kpis.kpis-12 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .kpis.kpis-12 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .kpis.kpis-12 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .kpis.kpis-12 { grid-template-columns: minmax(0, 1fr); } }
 .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
 .kpi.hold { border-left: 3px solid var(--hold); }
 .kpi.danger { border-left: 3px solid var(--danger); background: linear-gradient(0deg, var(--danger-soft), var(--surface) 70%); }
@@ -186,8 +187,8 @@ tr.withdrawn { opacity: 0.55; }
 .chart .hover { fill: transparent; } .chart .hover:hover { fill: color-mix(in srgb, var(--text) 6%, transparent); }
 .s-pypi { fill: var(--pypi); background: var(--pypi); } .s-npm { fill: var(--npm); background: var(--npm); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
-.s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); opacity: 0.7; }
-.s-age_gated { fill: var(--hold-bright); background: var(--hold-bright); } .s-blocked { fill: var(--danger); background: var(--danger); }
+.s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }
+.s-age_gated { fill: var(--hold); background: var(--hold); } .s-blocked { fill: var(--danger); background: var(--danger); }
 .s-tampered, .s-integrity_mismatch { fill: var(--tamper); background: var(--tamper); }
 .s-not_found { fill: var(--border); background: var(--border); } .s-upstream_error { fill: var(--muted); background: var(--muted); }
 .spark .line { fill: none; stroke: var(--primary); stroke-width: 1.5; } .spark .area { fill: var(--primary-soft); }

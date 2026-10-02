@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="brand/readme-hero.svg" alt="SlowShield — safety through patience" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/readme-banner-dark.svg">
+    <img src="brand/readme-banner.svg" alt="SlowShield: deflect, don't obstruct" width="100%">
+  </picture>
 </p>
 
 SlowShield is a supply-chain defence proxy for **PyPI** and **npm**. It sits between your developers,

@@ -1,8 +1,8 @@
 """Render the raster brand assets from the master SVGs in brand/ (dev-only tooling).
 
-    uv run --with resvg-py --with pillow python scripts/render_brand.py
+    uv run --no-project --with resvg-py --with pillow python scripts/render_brand.py
 
-Writes brand/png/* and the UI copies under src/slowshield/ui/static/brand/.
+Writes brand/png/* and the UI copies under src/slowshield/ui/static/brand/. Run brand/build.py first.
 """
 
 from __future__ import annotations
@@ -28,14 +28,19 @@ def render(svg: Path, width: int, height: int | None = None) -> Image.Image:
 def main() -> None:
     PNG.mkdir(exist_ok=True)
     UI.mkdir(parents=True, exist_ok=True)
-    fav = BRAND / "favicon.svg"
-    sizes = (16, 32, 48)
-    icons = [render(fav, s) for s in sizes]
-    icons[-1].save(PNG / "favicon.ico", sizes=[(s, s) for s in sizes], append_images=icons[:-1])
-    for s in (32, 180, 192, 512):
-        render(BRAND / ("favicon.svg" if s <= 32 else "mark.svg"), s).save(PNG / f"icon-{s}.png", optimize=True)
+    # The ICO carries the dedicated small drawings: 16 px from favicon.svg, 32 and 48 px from favicon-32.svg.
+    icons = [
+        render(BRAND / "favicon.svg", 16),
+        render(BRAND / "favicon-32.svg", 32),
+        render(BRAND / "favicon-32.svg", 48),
+    ]
+    icons[-1].save(PNG / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)], append_images=icons[:-1])
+    render(BRAND / "favicon-32.svg", 32).save(PNG / "icon-32.png", optimize=True)
+    for s in (180, 192, 512):  # touch and PWA icons: opaque night square
+        render(BRAND / "app-icon.svg", s).save(PNG / f"icon-{s}.png", optimize=True)
     render(BRAND / "social-preview.svg", 1280, 640).save(PNG / "social-preview.png", optimize=True)
-    for name in ("mark.svg", "mark-dark.svg", "favicon.svg"):
+    render(BRAND / "readme-banner.svg", 1200, 280).save(PNG / "readme-banner.png", optimize=True)
+    for name in ("mark.svg", "mark-dark.svg", "favicon.svg", "wordmark.svg", "wordmark-dark.svg"):
         shutil.copyfile(BRAND / name, UI / name)
     shutil.copyfile(PNG / "favicon.ico", UI / "favicon.ico")
     shutil.copyfile(PNG / "icon-180.png", UI / "apple-touch-icon.png")

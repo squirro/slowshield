@@ -186,12 +186,12 @@
                     "options": {
                       "1": {
                         "text": "Active",
-                        "color": "#137334",
+                        "color": "#2fa866",
                         "index": 0
                       },
                       "0": {
                         "text": "Off",
-                        "color": "#d98a1c",
+                        "color": "#8b72f0",
                         "index": 1
                       }
                     }
@@ -255,15 +255,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#137334",
+                "color": "#2fa866",
                 "value": null
               },
               {
-                "color": "#d98a1c",
+                "color": "#8b72f0",
                 "value": 7200
               },
               {
-                "color": "#c0262d",
+                "color": "#e0344c",
                 "value": 10800
               }
             ]
@@ -592,14 +592,14 @@
           "unit": "short",
           "color": {
             "mode": "fixed",
-            "fixedColor": "#0f6e5d"
+            "fixedColor": "#4a66ff"
           },
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0f6e5d",
+                "color": "#4a66ff",
                 "value": null
               }
             ]

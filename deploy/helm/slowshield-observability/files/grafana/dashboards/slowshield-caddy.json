@@ -142,7 +142,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0f6e5d",
+                "color": "#4a66ff",
                 "value": null
               }
             ]
@@ -204,15 +204,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#137334",
+                "color": "#2fa866",
                 "value": null
               },
               {
-                "color": "#d98a1c",
+                "color": "#8b72f0",
                 "value": 0.01
               },
               {
-                "color": "#c0262d",
+                "color": "#e0344c",
                 "value": 0.05
               }
             ]
@@ -275,7 +275,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0f6e5d",
+                "color": "#4a66ff",
                 "value": null
               }
             ]
@@ -337,11 +337,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#c0262d",
+                "color": "#e0344c",
                 "value": null
               },
               {
-                "color": "#137334",
+                "color": "#2fa866",
                 "value": 1
               }
             ]
@@ -699,7 +699,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#0f6e5d"
+                  "fixedColor": "#4a66ff"
                 }
               }
             ]
@@ -714,7 +714,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#d98a1c"
+                  "fixedColor": "#8b72f0"
                 }
               }
             ]
@@ -729,7 +729,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5d6b63"
+                  "fixedColor": "#7a84a6"
                 }
               }
             ]

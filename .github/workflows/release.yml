@@ -41,6 +41,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Tag matches pyproject.toml and the Helm chart
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          project="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n1)"
+          chart="$(sed -n 's/^appVersion: "\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' deploy/helm/slowshield/Chart.yaml)"
+          if [ "$project" != "$version" ] || [ "$chart" != "$version" ]; then
+            echo "Tag ${REF_NAME}, but pyproject.toml says ${project} and Chart.yaml appVersion says ${chart}."
+            exit 1
+          fi
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:

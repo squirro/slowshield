@@ -560,6 +560,9 @@ slowshield.example.com
     <h2>Up and running before your coffee is cold.</h2>
   </div>
   <h3 class="start-sub">Run it for your team</h3>
+  <p class="muted start-images">Images: <code>ghcr.io/squirro/slowshield</code> and <code>ghcr.io/squirro/slowshield-caddy</code>,
+    for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:0.0.1</code>) or a digest
+    in production.</p>
   <ol class="start-steps">
     <li class="reveal">
       <h3><span>1</span> Run it</h3>
@@ -575,7 +578,11 @@ cp .env.example .env          # your hostname, TLS mode, optional GitHub token
 docker compose up -d
 # add the Grafana stack: docker compose -f compose.yaml -f compose.observability.yaml up -d</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
         <div class="code" role="tabpanel" id="tab-podman" aria-labelledby="t-podman" hidden><pre><code>git clone https://github.com/squirro/slowshield
-cp slowshield/deploy/podman/*.{pod,container,volume,network} ~/.config/containers/systemd/
+cd slowshield/deploy/podman
+mkdir -p ~/.config/containers/systemd ~/.config/slowshield/certs
+cp -r quadlet/. ~/.config/containers/systemd/
+cp examples/config.toml examples/slowshield.env ~/.config/slowshield/
+$EDITOR ~/.config/slowshield/slowshield.env   # hostnames, TLS mode, public URL
 systemctl --user daemon-reload
 systemctl --user start slowshield-pod   # rootless, auto-updating</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
         <div class="code" role="tabpanel" id="tab-helm" aria-labelledby="t-helm" hidden><pre><code>git clone https://github.com/squirro/slowshield
@@ -699,6 +706,7 @@ npm config set registry https://slowshield.example.com/npm/</code></pre><button 
   <nav aria-label="Footer">
     <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
     <a href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">X</a>
+    <a href="https://github.com/squirro/slowshield/pkgs/container/slowshield" rel="noopener noreferrer">Images</a>
     <a href="https://github.com/squirro/slowshield/tree/main/docs" rel="noopener noreferrer">Docs</a>
     <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
     <a href="/brand/">Brand</a>

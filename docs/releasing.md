@@ -46,12 +46,19 @@ performance reports.
    Package settings → Change visibility) and link them to the repository.
 4. Rules → Rulesets → New tag ruleset for `v*`: only maintainers may create, update or delete release tags.
 
+## Versions
+
+SemVer, starting at 0.0.1. SlowShield stays below 1.0.0 until every ecosystem on the roadmap is covered;
+until then a minor release (0.X.0) may change configuration or behaviour, and the CHANGELOG says how.
+
 ## Cutting a release
 
 1. Merge everything for the release into `main` and wait for CI to pass there.
-2. In `CHANGELOG.md`, move the `[Unreleased]` entries under `## [X.Y.Z] - YYYY-MM-DD` (the release notes are
+2. Set the version in `pyproject.toml` (then `uv lock`) and in `deploy/helm/slowshield/Chart.yaml` (`version`
+   and `appVersion`; the chart's default image tag). The release fails early if the tag does not match.
+3. In `CHANGELOG.md`, move the `[Unreleased]` entries under `## [X.Y.Z] - YYYY-MM-DD` (the release notes are
    taken from that section), commit and push to `main`.
-3. Tag and push:
+4. Tag and push:
 
    ```sh
    git switch main && git pull
@@ -59,8 +66,8 @@ performance reports.
    git push origin vX.Y.Z
    ```
 
-4. Follow Actions → Release (about 30–60 minutes).
-5. Check:
+5. Follow Actions → Release (about 30–60 minutes).
+6. Check:
 
    ```sh
    docker buildx imagetools inspect ghcr.io/squirro/slowshield:X.Y.Z   # both platforms + attestations

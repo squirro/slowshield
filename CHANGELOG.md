@@ -36,7 +36,7 @@ All notable changes to this project are documented here. The format is based on
   and recorded as blocked, so a lockfile pinned during an attack window shows up as a security event.
 - The database writer's flush-duration histogram was never recorded.
 
-## [1.0.0] - unreleased
+## [0.0.1] - unreleased
 
 First open-source release: a rewrite of the internal Rust SlowShield (v0–v8) in Python 3.15.
 

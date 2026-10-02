@@ -43,8 +43,8 @@ Each worker exports its own series, so aggregate across `instance` with `sum` (c
 | `slowshield_artifact_bytes_total` | counter | `slowshield.artifact.bytes` | `By` | `slowshield_ecosystem`, `source` | Artifact bytes served. `source`: `cache`, `upstream` |
 | `slowshield_cache_requests_total` | counter | `slowshield.cache.requests` | `{request}` | `cache`, `result` | Cache lookups. `cache`: `artifact`, `metadata`. `result`: `hit`, `miss`, `stale`, `revalidated` |
 | `slowshield_cache_evictions_total` | counter | `slowshield.cache.evictions` | `{entry}` | `cache` | Artifact cache evictions (LRU, over `artifacts_max_gb`) |
-| `slowshield_cache_size_bytes` | gauge | `slowshield.cache.size` | `By` | `cache` | Current cache size |
-| `slowshield_cache_limit_bytes` | gauge | `slowshield.cache.limit` | `By` | `cache` | Configured cache limit |
+| `slowshield_cache_size_bytes` | gauge | `slowshield.cache.size` | `By` | `cache` | Current cache size. `cache`: `artifact`, `metadata` (shared SQLite file), `metadata_memory` (this worker's in-memory share) |
+| `slowshield_cache_limit_bytes` | gauge | `slowshield.cache.limit` | `By` | `cache` | Configured cache limit (same `cache` values; `metadata_memory` is per worker) |
 | `slowshield_feed_enabled` | gauge | `slowshield.feed.enabled` | | `feed`, `reason` | 1 if the threat feed is on. `reason`: `ok`, `error`, `disabled`, `missing_token`, … (unit `1` is dropped by Alloy so the name gets no `_ratio` suffix) |
 | `slowshield_feed_last_success_timestamp_seconds` | gauge | `slowshield.feed.last_success.timestamp` | `s` | `feed` | Unix time of the last successful sync |
 | `slowshield_feed_errors_total` | counter | `slowshield.feed.errors` | `{error}` | `feed` | Failed feed syncs |

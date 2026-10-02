@@ -13,10 +13,23 @@ All notable changes to this project are documented here. The format is based on
   Setup page and npm tarball URLs follow it.
 
 ### Changed
+- Metadata caching uses far less memory. Upstream documents and rendered responses live in one SQLite
+  file shared by all workers (`data_dir/metadata-cache.db`, `cache.metadata_max_mb`, default 1 GB), so a
+  document fetched by one worker is served by all of them and survives restarts. Workers keep only parsed
+  documents and small responses in memory, within `cache.metadata_memory_mb` (new, default 64 MB in total
+  across workers), sized from measured object sizes. SQLite reader page caches are smaller, and `serve` warns
+  when the workers and the memory budget do not fit the container's memory limit.
 - New brand: the Inbound mark, Night Field palette and an outlined Schibsted Grotesk wordmark across the UI,
   Grafana dashboards and README.
 
 ### Fixed
+- Workers were killed for running out of memory under load (2 workers in 1 GiB): each kept its own
+  in-memory metadata cache, which counted neither parsed objects nor rendered responses, and tarball requests
+  each held a full packument (30 MB for firebase). Tarballs now use a compact per-package index, full
+  documents are loaded at most two at a time per worker, and the image limits glibc malloc arenas so freed
+  memory goes back to the OS.
+- Every npm download streamed from upstream logged `ASGI transport error: "Closed(..)"`: the empty final
+  HTTP/2 frame was forwarded as an extra body message after the response was complete.
 - Known-malicious versions that the registry has since removed returned 404; they are now refused with 451
   and recorded as blocked, so a lockfile pinned during an attack window shows up as a security event.
 - The database writer's flush-duration histogram was never recorded.

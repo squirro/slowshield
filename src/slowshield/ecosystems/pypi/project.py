@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -77,6 +78,7 @@ class Project:
     raw_size: int
     by_filename: dict[str, PyFile] = field(default_factory=dict)
     skipped: int = 0  # files we cannot serve (unexpected URL layout)
+    content_id: str = ""  # hash of the upstream bytes: rendered bodies are keyed by it
 
     def __post_init__(self) -> None:
         self.by_filename = {f.filename: f for f in self.files}
@@ -169,4 +171,5 @@ def parse_project(raw: bytes, *, base_url: str, name: str, etag: str | None, fil
         last_serial=doc.meta.last_serial,
         raw_size=len(raw),
         skipped=skipped,
+        content_id=hashlib.blake2b(raw, digest_size=12).hexdigest(),
     )

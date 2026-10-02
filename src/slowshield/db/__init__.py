@@ -45,6 +45,8 @@ def connect(path: Path, *, readonly: bool = False) -> sqlite3.Connection:
         conn.execute(pragma)
     if readonly:
         conn.execute("PRAGMA query_only=1")
+        # One reader per thread adds up; reads are served from the mmap and the OS page cache anyway.
+        conn.execute("PRAGMA cache_size=-4000")
     return conn
 
 

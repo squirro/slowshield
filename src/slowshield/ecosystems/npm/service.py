@@ -7,6 +7,7 @@ registry endpoints is served; everything else is 404, so this is never an open p
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from starlette.types import Receive, Scope, Send
 from slowshield import names
 from slowshield import versions as V
 from slowshield.blocklist import BlockEntry, PackageBlocks
+from slowshield.cache.kv import Item
 from slowshield.cache.metadata import SingleFlight
 from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import ArtifactRequest, AsgiResponse
@@ -38,13 +40,23 @@ MAX_PACKUMENT_BYTES = 200 * 1024 * 1024
 MAX_AUDIT_BODY = 10 * 1024 * 1024
 ABBREVIATED = "application/vnd.npm.install-v1+json"
 _NOT_FOUND = object()
+KEEP_STALE = 7 * DAY  # stored documents outlive their TTL for revalidation and stale-if-error
+SMALL_BODY = 128 << 10  # rendered bodies up to this size are also kept in process memory
+
+
+# A parsed packument costs its upstream size (msgspec.Raw slices keep the bytes alive) plus ~1 KB per version
+# (tracemalloc on react, next, typescript, @types/node): firebase is 30 MB + 4 MB. Bound how many a worker
+# holds at once while fetching or rendering; everything else works from the Index.
+HEAVY_LOADS = 2
+
+
 _PASSTHROUGH_GET = ("/-/npm/v1/keys", "/-/npm/v1/attestations/")
 _AUDIT_POST = ("/-/npm/v1/security/advisories/bulk", "/-/npm/v1/security/audits/quick")
 
 
 @dataclass(slots=True)
 class View:
-    doc: P.Packument
+    doc: P.Index
     kept: list[str] = field(default_factory=list)
     tags: dict[str, str] = field(default_factory=dict)
     held: set[str] = field(default_factory=set)
@@ -52,7 +64,6 @@ class View:
     fail_open: bool = False
     next_change: float = float("inf")
     package_block: BlockEntry | None = None
-    rendered: dict[tuple[str, str], bytes] = field(default_factory=dict)  # (format, tarball base) -> body
     digest: str = ""
 
 
@@ -64,6 +75,7 @@ class NpmService:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
         self.flight = SingleFlight()
+        self._heavy = asyncio.Semaphore(HEAVY_LOADS)
 
     @property
     def upstream_bases(self) -> list[str]:
@@ -146,25 +158,46 @@ class NpmService:
         return not_found()
 
     # ---- upstream ------------------------------------------------------------------------------------
+    #
+    # Three representations of a package, from small to large:
+    #   Index (versions, publish times, dist info): policy and every tarball request. Memory + shared store.
+    #   rendered body (filtered packument): memory when small, shared store always.
+    #   Packument (the parsed upstream document): only to render a body that is not stored yet, or a
+    #   version manifest. Parsed from the shared store, at most HEAVY_LOADS at a time per worker.
 
-    async def doc(self, name: str) -> P.Packument | None:
-        key = ("npm:doc", name)
+    async def index(self, name: str) -> P.Index | None:
+        key = ("npm:idx", name)
         hit = self.ctx.metadata_cache.get(key, self.ctx.clock.now())
         if hit is not None:
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
             self.ctx.recorder.lookup(ECO, cached=True)
             return None if hit is _NOT_FOUND else hit
-        return await self.flight.run(key, lambda: self._load(name))
+        return await self.flight.run(key, lambda: self._load_index(name))
 
-    async def _load(self, name: str) -> P.Packument | None:
+    async def _load_index(self, name: str) -> P.Index | None:
         ctx = self.ctx
-        key = ("npm:doc", name)
+        stored = await ctx.metadata_store.aget(f"npm:idx:{name}")
+        if stored is not None and stored.fresh(ctx.clock.now()):
+            # Fetched by another worker, or by this one before a restart: no upstream request.
+            instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
+            ctx.recorder.lookup(ECO, cached=True)
+            idx = P.Index.decode(stored.value)
+            ctx.metadata_cache.put(("npm:idx", name), idx, idx.weight, stored.expires)
+            return idx
+        async with self._heavy:
+            idx, _ = await self._fetch(name, stored)
+        return idx
+
+    async def _fetch(self, name: str, stale: Item | None) -> tuple[P.Index | None, P.Packument | None]:
+        """Ask upstream (conditionally when a stale index is known); store the document and its index."""
+        ctx = self.ctx
+        key = ("npm:idx", name)
         now = ctx.clock.now()
         ttl = ctx.cfg.raw.metadata_cache_ttl_hours * 3600
-        stale = ctx.metadata_cache.get_stale(key)
+        etag = stale.meta.get("etag") if stale is not None else None
         headers = {"Accept": "application/json"}
-        if isinstance(stale, P.Packument) and stale.etag:
-            headers["If-None-Match"] = stale.etag
+        if etag:
+            headers["If-None-Match"] = etag
         path = "/" + name.replace("/", "%2f") if name.startswith("@") else "/" + name
         ctx.recorder.lookup(ECO, cached=False)
         try:
@@ -174,35 +207,90 @@ class NpmService:
         except TooLargeError:
             raise
         except UpstreamError:
-            if isinstance(stale, P.Packument):
+            if stale is not None:
                 log.warning("upstream unavailable; serving stale packument", extra={"package": name})
-                ctx.metadata_cache.touch(key, now + 60)
+                idx = P.Index.decode(stale.value)
+                ctx.metadata_cache.put(key, idx, idx.weight, now + 60)
                 instruments.cache_requests.add(1, {"cache": "metadata", "result": "stale"})
-                return stale
+                return idx, None
             raise
-        if res.status == 304 and isinstance(stale, P.Packument):
-            ctx.metadata_cache.touch(key, now + ttl)
+        if res.status == 304 and stale is not None:
+            for k in (f"npm:idx:{name}", f"npm:doc:{name}"):
+                await ctx.metadata_store.atouch(k, now + ttl, now + ttl + KEEP_STALE)
+            idx = P.Index.decode(stale.value)
+            ctx.metadata_cache.put(key, idx, idx.weight, now + ttl)
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "revalidated"})
             ctx.recorder.catalog(ECO, name)
-            return stale
+            return idx, None
         instruments.cache_requests.add(1, {"cache": "metadata", "result": "miss"})
         if res.status in (404, 410):
             ctx.metadata_cache.put(key, _NOT_FOUND, 64, now + 300)
-            return None
+            return None, None
         if res.status != 200:
             raise UpstreamError(res.url, f"upstream returned {res.status}", res.status)
         doc = P.parse(res.body, name=name, etag=res.etag, upstream_bases=self.upstream_bases)
-        ctx.metadata_cache.put(key, doc, doc.raw_size + 4096, now + ttl)
+        idx = P.index_of(doc)
+        meta = {"etag": res.etag, "content_id": doc.content_id}
+        keep = now + ttl + KEEP_STALE
+        await ctx.metadata_store.aput(f"npm:doc:{name}", res.body, expires=now + ttl, keep_until=keep, meta=meta)
+        await ctx.metadata_store.aput(f"npm:idx:{name}", idx.encode(), expires=now + ttl, keep_until=keep, meta=meta)
+        ctx.metadata_cache.put(key, idx, idx.weight, now + ttl)
         ctx.recorder.catalog(ECO, name, [(v.version, v.published, False) for v in doc.versions.values()])
+        return idx, doc
+
+    async def _document(self, idx: P.Index) -> P.Packument:
+        """The full document `idx` was derived from (or a newer one, if upstream changed in between)."""
+        ctx = self.ctx
+        async with self._heavy:
+            stored = await ctx.metadata_store.aget(f"npm:doc:{idx.name}")
+            if stored is not None and stored.meta.get("content_id") == idx.content_id:
+                return P.parse(stored.value, name=idx.name, etag=idx.etag, upstream_bases=self.upstream_bases)
+            # Evicted from the shared store (the index outlived it): fetch it again, unconditionally.
+            _, doc = await self._fetch(idx.name, None)
+        if doc is None:
+            raise UpstreamError(idx.name, "package document disappeared upstream")
         return doc
+
+    async def _body(self, v: View, fmt: str, pub: str) -> bytes:
+        """The rendered packument: from memory (small ones), the shared store, or rendered and stored."""
+        ctx = self.ctx
+        idx = v.doc
+        skey = f"npm:body:{idx.name}:{fmt}:{pub}:{idx.content_id}:{v.digest}"
+        mkey = ("npm:body", skey)
+        now = ctx.clock.now()
+        hit = ctx.metadata_cache.get(mkey, now)
+        if hit is not None:
+            return hit
+        body, expires = await self.flight.run(mkey, lambda: self._stored_or_rendered(v, fmt, pub, skey))
+        if len(body) <= SMALL_BODY:
+            ctx.metadata_cache.put(mkey, body, len(body) + 256, expires)
+        return body
+
+    async def _stored_or_rendered(self, v: View, fmt: str, pub: str, skey: str) -> tuple[bytes, float]:
+        ctx = self.ctx
+        now = ctx.clock.now()
+        stored = await ctx.metadata_store.aget(skey)
+        if stored is not None and stored.fresh(now):
+            return stored.value, stored.expires
+        expires = min(v.next_change, now + ctx.cfg.raw.metadata_cache_ttl_hours * 3600)
+        doc = await self._document(v.doc)
+        if doc.content_id != v.doc.content_id:  # changed upstream meanwhile: filter the new one
+            v = self.view(P.index_of(doc))
+        if fmt == ABBREVIATED:
+            body = P.render_abbreviated(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
+        else:
+            body = P.render_full(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
+        del doc
+        await ctx.metadata_store.aput(skey, body, expires=expires)
+        return body, expires
 
     # ---- policy --------------------------------------------------------------------------------------
 
-    def view(self, doc: P.Packument) -> View:
+    def view(self, doc: P.Index) -> View:
         ctx = self.ctx
         now = ctx.clock.now()
         cfg = ctx.cfg
-        key = ("npm:view", doc.name, doc.etag or id(doc), ctx.policy_key())
+        key = ("npm:view", doc.name, doc.content_id, ctx.policy_key())
         hit = ctx.metadata_cache.get(key, now)
         if hit is not None:
             return hit
@@ -233,7 +321,7 @@ class NpmService:
         v.digest = hashlib.blake2b(
             ("\n".join(v.kept) + repr(sorted(v.tags.items())) + repr(ctx.policy_key())).encode(), digest_size=12
         ).hexdigest()
-        ctx.metadata_cache.put(key, v, 512 + 32 * len(doc.versions), min(ev.next_change, now + 3600))
+        ctx.metadata_cache.put(key, v, 512 + 48 * len(doc.versions), min(ev.next_change, now + 3600))
         return v
 
     def _blocked(self, request: Request, name: str, version: str | None, entry: BlockEntry, *, kind: str) -> Response:
@@ -264,7 +352,7 @@ class NpmService:
         if blocks.package_block is not None:
             return self._blocked(request, name, None, blocks.package_block, kind=kind)
         try:
-            doc = await self.doc(name)
+            doc = await self.index(name)
         except TooLargeError:
             return error(502, "upstream_error", detail="upstream packument too large")
         except UpstreamError as exc:
@@ -316,14 +404,7 @@ class NpmService:
             ctx.recorder.decision(ECO, "metadata", "served")
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers=headers)
-        pub = self.public_base(request)
-        body = v.rendered.get((fmt, pub))
-        if body is None:
-            if fmt == ABBREVIATED:
-                body = P.render_abbreviated(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
-            else:
-                body = P.render_full(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
-            v.rendered[(fmt, pub)] = body
+        body = await self._body(v, fmt, self.public_base(request))
         return Response(body, media_type=fmt if fmt == ABBREVIATED else "application/json", headers=headers)
 
     def public_base(self, request: Request) -> str:
@@ -343,9 +424,13 @@ class NpmService:
         version = v.tags.get(spec, spec)
         if version not in v.kept:
             return not_found()
-        body = P.render_version(
-            v.doc, version, upstream_bases=self.upstream_bases, public_base=self.public_base(request)
-        )
+        try:
+            doc = await self._document(v.doc)
+        except UpstreamError as exc:
+            return error(502, "upstream_error", detail=exc.detail)
+        if version not in doc.versions:
+            return not_found()
+        body = P.render_version(doc, version, upstream_bases=self.upstream_bases, public_base=self.public_base(request))
         return Response(body, media_type="application/json", headers={"Cache-Control": "max-age=300"})
 
     async def tarball(self, request: Request, name: str, filename: str) -> AsgiResponse:

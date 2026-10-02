@@ -83,6 +83,10 @@ class StreamedArtifact:
         try:
             try:
                 async for chunk in self.body:
+                    if not chunk:
+                        # HTTP/2 upstreams (registry.npmjs.org) end with an empty DATA frame. Forwarding it as
+                        # more_body=True after Content-Length is reached makes the server log a transport error.
+                        continue
                     if not started:
                         await send({"type": "http.response.start", "status": self.status, "headers": self.headers})
                         started = True

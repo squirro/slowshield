@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from slowshield.blocklist import Blocklist
 from slowshield.cache.artifacts import ArtifactCache
+from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock
 from slowshield.config import ConfigHolder, LoadedConfig
@@ -29,7 +30,8 @@ class AppContext:
     recorder: Recorder
     artifact_cache: ArtifactCache
     artifacts: ArtifactServer
-    metadata_cache: LRUCache[Any]
+    metadata_cache: LRUCache[Any]  # this worker's parsed metadata and small bodies
+    metadata_store: KVStore  # shared by all workers: upstream documents and rendered bodies
     feeds: dict[str, FeedStatus] = field(default_factory=dict)
     is_leader: bool = False
     started_at: float = 0.0

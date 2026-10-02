@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass, field
@@ -33,6 +34,17 @@ ECO = "pypi"
 MAX_INDEX_BYTES = 50 * 1024 * 1024
 _NOT_FOUND = object()
 _FORMATS = ("text/html", HTML_V1, JSON_V1)
+KEEP_STALE = 7 * DAY  # stored documents outlive their TTL for revalidation and stale-if-error
+SMALL_BODY = 128 << 10  # rendered bodies up to this size are also kept in process memory
+
+
+HEAVY_LOADS = 4  # project documents fetched or parsed at once per worker (bounds transient memory)
+
+
+def _project_weight(project: Project) -> int:
+    """Memory of a parsed project: ~1.1 KB per file (measured with tracemalloc on numpy, boto3, torch), about
+    twice that once both formats have been rendered (each file caches its JSON item and HTML line)."""
+    return 2200 * len(project.files) + 4096
 
 
 @dataclass(slots=True)
@@ -47,7 +59,6 @@ class View:
     fail_open: bool = False
     next_change: float = float("inf")
     package_block: BlockEntry | None = None
-    rendered: dict[str, bytes] = field(default_factory=dict)
     digest: str = ""
 
     @property
@@ -63,6 +74,7 @@ class PypiService:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
         self.flight = SingleFlight()
+        self._heavy = asyncio.Semaphore(HEAVY_LOADS)
 
     # ---- upstream metadata ----------------------------------------------------------------------
 
@@ -76,34 +88,50 @@ class PypiService:
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
             self.ctx.recorder.lookup(ECO, cached=True)
             return None if hit is _NOT_FOUND else hit
-        return await self.flight.run(key, lambda: self._load(name))
+        return await self.flight.run(key, lambda: self._load_bounded(name))
+
+    async def _load_bounded(self, name: str) -> Project | None:
+        async with self._heavy:
+            return await self._load(name)
 
     async def _load(self, name: str) -> Project | None:
         ctx = self.ctx
         key = ("pypi:doc", name)
+        skey = f"pypi:doc:{name}"
         now = ctx.clock.now()
         ttl = ctx.cfg.raw.metadata_cache_ttl_hours * 3600
-        stale = ctx.metadata_cache.get_stale(key)
+        stored = await ctx.metadata_store.aget(skey)
+        if stored is not None and stored.fresh(now):
+            # Fetched by another worker, or by this one before a restart: no upstream request.
+            instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
+            ctx.recorder.lookup(ECO, cached=True)
+            project = self._stored_project(key, name, stored.value, stored.meta)
+            ctx.metadata_cache.put(key, project, _project_weight(project), stored.expires)
+            return project
+        etag = stored.meta.get("etag") if stored is not None else None
         headers = {"Accept": JSON_V1}
-        if isinstance(stale, Project) and stale.etag:
-            headers["If-None-Match"] = stale.etag
+        if etag:
+            headers["If-None-Match"] = etag
         ctx.recorder.lookup(ECO, cached=False)
         try:
             res = await ctx.upstream.fetch(self._index_urls(name), headers=headers, max_bytes=MAX_INDEX_BYTES)
         except TooLargeError:
             raise
         except UpstreamError:
-            if isinstance(stale, Project):
+            if stored is not None:
                 log.warning("upstream unavailable; serving stale index", extra={"package": name})
-                ctx.metadata_cache.touch(key, now + 60)
+                project = self._stored_project(key, name, stored.value, stored.meta)
+                ctx.metadata_cache.put(key, project, _project_weight(project), now + 60)
                 instruments.cache_requests.add(1, {"cache": "metadata", "result": "stale"})
-                return stale
+                return project
             raise
-        if res.status == 304 and isinstance(stale, Project):
-            ctx.metadata_cache.touch(key, now + ttl)
+        if res.status == 304 and stored is not None:
+            await ctx.metadata_store.atouch(skey, now + ttl, now + ttl + KEEP_STALE)
+            project = self._stored_project(key, name, stored.value, stored.meta)
+            ctx.metadata_cache.put(key, project, _project_weight(project), now + ttl)
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "revalidated"})
             ctx.recorder.catalog(ECO, name)
-            return stale
+            return project
         instruments.cache_requests.add(1, {"cache": "metadata", "result": "miss"})
         if res.status in (404, 410):
             ctx.metadata_cache.put(key, _NOT_FOUND, 64, now + 300)
@@ -113,14 +141,10 @@ class PypiService:
         ctype = res.headers.get("content-type", "")
         if not ctype.startswith(JSON_V1):
             raise UpstreamError(res.url, f"upstream does not speak the PEP 691 JSON API (got {ctype or 'no type'})")
-        project = parse_project(
-            res.body,
-            base_url=res.url,
-            name=name,
-            etag=res.etag,
-            files_url=ctx.cfg.raw.upstreams.pypi.files_url,
-        )
-        ctx.metadata_cache.put(key, project, project.raw_size * 2 + 1024, now + ttl)
+        meta = {"etag": res.etag, "url": res.url}
+        project = self._parse(name, res.body, meta)
+        await ctx.metadata_store.aput(skey, res.body, expires=now + ttl, keep_until=now + ttl + KEEP_STALE, meta=meta)
+        ctx.metadata_cache.put(key, project, _project_weight(project), now + ttl)
         published: dict[str, float | None] = {}
         yanked: dict[str, bool] = {}
         for f in project.files:
@@ -132,6 +156,44 @@ class PypiService:
             yanked[f.version] = yanked.get(f.version, True) and bool(f.yanked)
         ctx.recorder.catalog(ECO, name, [(v, published[v], yanked[v]) for v in published])
         return project
+
+    def _parse(self, name: str, raw: bytes, meta: dict[str, Any]) -> Project:
+        return parse_project(
+            raw,
+            base_url=meta.get("url") or self._index_urls(name)[0],
+            name=name,
+            etag=meta.get("etag"),
+            files_url=self.ctx.cfg.raw.upstreams.pypi.files_url,
+        )
+
+    def _stored_project(self, key: tuple[str, str], name: str, raw: bytes, meta: dict[str, Any]) -> Project:
+        """The stored document, reusing this worker's parsed copy when it is the same one."""
+        old = self.ctx.metadata_cache.get_stale(key)
+        etag = meta.get("etag")
+        if isinstance(old, Project) and old.raw_size == len(raw) and old.etag == etag and etag:
+            return old
+        return self._parse(name, raw, meta)
+
+    async def _body(self, v: View, fmt: str) -> bytes:
+        """The rendered index: from memory (small ones), the shared store, or rendered and stored."""
+        ctx = self.ctx
+        project = v.project
+        skey = f"pypi:body:{project.name}:{fmt}:{project.content_id}:{v.digest}"
+        mkey = ("pypi:body", skey)
+        now = ctx.clock.now()
+        hit = ctx.metadata_cache.get(mkey, now)
+        if hit is not None:
+            return hit
+        expires = min(v.next_change, now + ctx.cfg.raw.metadata_cache_ttl_hours * 3600)
+        stored = await ctx.metadata_store.aget(skey)
+        if stored is not None and stored.fresh(now):
+            body, expires = stored.value, stored.expires
+        else:
+            body = render_json(project, v.files, v.versions) if fmt == JSON_V1 else render_html(project, v.files)
+            await ctx.metadata_store.aput(skey, body, expires=expires)
+        if len(body) <= SMALL_BODY:
+            ctx.metadata_cache.put(mkey, body, len(body) + 256, expires)
+        return body
 
     # ---- policy -----------------------------------------------------------------------------------
 
@@ -175,7 +237,7 @@ class PypiService:
         v.digest = hashlib.blake2b(
             "\n".join(sorted(v.allowed)).encode() + repr(ctx.policy_key()).encode(), digest_size=12
         ).hexdigest()
-        ctx.metadata_cache.put(key, v, 512 + 64 * len(project.files), min(ev.next_change, now + 3600))
+        ctx.metadata_cache.put(key, v, 512 + 96 * len(project.files), min(ev.next_change, now + 3600))
         return v
 
     # ---- handlers -----------------------------------------------------------------------------------
@@ -247,10 +309,7 @@ class PypiService:
         self._record_metadata(request, v)
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers=headers)
-        body = v.rendered.get(fmt)
-        if body is None:
-            body = render_json(project, v.files, v.versions) if fmt == JSON_V1 else render_html(project, v.files)
-            v.rendered[fmt] = body
+        body = await self._body(v, fmt)
         return Response(body, media_type=_media(fmt), headers=headers)
 
     def _record_metadata(self, request: Request, v: View) -> None:

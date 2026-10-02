@@ -27,7 +27,8 @@ mirrors = ["https://registry.npmjs.org"]
 [cache]
 artifacts_enabled = true
 artifacts_max_gb = 20
-metadata_max_mb = 256
+metadata_max_mb = 1024
+metadata_memory_mb = 64
 
 [feeds]
 poll_interval_minutes = 60

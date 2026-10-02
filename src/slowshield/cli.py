@@ -24,20 +24,26 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from granian.server import Server
 
     from slowshield import config as config_mod
+    from slowshield import limits
     from slowshield.db import migrate
     from slowshield.telemetry import logsetup
 
     logsetup.configure()
     if args.config:
         os.environ["SLOWSHIELD_CONFIG"] = args.config
+    if args.workers:
+        os.environ["SLOWSHIELD_WORKERS"] = str(args.workers)  # workers size their share of the memory budget
     cfg = config_mod.load()
     for w in cfg.warnings:
         print(f"warning: {w}", file=sys.stderr)
+    memory = limits.memory_warning(cfg.raw.workers, cfg.raw.cache.metadata_memory_mb, limits.cgroup_memory_limit())
+    if memory:
+        print(f"warning: {memory}", file=sys.stderr)
     # Migrate once in the parent so workers start against the final schema.
     migrate(cfg.db_path)
     bind = args.bind or cfg.raw.bind_address
     host, _, port = bind.rpartition(":")
-    workers = args.workers or cfg.raw.workers
+    workers = cfg.raw.workers
     server = Server(
         "slowshield.app:create_app",
         address=host.strip("[]"),

@@ -24,7 +24,8 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
 
 1. `GET /simple/<name>/` → name validated and PEP 503-normalised (non-canonical names redirect).
 2. Package-level blocklist hit → `451`.
-3. Project document from the metadata cache, or `GET <mirror>/simple/<name>/` with
+3. Project document from this worker's memory, from the metadata cache shared by all workers
+   (`metadata-cache.db`), or `GET <mirror>/simple/<name>/` with
    `Accept: application/vnd.pypi.simple.v1+json` (revalidated with `If-None-Match` after the TTL; a stale
    copy is served if upstream is down).
 4. Policy per **file**: blocked versions removed, files younger than the delay held back; if nothing is

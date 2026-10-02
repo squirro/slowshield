@@ -91,7 +91,10 @@ class Feeds(msgspec.Struct, forbid_unknown_fields=True):
 
 
 class CacheConfig(msgspec.Struct, forbid_unknown_fields=True):
-    metadata_max_mb: float = 256
+    # Upstream metadata and rendered responses: one SQLite file shared by all workers (disk + OS page cache).
+    metadata_max_mb: float = 1024
+    # Parsed metadata and small responses held in process memory, in total across all workers.
+    metadata_memory_mb: float = 64
     artifacts_enabled: bool = True
     artifacts_max_gb: float = 20
     scrub_interval_hours: float = 24
@@ -154,6 +157,10 @@ class LoadedConfig:
     @property
     def cache_dir(self) -> Path:
         return Path(self.raw.data_dir) / "cache"
+
+    @property
+    def metadata_store_path(self) -> Path:
+        return Path(self.raw.data_dir) / "metadata-cache.db"
 
     @property
     def trusted_networks(self) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
@@ -299,6 +306,8 @@ def _validate(cfg: Config) -> None:
         raise ConfigError("metadata_cache_ttl_hours must be > 0")
     if cfg.workers < 1:
         raise ConfigError("workers must be >= 1")
+    if cfg.cache.metadata_max_mb <= 0 or cfg.cache.metadata_memory_mb <= 0:
+        raise ConfigError("cache.metadata_max_mb and cache.metadata_memory_mb must be > 0")
     if cfg.feeds.poll_interval_minutes < 1:
         raise ConfigError("feeds.poll_interval_minutes must be >= 1")
     host, sep, port = cfg.bind_address.rpartition(":")
@@ -418,6 +427,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         changed.append("upstreams.npm.public_url")
     if old.cache.artifacts_enabled != new.cache.artifacts_enabled:
         changed.append("cache.artifacts_enabled")
+    changed.extend(
+        f"cache.{name}"
+        for name in ("metadata_max_mb", "metadata_memory_mb")
+        if getattr(old.cache, name) != getattr(new.cache, name)
+    )
     return changed
 
 

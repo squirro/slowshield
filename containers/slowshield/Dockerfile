@@ -76,8 +76,14 @@ COPY --from=app /opt/python /opt/python
 COPY --from=app /app/.venv /app/.venv
 COPY --from=app /app/share /app/share
 
+# glibc malloc: two arenas instead of one per thread (to_thread workers), and blocks of 128 KiB or more
+# (upstream documents, rendered bodies) mmap'd and returned to the OS when freed instead of kept as heap.
+# Under a cold-cache install burst this halves worker memory (measured: 520 -> 231 MiB peak).
 ENV PATH=/app/.venv/bin:/usr/bin:/usr/sbin \
     LANG=C.UTF-8 \
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_MMAP_THRESHOLD_=131072 \
+    MALLOC_TRIM_THRESHOLD_=131072 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONSAFEPATH=1 \
     PYTHONUNBUFFERED=1 \

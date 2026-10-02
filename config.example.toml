@@ -39,7 +39,10 @@ audit_passthrough = true               # forward `npm audit` bulk advisory queri
 
 # --- caches -------------------------------------------------------------------------------------
 [cache]
-metadata_max_mb = 256                  # in-memory, per worker
+metadata_max_mb = 1024                 # upstream metadata + rendered responses: one SQLite file (data_dir/
+                                       # metadata-cache.db) shared by all workers, kept in the OS page cache
+metadata_memory_mb = 64                # parsed metadata and small responses in process memory, in total
+                                       # across all workers (each worker holds its share)
 artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs
 artifacts_max_gb = 20                  # LRU eviction above 90% of this
 scrub_interval_hours = 24              # re-hash cached files to detect disk corruption

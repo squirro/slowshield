@@ -25,6 +25,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from slowshield import __version__, telemetry
 from slowshield.blocklist import Blocklist
 from slowshield.cache.artifacts import ArtifactCache
+from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock, SystemClock
 from slowshield.config import ConfigHolder, LoadedConfig, load
@@ -85,7 +86,9 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
         recorder=recorder,
         artifact_cache=cache,
         artifacts=artifacts,
-        metadata_cache=LRUCache(int(raw.cache.metadata_max_mb * (1 << 20))),
+        # The memory budget is a total across workers; each worker holds its share.
+        metadata_cache=LRUCache(int(raw.cache.metadata_memory_mb * (1 << 20) / max(1, raw.workers))),
+        metadata_store=KVStore(cfg.metadata_store_path, int(raw.cache.metadata_max_mb * (1 << 20)), clock.now),
     )
 
 
@@ -140,6 +143,7 @@ class SlowShield:
         self.ctx = ctx
         ctx.started_at = self.clock.now()
         await asyncio.to_thread(ctx.db.open)
+        await asyncio.to_thread(ctx.metadata_store.open)
         ctx.artifact_cache.prepare()
         for w in self.cfg.warnings:
             log.warning(w)
@@ -180,6 +184,7 @@ class SlowShield:
             self.ctx.recorder.flush()
             await self.ctx.upstream.close()
             await asyncio.to_thread(self.ctx.db.close)
+            self.ctx.metadata_store.close()
         self._leader.release()
         telemetry.shutdown()
 
@@ -194,7 +199,8 @@ class SlowShield:
             "slowshield.cache.size",
             lambda: [
                 (ctx.artifact_cache.size_bytes, {"cache": "artifact"}),
-                (ctx.metadata_cache.bytes, {"cache": "metadata"}),
+                (ctx.metadata_store.usage(max_age=60)[1], {"cache": "metadata"}),
+                (ctx.metadata_cache.bytes, {"cache": "metadata_memory"}),
             ],
             unit="By",
         )
@@ -202,7 +208,8 @@ class SlowShield:
             "slowshield.cache.limit",
             lambda: [
                 (ctx.artifact_cache.max_bytes, {"cache": "artifact"}),
-                (ctx.metadata_cache.max_bytes, {"cache": "metadata"}),
+                (ctx.metadata_store.max_bytes, {"cache": "metadata"}),
+                (ctx.metadata_cache.max_bytes, {"cache": "metadata_memory"}),
             ],
             unit="By",
         )
@@ -252,6 +259,7 @@ class SlowShield:
             try:
                 await ctx.artifact_cache.evict()
                 await asyncio.to_thread(ctx.artifact_cache.purge_trash)
+                await ctx.metadata_store.aevict()
                 now = ctx.clock.now()
                 raw = ctx.cfg.raw
                 if now - last_retention > 3600:

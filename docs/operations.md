@@ -49,8 +49,12 @@ The old `config.toml` keeps working (unsupported keys are ignored with a warning
 
 ## Capacity planning
 
-* Memory: ~60–100 MB per worker at idle plus the metadata cache (`cache.metadata_max_mb`, per worker).
-* Disk: the artifact cache cap (`cache.artifacts_max_gb`) plus a few hundred MB for the database.
+* Memory: about 200 MB per worker under load plus `cache.metadata_memory_mb` (default 64 MB, in total across all workers).
+  Upstream metadata and rendered responses live in `data_dir/metadata-cache.db` (`cache.metadata_max_mb`,
+  default 1 GB), shared by all workers and kept in the OS page cache, which the kernel can reclaim. At
+  startup SlowShield warns if the workers and the in-memory budget do not fit the container's memory limit.
+* Disk: the artifact cache cap (`cache.artifacts_max_gb`), the metadata cache cap (`cache.metadata_max_mb`) and
+  a few hundred MB for the database.
 * CPU: metadata responses are cached; artifact streaming is I/O bound. Start with 1–2 workers.
 
 ## Alerts

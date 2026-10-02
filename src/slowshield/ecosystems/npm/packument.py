@@ -8,6 +8,7 @@ signature and attestation the registry published survives untouched.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -106,6 +107,7 @@ class Packument:
     etag: str | None
     raw_size: int
     unpublished: bool = False
+    content_id: str = ""  # hash of the upstream bytes: rendered bodies are keyed by it
     by_tarball_path: dict[str, str] = field(default_factory=dict)  # "/pkg/-/pkg-1.0.0.tgz" -> version
 
 
@@ -169,7 +171,83 @@ def parse(raw: bytes, *, name: str, etag: str | None, upstream_bases: list[str])
         etag=etag,
         raw_size=len(raw),
         unpublished=bool(time_map.get("unpublished")) and not versions,
+        content_id=hashlib.blake2b(raw, digest_size=12).hexdigest(),
         by_tarball_path=by_path,
+    )
+
+
+class IndexEntry(msgspec.Struct, array_like=True, frozen=True):
+    version: str
+    published: float | None
+    tarball: str | None
+    integrity: str | None
+    shasum: str | None
+    size: int | None
+
+
+class _IndexWire(msgspec.Struct, array_like=True):
+    name: str
+    etag: str | None
+    content_id: str
+    unpublished: bool
+    dist_tags: dict[str, str]
+    entries: list[IndexEntry]
+    by_tarball_path: dict[str, str]
+
+
+_index_enc = msgspec.msgpack.Encoder()
+_index_dec = msgspec.msgpack.Decoder(_IndexWire)
+
+
+@dataclass(slots=True)
+class Index:
+    """What policy and tarball requests need from a packument: about 2 % of its size (no manifests, readme,
+    maintainers or time map), so a burst of tarball requests never holds full documents in memory."""
+
+    name: str
+    etag: str | None
+    content_id: str
+    unpublished: bool
+    dist_tags: dict[str, str]
+    versions: dict[str, IndexEntry]  # upstream order
+    by_tarball_path: dict[str, str]
+
+    @property
+    def weight(self) -> int:
+        """Approximate memory: ~300 bytes per version for the entry, its strings and the two dicts."""
+        return 300 * len(self.versions) + 2048
+
+    def encode(self) -> bytes:
+        wire = _IndexWire(
+            self.name,
+            self.etag,
+            self.content_id,
+            self.unpublished,
+            self.dist_tags,
+            list(self.versions.values()),
+            self.by_tarball_path,
+        )
+        return _index_enc.encode(wire)
+
+    @classmethod
+    def decode(cls, data: bytes) -> Index:
+        w = _index_dec.decode(data)
+        versions = {e.version: e for e in w.entries}
+        return cls(w.name, w.etag, w.content_id, w.unpublished, w.dist_tags, versions, w.by_tarball_path)
+
+
+def index_of(p: Packument) -> Index:
+    return Index(
+        name=p.name,
+        etag=p.etag,
+        content_id=p.content_id,
+        unpublished=p.unpublished,
+        dist_tags=dict(p.dist_tags),
+        versions={
+            v.version: IndexEntry(v.version, v.published, v.tarball, v.integrity, v.shasum, v.size)
+            for v in p.versions.values()
+        },
+        by_tarball_path=dict(p.by_tarball_path),
     )
 
 

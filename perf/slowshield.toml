@@ -26,6 +26,7 @@ enabled = true
 enabled = false
 
 [cache]
-metadata_max_mb = 256
+metadata_max_mb = 1024
+metadata_memory_mb = 64
 artifacts_enabled = true
 artifacts_max_gb = 4

@@ -549,3 +549,30 @@ async def test_writer_survives_cancelled_waiters(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="stopped"):
         db.writer.submit(lambda _c: None).result(1)
     db.writer.enqueue(lambda _c: None)  # dropped quietly
+
+
+async def test_streamed_artifact_skips_empty_chunks() -> None:
+    """HTTP/2 upstreams end with an empty DATA frame; it must not become a body message of its own."""
+    from slowshield.ecosystems.artifacts import StreamedArtifact
+
+    async def body():  # type: ignore[no-untyped-def]
+        yield b"tarball"
+        yield b""
+
+    sent: list[dict] = []
+    closed: list[bool] = []
+
+    async def send(message):  # type: ignore[no-untyped-def]
+        sent.append(message)
+
+    async def on_close() -> None:
+        closed.append(True)
+
+    response = StreamedArtifact(200, {"Content-Length": "7"}, body(), on_close)
+    await response({"type": "http"}, None, send)  # type: ignore[arg-type]
+    assert [(m["type"], m.get("body"), m.get("more_body")) for m in sent] == [
+        ("http.response.start", None, None),
+        ("http.response.body", b"tarball", True),
+        ("http.response.body", b"", False),
+    ]
+    assert closed == [True]

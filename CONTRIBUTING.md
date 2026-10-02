@@ -2,6 +2,15 @@
 
 Thanks for helping! A few ground rules keep SlowShield fast and safe.
 
+## Issues first
+
+For now, contributions come in as [issues](https://github.com/squirro/slowshield/issues/new/choose): bug
+reports, requests for the next ecosystem and notes on how you run SlowShield. Pull requests are limited to
+the maintainers while the project settles. If you have a fix, describe it in an issue; a link to the commit
+in your fork helps. Report vulnerabilities privately, never in an issue: see [SECURITY.md](SECURITY.md).
+
+The setup and guidelines below apply to every change, including the ones in your fork.
+
 ## Setup
 
 ```bash
@@ -25,7 +34,7 @@ uvx zizmor==1.30.1 --persona=pedantic .github/   # when touching workflows
 - **Dependencies**: add with `uv add`, keep `uv.lock` committed. The lockfile must reference public PyPI only (CI
   checks this); if your environment points uv at a private mirror, lock with
   `UV_INDEX_URL= uv lock --default-index https://pypi.org/simple`. Prefer components with a proven
-  performance and security track record; justify new ones in the PR.
+  performance and security track record; justify new ones in the issue or PR.
 - **Metrics, dashboards and alerts** are code (`observability/`). Document a new or renamed metric in
   `observability/METRICS.md`, edit the generators rather than the JSON, and run
   `uv run python observability/sync.py` and `uv run python observability/check.py` (CI runs the check).

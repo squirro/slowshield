@@ -8,7 +8,7 @@ This file is the short version for people working in the repository.
 
 A shield that is **solid on the side where things arrive** and **open (dotted) on the other**. Fast things, like
 a release published minutes ago or an attack, hit the solid side and stop there: the chevrons cut into it are
-what got stopped. Patient, verified packages pass through the dotted side. Tagline: **Deflect, don't obstruct.**
+what got stopped. Patient, verified packages pass through the dotted side. Tagline: **Safety through patience.**
 
 ## Files
 

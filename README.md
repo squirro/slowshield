@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="brand/readme-banner-dark.svg">
-    <img src="brand/readme-banner.svg" alt="SlowShield: deflect, don't obstruct" width="100%">
+    <img src="brand/readme-banner.svg" alt="SlowShield: safety through patience" width="100%">
   </picture>
 </p>
 

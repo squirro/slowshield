@@ -25,7 +25,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 
 HERE = Path(__file__).resolve().parent
 FONT_VF = HERE / "fonts" / "SchibstedGrotesk-VF.ttf"
-TAGLINE = "Deflect, don't obstruct."
+TAGLINE = "Safety through patience."
 
 # ============================================================================ palette: Night Field
 # Text and status colours clear WCAG AA (4.5:1) on surface, ground and their own badge tint (14% light, 22% dark).
@@ -297,7 +297,7 @@ def social_preview() -> str:
     title, _ = wordmark(470, 250, 104, p)
     tag, _ = text_el(TAGLINE, 650, 42, 474, 318, p["brand"])
     l1, _ = text_el("Supply-chain shield for PyPI and npm.", 400, 30, 474, 392, p["ink"])
-    l2, _ = text_el("New releases wait. Known malware never arrives.", 400, 30, 474, 436, p["muted"])
+    l2, _ = text_el("Known-bad is blocked. Brand-new is held back.", 400, 30, 474, 436, p["muted"])
     foot, _ = text_el("slowshield.net  ·  open source, Apache-2.0", 500, 22, 474, 560, p["muted"])
     inner = (
         f'<defs><radialGradient id="g" cx="0.22" cy="0.45" r="0.55"><stop offset="0" stop-color="{p["brand"]}" '
@@ -308,7 +308,7 @@ def social_preview() -> str:
         + title + tag + l1 + l2
         + f'<path d="M474 500 H1200" stroke="{p["line"]}" stroke-width="2"/>' + foot
     )  # fmt: skip
-    return svg(inner, 1280, 640, "SlowShield: deflect, don't obstruct")
+    return svg(inner, 1280, 640, "SlowShield: safety through patience")
 
 
 def readme_banner(p: dict[str, str], dark: bool) -> str:
@@ -316,7 +316,7 @@ def readme_banner(p: dict[str, str], dark: bool) -> str:
     title, _ = wordmark(x, 132, 64, p)
     tag, _ = text_el(TAGLINE, 650, 26, x + 2, 176, p["brand"])
     sub, _ = text_el(
-        "A supply-chain shield for PyPI and npm: new releases wait, malware never arrives.",
+        "A supply-chain shield for PyPI and npm: known-bad is blocked, brand-new is held back.",
         400,
         19,
         x + 2,
@@ -329,7 +329,7 @@ def readme_banner(p: dict[str, str], dark: bool) -> str:
         + f'<g transform="translate(76 52) scale(2.75)">{mark_body("mark", "m", fill=p["brand"])}</g>'
         + title + tag + sub
     )  # fmt: skip
-    return svg(inner, 1200, 280, "SlowShield: deflect, don't obstruct")
+    return svg(inner, 1200, 280, "SlowShield: safety through patience")
 
 
 def sprite_html() -> str:

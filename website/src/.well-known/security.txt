@@ -1,5 +1,5 @@
 Contact: https://github.com/squirro/slowshield/security/advisories/new
 Policy: https://github.com/squirro/slowshield/security/policy
 Preferred-Languages: en, de
-Canonical: https://slowshield.net/.well-known/security.txt
+Canonical: https://slowshield.org/.well-known/security.txt
 Expires: 2027-10-01T00:00:00Z

@@ -1,3 +1,3 @@
 User-agent: *
 Allow: /
-Sitemap: https://slowshield.net/sitemap.xml
+Sitemap: https://slowshield.org/sitemap.xml

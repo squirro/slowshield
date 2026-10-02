@@ -1,9 +1,9 @@
 name: Website
 
-# slowshield.net on Cloudflare Workers static assets.
+# slowshield.org on Cloudflare Workers static assets.
 #   PR (same repository) -> build -> Worker Preview on workers.dev (separate preview Worker, own token)
 #   PR closed            -> delete that Preview
-#   push to main         -> build -> production deploy -> smoke test against https://slowshield.net
+#   push to main         -> build -> production deploy -> smoke test against https://slowshield.org
 # Fork PRs only build and validate the site: no secrets, no preview.
 # Environment `preview` holds only the preview Worker's token (no branch restriction, so PR branches can
 # use it); `production` (main and release tags only) holds the production token.
@@ -172,7 +172,7 @@ jobs:
         run: npx --no-install wrangler preview delete -c wrangler.preview.jsonc --name "pr-${PR_NUMBER}" --skip-confirmation
 
   deploy:
-    name: Deploy slowshield.net
+    name: Deploy slowshield.org
     needs: [build]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
@@ -182,7 +182,7 @@ jobs:
     # Environment secrets are restricted to the main branch (deployment branch policy).
     environment:
       name: production
-      url: https://slowshield.net/
+      url: https://slowshield.org/
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -218,15 +218,15 @@ jobs:
           set -euo pipefail
           css="$(grep -oE '/assets/site\.[0-9a-f]{10}\.css' dist/site/index.html | head -n1)"
           for _ in $(seq 1 30); do
-            curl -fsS https://slowshield.net/ | grep -qF "$css" && break
+            curl -fsS https://slowshield.org/ | grep -qF "$css" && break
             sleep 2
           done
-          curl -fsS https://slowshield.net/ | grep -qF "$css"
-          headers="$(curl -fsS -o /dev/null -D - https://slowshield.net/)"
+          curl -fsS https://slowshield.org/ | grep -qF "$css"
+          headers="$(curl -fsS -o /dev/null -D - https://slowshield.org/)"
           for h in content-security-policy strict-transport-security x-content-type-options \
                    referrer-policy permissions-policy cross-origin-opener-policy \
                    cross-origin-resource-policy x-frame-options; do
             grep -qi "^${h}:" <<<"$headers" || { echo "missing header: ${h}"; exit 1; }
           done
-          curl -fsS -o /dev/null -D - "https://slowshield.net${css}" | grep -qi '^cache-control: public, max-age=31536000, immutable'
-          test "$(curl -s -o /dev/null -w '%{http_code}' https://slowshield.net/does-not-exist)" = 404
+          curl -fsS -o /dev/null -D - "https://slowshield.org${css}" | grep -qi '^cache-control: public, max-age=31536000, immutable'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://slowshield.org/does-not-exist)" = 404

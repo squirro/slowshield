@@ -1,4 +1,4 @@
-/* slowshield.net — static, CSP-strict (no inline styles/scripts), dark-first, motion via CSS
+/* slowshield.org — static, CSP-strict (no inline styles/scripts), dark-first, motion via CSS
    scroll-driven animations with an IntersectionObserver fallback (site.js). */
 
 @view-transition { navigation: auto; }

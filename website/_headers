@@ -1,4 +1,4 @@
-# slowshield.net response headers (Cloudflare Workers static assets). build.py copies this file into the
+# slowshield.org response headers (Cloudflare Workers static assets). build.py copies this file into the
 # site and checks it: the security headers below are required, and every page needs a Cache-Control rule.
 #
 # Matching rules apply in file order. A later rule that sets a header already set by an earlier

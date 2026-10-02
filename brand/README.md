@@ -1,7 +1,7 @@
 # SlowShield brand
 
 The full guide (mark, lockups, colour, type, motion, voice, downloads) is the website page
-[`website/src/brand/index.html`](../website/src/brand/index.html), published at <https://slowshield.net/brand/>.
+[`website/src/brand/index.html`](../website/src/brand/index.html), published at <https://slowshield.org/brand/>.
 This file is the short version for people working in the repository.
 
 ## The idea

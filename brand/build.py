@@ -5,7 +5,7 @@
 
 Dev-only tooling. Writes the SVG masters, `tokens.css` and the website font subset into brand/. All text in
 the logos is outlined from the brand typeface (fonts/, SIL OFL 1.1), so they render identically everywhere.
-The style guide is website/src/brand/index.html (https://slowshield.net/brand/).
+The style guide is website/src/brand/index.html (https://slowshield.org/brand/).
 """
 
 from __future__ import annotations
@@ -298,7 +298,7 @@ def social_preview() -> str:
     tag, _ = text_el(TAGLINE, 650, 42, 474, 318, p["brand"])
     l1, _ = text_el("Supply-chain shield for PyPI and npm.", 400, 30, 474, 392, p["ink"])
     l2, _ = text_el("Known-bad is blocked. Brand-new is held back.", 400, 30, 474, 436, p["muted"])
-    foot, _ = text_el("slowshield.net  ·  open source, Apache-2.0", 500, 22, 474, 560, p["muted"])
+    foot, _ = text_el("slowshield.org  ·  open source, Apache-2.0", 500, 22, 474, 560, p["muted"])
     inner = (
         f'<defs><radialGradient id="g" cx="0.22" cy="0.45" r="0.55"><stop offset="0" stop-color="{p["brand"]}" '
         f'stop-opacity=".22"/><stop offset="1" stop-color="{p["brand"]}" stop-opacity="0"/></radialGradient></defs>'

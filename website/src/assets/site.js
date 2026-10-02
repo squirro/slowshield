@@ -1,4 +1,4 @@
-// slowshield.net — progressive enhancement only; the page is complete without JavaScript.
+// slowshield.org — progressive enhancement only; the page is complete without JavaScript.
 const root = document.documentElement;
 root.classList.remove("no-js");
 root.classList.add("js");

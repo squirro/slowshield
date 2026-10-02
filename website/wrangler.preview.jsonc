@@ -1,4 +1,4 @@
-// PR previews for slowshield.net: a SEPARATE Worker so the preview API token (scoped to this Worker
+// PR previews for slowshield.org: a SEPARATE Worker so the preview API token (scoped to this Worker
 // only) cannot touch production. Each PR becomes a Worker Preview:
 //   https://pr-<number>-slowshield-website-preview.<account-subdomain>.workers.dev
 // Cloudflare adds `X-Robots-Tag: noindex` to workers.dev Preview URLs; _headers adds it as well.

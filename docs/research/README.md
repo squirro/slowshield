@@ -1,6 +1,6 @@
 # Research notes (as of 2026-10-02)
 
-Background research behind the roadmap on slowshield.net. Claims were checked against live endpoints and
+Background research behind the roadmap on slowshield.org. Claims were checked against live endpoints and
 primary sources where possible; anything marked *unverified* was not. Re-check before building on it.
 
 | Note | Question |

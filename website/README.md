@@ -1,4 +1,4 @@
-# slowshield.net
+# slowshield.org
 
 The public website: a static site in `src/`, built by `build.py` and served by Cloudflare Workers static assets
 (Free plan, no Worker script). The response headers, including the CSP, live in `_headers`.
@@ -7,8 +7,9 @@ The public website: a static site in `src/`, built by `build.py` and served by C
 |---|---|
 | `build.py` | Builds `src/` into `dist/site`, fingerprints CSS/JS, copies brand assets and `_headers`, and fails on CSP violations, broken links or anchors, a weakened `_headers` or Cloudflare limits |
 | `_headers` | Security headers on every response, and Cache-Control per path |
-| `wrangler.jsonc` | Production Worker `slowshield-website` (custom domain `slowshield.net`) |
+| `wrangler.jsonc` | Production Worker `slowshield-website` (custom domain `slowshield.org`) |
 | `wrangler.preview.jsonc` | Separate Worker `slowshield-website-preview` for per-PR previews |
+| `dns/*.zone` | Target DNS records of `slowshield.org` and the redirect zones `slowshield.net`, `slowshield.com` |
 | `package.json`, `package-lock.json` | Pinned Wrangler, locked against registry.npmjs.org |
 | `../.github/workflows/website.yml` | Build on every PR, preview for same-repository PRs, deploy on push to `main` |
 
@@ -26,7 +27,7 @@ cd website && npm ci --ignore-scripts && npx wrangler dev -c wrangler.jsonc --ip
 - **Pull requests** build and validate the site. Same-repository PRs also get a Worker Preview on workers.dev
   (linked as "View deployment" on the PR, never indexed), deleted when the PR closes. Fork PRs only build: no
   secrets, no preview.
-- **Push to `main`** deploys `slowshield.net`, then checks that the new CSS is live, that all security headers
+- **Push to `main`** deploys `slowshield.org`, then checks that the new CSS is live, that all security headers
   are present, that fingerprinted assets are immutable and that a missing page returns 404.
 - **Rollback**: revert the commit on `main`, or run `npx wrangler rollback -c wrangler.jsonc` (also in the
   dashboard under Deployments).
@@ -41,16 +42,21 @@ cd website && npm ci --ignore-scripts && npx wrangler dev -c wrangler.jsonc --ip
 
 ### 2. DNS: move the zones from Gandi to Cloudflare
 
-1. Add `slowshield.net`, `slowshield.com` and `slowshield.org` (Full setup, Free plan).
-2. Review the imported records:
-   - Delete the Gandi parking records (apex `A 217.70.184.38`, `www CNAME webredir.vip.gandi.net`). A record
-     left on the apex blocks the Worker custom domain.
-   - Mail: keep the Gandi `MX` and `SPF` records only if Gandi mailboxes are used. Otherwise publish "no mail":
-     `MX 0 .`, `TXT "v=spf1 -all"` and `_dmarc TXT "v=DMARC1; p=reject"`.
-3. At Gandi, switch each domain to the two Cloudflare nameservers and wait until the zone is **Active**.
-4. SSL/TLS > Edge Certificates, per zone: **Always Use HTTPS** on, minimum TLS 1.2. Leave the zone HSTS
+`slowshield.org` is the canonical host; `slowshield.net` and `slowshield.com` only redirect to it. The target
+records of each zone are in [`dns/`](dns/), in the format Cloudflare's own export uses.
+
+1. Add `slowshield.org`, `slowshield.net` and `slowshield.com` (Full setup, Free plan).
+2. Delete every record Cloudflare's scan imported from Gandi: the parking records (apex `A 217.70.184.38`,
+   `www CNAME webredir.vip.gandi.net`) and Gandi's mail (`MX spool.mail.gandi.net` / `fb.mail.gandi.net`,
+   `TXT "v=spf1 include:_mailcust.gandi.net ?all"`). A record left on the `slowshield.org` apex blocks the
+   Worker custom domain.
+3. DNS > Records > Import and Export: import `dns/<zone>.zone` into each zone with **Proxy imported DNS
+   records** on. The files publish "no mail" (`MX 0 .`, `v=spf1 -all`, DMARC `p=reject`); if Gandi mailboxes
+   are wanted after all, use Gandi's `MX` and `SPF` instead.
+4. At Gandi, switch each domain to the two Cloudflare nameservers and wait until the zone is **Active**.
+5. SSL/TLS > Edge Certificates, per zone: **Always Use HTTPS** on, minimum TLS 1.2. Leave the zone HSTS
    setting off; HSTS comes from `_headers`.
-5. DNS > Settings: enable DNSSEC and add the DS record at Gandi.
+6. DNS > Settings: enable DNSSEC and add the DS record at Gandi.
 
 ### 3. First deploy, from a laptop
 
@@ -65,19 +71,23 @@ npx wrangler deploy -c wrangler.preview.jsonc    # creates slowshield-website-pr
 ```
 
 Attach the domain: Workers & Pages > `slowshield-website` > Settings > Domains & Routes > Add > Custom domain >
-`slowshield.net`. Cloudflare creates the DNS record and the certificate. Check:
+`slowshield.org`. Cloudflare creates the DNS record and the certificate. Check:
 
 ```sh
-curl -sI https://slowshield.net/ | grep -iE 'content-security-policy|strict-transport|cache-control'
-curl -s -o /dev/null -w '%{http_code}\n' https://slowshield.net/nope   # 404
+curl -sI https://slowshield.org/ | grep -iE 'content-security-policy|strict-transport|cache-control'
+curl -s -o /dev/null -w '%{http_code}\n' https://slowshield.org/nope   # 404
 ```
 
 ### 4. Redirects to the canonical host
 
-- `www.slowshield.net`: a proxied `A www 192.0.2.1` record plus a Redirect Rule *Hostname equals
-  www.slowshield.net* → `concat("https://slowshield.net", http.request.uri.path)`, 308, query string kept.
-- `slowshield.com` and `slowshield.org`: in each zone, proxied `A @ 192.0.2.1` and `A www 192.0.2.1`, plus one
-  Redirect Rule for both host names with the same target.
+One Redirect Rule per zone (Rules > Redirect Rules), each a 308 with the query string kept and the target
+`concat("https://slowshield.org", http.request.uri.path)`:
+
+| Zone | When incoming requests match |
+|---|---|
+| `slowshield.org` | `(http.host eq "www.slowshield.org")` |
+| `slowshield.net` | `(http.host in {"slowshield.net" "www.slowshield.net"})` |
+| `slowshield.com` | `(http.host in {"slowshield.com" "www.slowshield.com"})` |
 
 ### 5. API tokens (Manage Account > Account API Tokens, account-owned)
 
@@ -104,7 +114,7 @@ Scripts: Edit** for the preview token.
 
 1. Open a PR that touches `website/`: the preview link appears on the PR, and `curl -sI <url>` shows
    `x-robots-tag: noindex` and the security headers. Closing the PR deletes the preview.
-2. Merge: the deploy job runs its smoke test against https://slowshield.net.
+2. Merge: the deploy job runs its smoke test against https://slowshield.org.
 
 Worker Previews are in open beta. If a preview URL answers with error 1042
 (https://github.com/cloudflare/workers-sdk/issues/15890), make sure the preview Worker was deployed once

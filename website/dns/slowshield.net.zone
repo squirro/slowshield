@@ -1,0 +1,10 @@
+;; slowshield.net: redirect-only; a Redirect Rule sends every request to https://slowshield.org.
+;; Import: Cloudflare > slowshield.net > DNS > Records > Import and Export, "Proxy imported DNS records" on.
+;; Both names only have to resolve to Cloudflare (192.0.2.1 is the documentation range, never reached).
+;; No mail is sent or received on this domain.
+
+slowshield.net.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
+www.slowshield.net.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
+slowshield.net.	1	IN	MX	0 .
+slowshield.net.	1	IN	TXT	"v=spf1 -all"
+_dmarc.slowshield.net.	1	IN	TXT	"v=DMARC1; p=reject"

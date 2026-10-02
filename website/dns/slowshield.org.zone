@@ -1,0 +1,10 @@
+;; slowshield.org: canonical host of the website (Worker `slowshield-website`).
+;; Import: Cloudflare > slowshield.org > DNS > Records > Import and Export, "Proxy imported DNS records" on.
+;; The apex has no record here on purpose: attaching the Worker custom domain creates it, and an apex
+;; record left in the zone blocks that. www only has to resolve to Cloudflare; a Redirect Rule answers it.
+;; No mail is sent or received on this domain.
+
+www.slowshield.org.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
+slowshield.org.	1	IN	MX	0 .
+slowshield.org.	1	IN	TXT	"v=spf1 -all"
+_dmarc.slowshield.org.	1	IN	TXT	"v=DMARC1; p=reject"

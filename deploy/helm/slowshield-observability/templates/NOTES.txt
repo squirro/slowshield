@@ -1,0 +1,25 @@
+{{- $ns := .Release.Namespace -}}
+{{- $alloy := include "obs.componentName" (list . "alloy") -}}
+SlowShield observability stack (Alloy, Prometheus, Loki, Tempo, Grafana) in namespace {{ $ns }}.
+
+1. Send SlowShield's telemetry here: in the SlowShield release (namespace {{ include "obs.slowshieldNamespace" . }}) set
+     telemetry.otlpEndpoint=http://{{ $alloy }}.{{ $ns }}.svc.cluster.local:4318
+     caddy.metrics=true
+   e.g.
+     helm upgrade slowshield deploy/helm/slowshield -n {{ include "obs.slowshieldNamespace" . }} --reuse-values \
+       --set telemetry.otlpEndpoint=http://{{ $alloy }}.{{ $ns }}.svc.cluster.local:4318 --set caddy.metrics=true
+
+2. Open Grafana (user {{ .Values.grafana.admin.user }}):
+     kubectl -n {{ $ns }} port-forward svc/{{ include "obs.componentName" (list . "grafana") }} 3000:{{ .Values.grafana.service.port }}
+     open http://127.0.0.1:3000
+   Password:
+     kubectl -n {{ $ns }} get secret {{ include "obs.grafanaAdminSecret" . }} -o jsonpath='{.data.{{ .Values.grafana.admin.passwordKey }}}' | base64 -d; echo
+
+   The SlowShield folder holds the Overview, Security, Upstream & Performance, Feeds, Caddy / TLS and
+   Traces dashboards and the alert rules.
+{{- if not (include "obs.alertingSecret" .) }}
+
+3. Alert notifications are OFF (no receiver). Alerts are still evaluated and shown in Grafana. To send them:
+     kubectl -n {{ $ns }} create secret generic slowshield-alerting --from-literal=url='https://hooks.example.com/...'
+     helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set alerting.existingSecret=slowshield-alerting
+{{- end }}

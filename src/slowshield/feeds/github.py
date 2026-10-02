@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 
 ECOSYSTEMS = {"pip": "pypi", "npm": "npm"}
 MAX_PAGES = 200
+PER_PAGE = 100
 _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 
@@ -121,7 +122,7 @@ class GithubFeed:
         changed = 0
         newest = mark
         for withdrawn in (False, True):
-            url = f"{api}/advisories?type=malware&ecosystem={gh_eco}&per_page=100&sort=updated&direction=asc"
+            url = f"{api}/advisories?type=malware&ecosystem={gh_eco}&per_page={PER_PAGE}&sort=updated&direction=asc"
             if mark:
                 url += "&updated=" + quote(f">={mark}")
             if withdrawn:

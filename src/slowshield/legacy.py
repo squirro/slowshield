@@ -172,17 +172,20 @@ def import_legacy(source: Path, target: Path, *, dry_run: bool = False) -> dict[
     try:
         conn.execute("BEGIN IMMEDIATE")
         conn.executemany(
-            "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, upstream_digest, first_seen, last_seen) "
+            "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, upstream_digest, "
+            "first_seen, last_seen) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, path) DO NOTHING",
             artifacts,
         )
         conn.executemany(
-            "INSERT OR IGNORE INTO blocklist (ecosystem, name, version, version_range, source, advisory_id, reason, url, first_seen, updated) "
+            "INSERT OR IGNORE INTO blocklist (ecosystem, name, version, version_range, source, advisory_id, reason, "
+            "url, first_seen, updated) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             blocks,
         )
         conn.executemany(
-            "INSERT INTO events (ts, type, ecosystem, package, version, count, details) VALUES (?, ?, ?, ?, ?, ?, '{\"legacy\":true}')",
+            "INSERT INTO events (ts, type, ecosystem, package, version, count, details) VALUES (?, ?, ?, ?, ?, ?, "
+            "'{\"legacy\":true}')",
             [(day, t, e, p, v, n) for (day, t, e, p, v), n in events.items()],
         )
         pkg_tot: dict[tuple[str, str], list[float]] = defaultdict(lambda: [0, 0, 0, 0.0])
@@ -193,15 +196,19 @@ def import_legacy(source: Path, target: Path, *, dry_run: bool = False) -> dict[
             agg[2] += nbytes
             agg[3] = max(agg[3], last)
             conn.execute(
-                "INSERT INTO package_versions (ecosystem, name, version, serves, bytes, last_served) VALUES (?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT (ecosystem, name, version) DO UPDATE SET serves = serves + excluded.serves, bytes = bytes + excluded.bytes, "
+                "INSERT INTO package_versions (ecosystem, name, version, serves, bytes, last_served) VALUES (?, ?, "
+                "?, ?, ?, ?) "
+                "ON CONFLICT (ecosystem, name, version) DO UPDATE SET serves = serves + excluded.serves, bytes = "
+                "bytes + excluded.bytes, "
                 "last_served = max(coalesce(last_served, 0), excluded.last_served)",
                 (eco, pkg, ver, serves, nbytes, last),
             )
         for (eco, pkg), (serves, cached, nbytes, last) in pkg_tot.items():
             conn.execute(
-                "INSERT INTO packages (ecosystem, name, first_seen, last_seen, first_served, last_served, serves, cache_hits, bytes) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name) DO UPDATE SET serves = serves + excluded.serves, "
+                "INSERT INTO packages (ecosystem, name, first_seen, last_seen, first_served, last_served, serves, "
+                "cache_hits, bytes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name) DO UPDATE SET serves = serves + "
+                "excluded.serves, "
                 "cache_hits = cache_hits + excluded.cache_hits, bytes = bytes + excluded.bytes, "
                 "last_served = max(coalesce(last_served, 0), excluded.last_served)",
                 (eco, pkg, last, last, last, last, int(serves), int(cached), int(nbytes)),

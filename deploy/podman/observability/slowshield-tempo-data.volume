@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield observability: tempo data
+
+[Volume]
+VolumeName=slowshield-tempo-data

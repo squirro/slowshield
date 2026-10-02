@@ -111,7 +111,6 @@ class Recorder:
         self._seen[(ecosystem, name)] = now
         if len(self._seen) > 200_000:
             self._seen.clear()
-        ops: list[tuple[str, tuple[Any, ...]]] = []
 
         def op(conn: Any) -> None:
             conn.execute(
@@ -126,8 +125,6 @@ class Recorder:
                     "published = coalesce(excluded.published, published), yanked = excluded.yanked",
                     [(ecosystem, name, v, p, int(y)) for v, p, y in versions],
                 )
-            for sql, params in ops:
-                conn.execute(sql, params)
 
         self.db.writer.enqueue(op)
 
@@ -173,9 +170,11 @@ class Recorder:
                 conn.executemany("INSERT INTO downloads_daily" + upsert, _merge(daily))
             if pkg_rows:
                 conn.executemany(
-                    "INSERT INTO packages (ecosystem, name, first_seen, last_seen, first_served, last_served, serves, cache_hits, bytes) "
+                    "INSERT INTO packages (ecosystem, name, first_seen, last_seen, first_served, last_served, "
+                    "serves, cache_hits, bytes) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name) DO UPDATE SET "
-                    "last_seen = max(last_seen, excluded.last_seen), first_served = coalesce(first_served, excluded.first_served), "
+                    "last_seen = max(last_seen, excluded.last_seen), first_served = coalesce(first_served, "
+                    "excluded.first_served), "
                     "last_served = excluded.last_served, serves = serves + excluded.serves, "
                     "cache_hits = cache_hits + excluded.cache_hits, bytes = bytes + excluded.bytes",
                     [

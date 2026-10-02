@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SlowShield — new releases wait, malware never arrives</title>
+<meta name="description" content="SlowShield is an open-source proxy for package registries. It holds brand-new releases back for a few days, blocks known malware and verifies every byte. PyPI and npm today, everything that downloads tomorrow.">
+<meta name="theme-color" content="#0d1311">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="https://slowshield.net/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SlowShield">
+<meta property="og:title" content="SlowShield — safety through patience">
+<meta property="og:description" content="New releases wait. Malware never arrives. An open-source supply-chain shield for PyPI and npm — and soon everything that downloads.">
+<meta property="og:url" content="https://slowshield.net/">
+<meta property="og:image" content="https://slowshield.net/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.ico" sizes="any">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+<script src="/assets/site.js" type="module"></script>
+</head>
+<body>
+<div class="progress" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <a class="nav-brand" href="#top" aria-label="SlowShield">
+    <img src="/assets/mark-dark.svg" alt="" width="30" height="30" class="on-dark">
+    <img src="/assets/mark.svg" alt="" width="30" height="30" class="on-light">
+    <span>Slow<b>Shield</b></span>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#why">Why</a>
+    <a href="#how">How it works</a>
+    <a href="#edge">Caching</a>
+    <a href="#teams">For teams</a>
+    <a href="#ecosystems">Roadmap</a>
+    <a href="#beyond">Editors &amp; CI</a>
+    <a href="#get-started" class="nav-cta">Get started</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- ============================== HERO ============================== -->
+<section class="hero" id="top">
+  <div class="hero-copy">
+    <p class="eyebrow">Open source · PyPI &amp; npm today · everything that downloads next</p>
+    <h1>New releases wait.<br><span class="grad">Malware never arrives.</span></h1>
+    <p class="lead">SlowShield sits between your people, your pipelines and the public package registries.
+      It holds brand-new releases back for a few days, blocks known malware the moment it is reported,
+      and verifies every byte — so a compromised release never reaches a laptop, a CI runner or production.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#get-started">Get started in five minutes</a>
+      <a class="btn btn-ghost" href="#how">See how it works ↓</a>
+    </div>
+    <div class="terminal" role="img" aria-label="Example: pip install litellm through SlowShield installs the last verified release while the brand-new one is held back">
+      <div class="term-bar"><i></i><i></i><i></i><span>~/project</span></div>
+      <pre><code><span class="t-prompt">$</span> pip install litellm
+<span class="t-dim">Looking in indexes: https://slowshield.example.com/pypi/simple/</span>
+<span class="t-hold">◷ 1.82.8 held back — published 12 minutes ago, unlocks in 6 d 23 h</span>
+<span class="t-ok">✓ Collecting litellm==1.82.6 (sha256 verified, served from cache)</span>
+<span class="t-dim">Successfully installed litellm-1.82.6</span></code></pre>
+    </div>
+  </div>
+  <figure class="hero-art" aria-hidden="true">
+    <svg viewBox="20 20 360 360" class="field">
+      <defs>
+        <radialGradient id="field-fill" cx="50%" cy="50%" r="50%">
+          <stop class="ff-0" offset="0%"/><stop class="ff-1" offset="78%"/><stop class="ff-2" offset="100%"/>
+        </radialGradient>
+      </defs>
+      <circle class="field-body" cx="200" cy="200" r="140" fill="url(#field-fill)"/>
+      <circle class="field-edge e1" cx="200" cy="200" r="140"/>
+      <circle class="field-edge e2" cx="200" cy="200" r="146"/>
+      <g class="core">
+        <rect x="178" y="190" width="18" height="18" rx="3"/><rect x="204" y="190" width="18" height="18" rx="3"/>
+        <rect x="191" y="168" width="18" height="18" rx="3"/>
+      </g>
+      <line class="fast fa1" x1="-22" y1="0" x2="22" y2="0"/>
+      <line class="fast fa2" x1="-22" y1="0" x2="22" y2="0"/>
+      <line class="fast fa3" x1="-22" y1="0" x2="22" y2="0"/>
+      <circle class="ripple ri1" cx="68" cy="152" r="6"/>
+      <circle class="ripple ri2" cx="270" cy="79" r="6"/>
+      <circle class="ripple ri3" cx="332" cy="248" r="6"/>
+      <rect class="slow sl1" x="-8" y="-8" width="16" height="16" rx="3"/>
+      <rect class="slow sl2" x="-8" y="-8" width="16" height="16" rx="3"/>
+      <rect class="slow sl3" x="-8" y="-8" width="16" height="16" rx="3"/>
+    </svg>
+    <figcaption class="field-legend"><span class="lg-fast">fresh &amp; malicious — deflected</span><span class="lg-slow">patient &amp; verified — passes</span></figcaption>
+  </figure>
+  <a class="scroll-hint" href="#why" aria-label="Scroll down"><span></span></a>
+</section>
+
+<!-- ============================== WHY ============================== -->
+<section class="why reveal-group" id="why">
+  <h2 class="reveal">The newest version is the riskiest one you will ever install.</h2>
+  <div class="why-grid">
+    <p class="reveal big">Supply-chain attacks follow the same script: steal a maintainer's token, publish a poisoned
+      release, collect secrets from everyone who installs it before anyone notices.
+      Detection takes hours or days. Your package manager takes milliseconds.</p>
+    <div class="stats reveal">
+      <div class="stat"><span class="num count" data-to="40">40</span><span class="unit">min</span>
+        <p>that the backdoored LiteLLM releases were live on PyPI in March 2026 — long enough to land on thousands of machines.</p></div>
+      <div class="stat"><span class="num count" data-to="7">7</span><span class="unit">days</span>
+        <p>SlowShield's default patience. Long enough for the community, the registries and the threat feeds to catch up.</p></div>
+      <div class="stat"><span class="num">0</span><span class="unit">changes</span>
+        <p>to your code, commands or lockfiles. Same packages, one different URL.</p></div>
+    </div>
+  </div>
+  <figure class="incident reveal">
+    <div class="incident-tag">Case study · March 2026</div>
+    <blockquote>A compromised Trivy release leaked CI credentials. Days later they were used to publish backdoored
+      LiteLLM versions to PyPI, quarantined after roughly 40 minutes. <strong>Behind a 7-day delay, nobody could have
+      installed them.</strong></blockquote>
+    <figcaption>Sources: <a href="https://securitylabs.datadoghq.com/articles/litellm-compromised-pypi-teampcp-supply-chain-campaign/" rel="noopener noreferrer">Datadog Security Labs</a>,
+      <a href="https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/" rel="noopener noreferrer">Unit 42</a></figcaption>
+  </figure>
+</section>
+
+<!-- ============================== HOW (scrollytelling) ============================== -->
+<section class="how" id="how" aria-labelledby="how-title">
+  <div class="how-head">
+    <p class="eyebrow">How it works</p>
+    <h2 id="how-title">Five simple ideas. One proxy.</h2>
+  </div>
+  <div class="story">
+    <div class="story-figure" data-step="1" aria-hidden="true">
+      <svg viewBox="0 0 640 420" class="diagram">
+        <defs>
+          <linearGradient id="beam" x1="0" x2="1"><stop offset="0" stop-opacity="0"/><stop offset=".5"/><stop offset="1" stop-opacity="0"/></linearGradient>
+        </defs>
+        <!-- clients -->
+        <g class="clients">
+          <g class="client c1" transform="translate(40 80)"><rect width="96" height="62" rx="10"/><text x="48" y="38">laptop</text></g>
+          <g class="client c2" transform="translate(40 180)"><rect width="96" height="62" rx="10"/><text x="48" y="38">CI runner</text></g>
+          <g class="client c3" transform="translate(40 280)"><rect width="96" height="62" rx="10"/><text x="48" y="38">prod build</text></g>
+        </g>
+        <!-- registry -->
+        <g class="registry" transform="translate(500 150)">
+          <rect width="110" height="120" rx="14"/>
+          <text x="55" y="34">public</text><text x="55" y="54">registry</text>
+          <g class="reg-pkgs"><rect x="22" y="72" width="18" height="18" rx="3"/><rect x="46" y="72" width="18" height="18" rx="3"/><rect x="70" y="72" width="18" height="18" rx="3"/></g>
+        </g>
+        <!-- links -->
+        <path class="link l-c1" d="M136 111 C210 111 230 210 290 210"/>
+        <path class="link l-c2" d="M136 211 C200 211 230 210 290 210"/>
+        <path class="link l-c3" d="M136 311 C210 311 230 210 290 210"/>
+        <path class="link l-up" d="M350 210 C410 210 440 210 500 210"/>
+        <!-- shield -->
+        <g class="gate" transform="translate(290 150)">
+          <path class="gate-shield" d="M30 0 L60 9 V40 C60 62 47 76 30 82 C13 76 0 62 0 40 V9 Z"/>
+          <path class="gate-spiral" d="M30 20 A16 16 0 0 1 46 40 A14 14 0 0 1 30 54 A12 12 0 0 1 18 40 A10 10 0 0 1 30 30 A8 8 0 0 1 38 40"/>
+          <text class="gate-label" x="30" y="108">slowshield</text>
+        </g>
+        <!-- step 2: held package with clock -->
+        <g class="st st-2" transform="translate(410 196)">
+          <circle class="clock" r="22"/><path class="clock-hand" d="M0 0 V-14"/>
+          <rect class="pkg-hold" x="-9" y="-9" width="18" height="18" rx="3"/>
+          <text class="tag tag-hold" x="0" y="44">held · 6 d 23 h</text>
+        </g>
+        <!-- step 3: malware bounced -->
+        <g class="st st-3">
+          <rect class="pkg-bad bounce" x="420" y="190" width="18" height="18" rx="3"/>
+          <text class="tag tag-bad" x="430" y="250">451 · known malware</text>
+          <path class="shock" d="M356 182 Q366 210 356 238"/>
+        </g>
+        <!-- step 4: verification beam -->
+        <g class="st st-4">
+          <rect class="scan" x="286" y="140" width="68" height="104" fill="url(#beam)"/>
+          <rect class="pkg-ok travel" x="200" y="201" width="18" height="18" rx="3"/>
+          <text class="tag tag-ok" x="320" y="128">sha256 ✓ blake2b ✓ first-seen ✓</text>
+        </g>
+        <!-- step 5: cache -->
+        <g class="st st-5" transform="translate(268 300)">
+          <rect class="cache" width="104" height="64" rx="10"/>
+          <text x="52" y="22">verified cache</text>
+          <rect class="pkg-ok" x="18" y="34" width="16" height="16" rx="3"/><rect class="pkg-ok" x="44" y="34" width="16" height="16" rx="3"/><rect class="pkg-ok" x="70" y="34" width="16" height="16" rx="3"/>
+        </g>
+        <g class="st st-1"><text class="tag" x="320" y="62">one URL for pip · uv · npm · pnpm · yarn · bun</text></g>
+        <g class="st st-5"><text class="tag tag-ok" x="440" y="300">1 download, served many times</text></g>
+      </svg>
+    </div>
+    <ol class="steps">
+      <li class="step" data-step="1">
+        <span class="step-n">01</span>
+        <h3>One URL. Every tool.</h3>
+        <p>Point pip, uv, Poetry, npm, pnpm, Yarn or Bun at SlowShield. Nothing else changes: the same packages, the
+          same commands, the same lockfiles. Developers don't have to think about it — that's the point.</p>
+      </li>
+      <li class="step" data-step="2">
+        <span class="step-n">02</span>
+        <h3>Fresh releases wait their turn.</h3>
+        <p>Anything published less than a few days ago simply isn't there yet. Indexes show the newest release that
+          has stood the test of time, <code>latest</code> moves back to it, and a lockfile that pins a too-new version
+          gets a clear answer: <em>try again in 2 days</em>.</p>
+      </li>
+      <li class="step" data-step="3">
+        <span class="step-n">03</span>
+        <h3>Known malware is blocked within the hour.</h3>
+        <p>Live advisory streams from OSV / OpenSSF and the GitHub Advisory Database are applied automatically.
+          A malicious package or version is refused with HTTP 451 — every time, even for brand-new packages.</p>
+      </li>
+      <li class="step" data-step="4">
+        <span class="step-n">04</span>
+        <h3>Every byte verified. Tampering caught mid-stream.</h3>
+        <p>Each download is checked against the registry's own digests and against the fingerprint recorded the first
+          time anyone fetched it. If the bytes ever change, the transfer is cut off before it completes and your team
+          gets an alert.</p>
+      </li>
+      <li class="step" data-step="5">
+        <span class="step-n">05</span>
+        <h3>Fetched once. Served fast.</h3>
+        <p>Verified artifacts land in a local cache: faster installs and CI, calm during registry outages, and far less
+          traffic on the public infrastructure we all depend on.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================== EDGE / CACHING ============================== -->
+<section class="edge" id="edge">
+  <div class="section-head reveal">
+    <p class="eyebrow">A very fast caching proxy</p>
+    <h2>Put one next to every team, server and build farm.</h2>
+    <p class="lead">SlowShield is also a verified, very fast cache. Each instance is one small container — no database
+      server, no coordination — so run a bunch of them: per office, per region, per CI cluster. Every artifact is
+      fetched from the public registry once, then served at local-network speed.</p>
+  </div>
+  <div class="edge-map reveal" aria-hidden="true">
+    <svg viewBox="0 0 900 360" class="edge-svg">
+      <g class="edge-registry" transform="translate(390 20)">
+        <rect width="120" height="56" rx="12"/><text x="60" y="34">public registries</text>
+      </g>
+      <path class="trunk t1" d="M450 76 C450 130 150 130 150 190"/>
+      <path class="trunk t2" d="M450 76 C450 140 450 140 450 190"/>
+      <path class="trunk t3" d="M450 76 C450 130 750 130 750 190"/>
+      <g class="edge-node n1" transform="translate(120 190)"><path class="en-shield" d="M30 0 L60 9 V40 C60 62 47 76 30 82 C13 76 0 62 0 40 V9 Z"/><text x="-18" y="46" class="en-label end">office · Zurich</text></g>
+      <g class="edge-node n2" transform="translate(420 190)"><path class="en-shield" d="M30 0 L60 9 V40 C60 62 47 76 30 82 C13 76 0 62 0 40 V9 Z"/><text x="78" y="46" class="en-label start">CI cluster</text></g>
+      <g class="edge-node n3" transform="translate(720 190)"><path class="en-shield" d="M30 0 L60 9 V40 C60 62 47 76 30 82 C13 76 0 62 0 40 V9 Z"/><text x="78" y="46" class="en-label start">prod · us-east</text></g>
+      <g class="fan f1"><path d="M150 272 L80 330"/><path d="M150 272 L150 330"/><path d="M150 272 L220 330"/></g>
+      <g class="fan f2"><path d="M450 272 L360 330"/><path d="M450 272 L410 330"/><path d="M450 272 L450 330"/><path d="M450 272 L490 330"/><path d="M450 272 L540 330"/></g>
+      <g class="fan f3"><path d="M750 272 L690 330"/><path d="M750 272 L750 330"/><path d="M750 272 L810 330"/></g>
+      <g class="leaves">
+        <circle cx="80" cy="336" r="6"/><circle cx="150" cy="336" r="6"/><circle cx="220" cy="336" r="6"/>
+        <circle cx="360" cy="336" r="6"/><circle cx="410" cy="336" r="6"/><circle cx="450" cy="336" r="6"/><circle cx="490" cy="336" r="6"/><circle cx="540" cy="336" r="6"/>
+        <circle cx="690" cy="336" r="6"/><circle cx="750" cy="336" r="6"/><circle cx="810" cy="336" r="6"/>
+      </g>
+      <circle class="packet pk1" r="5"/><circle class="packet pk2" r="5"/><circle class="packet pk3" r="5"/>
+    </svg>
+  </div>
+  <div class="edge-benefits">
+    <div class="benefit reveal"><span class="b-ico">⚡</span><h3>Faster builds</h3>
+      <p>Dependencies come from the rack next door instead of another continent. Cache hits are sent zero-copy straight
+        from disk.</p></div>
+    <div class="benefit reveal"><span class="b-ico">⇣</span><h3>Less bandwidth</h3>
+      <p>One upstream download per artifact per site — not one per laptop, per container build, per CI job.</p></div>
+    <div class="benefit reveal"><span class="b-ico">♺</span><h3>Lower cost for everyone</h3>
+      <p>Less egress and transit for you, less load on the community-run registries that the whole ecosystem relies on.</p></div>
+  </div>
+</section>
+
+<!-- ============================== TEAMS ============================== -->
+<section class="teams" id="teams">
+  <div class="section-head reveal">
+    <p class="eyebrow">Built for teams</p>
+    <h2>Safety for everyone, without slowing anyone down.</h2>
+    <p class="lead">Security teams get control and visibility. Developers get installs that just work.</p>
+  </div>
+  <div class="cards">
+    <article class="card reveal"><div class="ico ico-shield"></div><h3>Safe by default</h3>
+      <p>A seven-day delay, malware blocking and verification out of the box. Brand-new packages still install
+        (and are flagged) so nobody's day is ruined. Urgent fix? Release a single version early with one line of config.</p></article>
+    <article class="card reveal"><div class="ico ico-stream"></div><h3>Advisory streams built in</h3>
+      <p>OSV / OpenSSF malicious-packages and the GitHub Advisory Database sync every hour. Feed health is monitored and
+        alerted on. CVE-aware policies are next on the roadmap.</p></article>
+    <article class="card reveal"><div class="ico ico-lock"></div><h3>Tamper-proof</h3>
+      <p>Registry digests plus trust-on-first-use fingerprints, a content-addressed cache that is only written after
+        verification and re-checked on a schedule.</p></article>
+    <article class="card reveal"><div class="ico ico-eye"></div><h3>Know what you depend on</h3>
+      <p>A fast dashboard: installs and trends, newly introduced dependencies, versions waiting in line, and a security
+        timeline down to the machine that tried to install malware.</p></article>
+    <article class="card reveal"><div class="ico ico-leaf"></div><h3>Kind to public registries</h3>
+      <p>One verified download per artifact instead of one per laptop and per pipeline run — with HTTP/2, conditional
+        requests and a shared cache. Open-source infrastructure is a commons; treat it like one.</p></article>
+    <article class="card reveal"><div class="ico ico-chart"></div><h3>Observable</h3>
+      <p>OpenTelemetry metrics, logs and traces, with ready-made Grafana dashboards and alerts for blocked malware,
+        tampering, stale feeds and errors.</p></article>
+    <article class="card reveal"><div class="ico ico-box"></div><h3>Hardened all the way down</h3>
+      <p>Distroless Amazon Linux 2023 images, non-root and read-only. TLS 1.3 with post-quantum key exchange and
+        HTTP/3. Strict CSP. Pinned, audited CI. Every release load-tested against the last.</p></article>
+    <article class="card reveal"><div class="ico ico-rocket"></div><h3>Deploys in minutes</h3>
+      <p>Docker Compose, rootless Podman or a Helm chart. One small container plus Caddy for automatic TLS.
+        No database server — SQLite is embedded.</p></article>
+  </div>
+</section>
+
+<!-- ============================== ECOSYSTEMS ============================== -->
+<section class="ecosystems" id="ecosystems">
+  <div class="section-head reveal">
+    <p class="eyebrow">Ecosystems &amp; roadmap</p>
+    <h2>Python and JavaScript today.<br>Everything under the sun tomorrow.</h2>
+    <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
+      same policy, same dashboard, same guarantees.</p>
+  </div>
+  <div class="sun reveal" aria-hidden="true">
+    <div class="sun-core"><img src="/assets/mark-dark.svg" alt="" width="88" height="88"></div>
+    <div class="ring ring-1">
+      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco soon">OCI images</span>
+      <span class="eco soon">Homebrew</span><span class="eco soon">dnf / yum</span><span class="eco">Maven</span>
+    </div>
+    <div class="ring ring-2">
+      <span class="eco">Cargo</span><span class="eco">Go modules</span><span class="eco">RubyGems</span><span class="eco">NuGet</span>
+      <span class="eco">Composer</span><span class="eco">Helm charts</span><span class="eco">Terraform</span><span class="eco">Hugging Face</span>
+      <span class="eco">apt / deb</span><span class="eco">GitHub Releases</span>
+    </div>
+  </div>
+  <div class="roadmap">
+    <div class="phase now reveal">
+      <span class="when">Available now</span>
+      <h3>Python &amp; JavaScript</h3>
+      <ul>
+        <li>PyPI <em class="diff diff-easy">live</em><span>pip, uv, Poetry, PDM, Pipenv — gated per file on the registry's own upload time</span></li>
+        <li>npm <em class="diff diff-easy">live</em><span>npm, pnpm, Yarn, Bun — per-version publish times, signatures and attestations preserved</span></li>
+        <li>Anything that installs through them <em class="diff diff-easy">live</em><span>editor extensions and MCP servers calling npx or uvx, CI steps, Dockerfiles</span></li>
+      </ul>
+    </div>
+    <div class="phase next reveal">
+      <span class="when">Next</span>
+      <h3>Fast followers</h3>
+      <ul>
+        <li>Cargo <em class="diff diff-easy">easy</em><span>unsigned sparse index with server-side publish times</span></li>
+        <li>Go modules <em class="diff diff-easy">easy</em><span>GOPROXY is made for this; publish time from the Go module index, checksum database passes through</span></li>
+        <li>NuGet <em class="diff diff-easy">easy</em><span>plain JSON registrations with publish dates</span></li>
+        <li>RubyGems <em class="diff diff-medium">medium</em><span>compact index needs consistent rewriting</span></li>
+        <li>VS Code &amp; Open VSX extensions <em class="diff diff-medium">medium</em><span>extension gallery with the same delay, blocklist and hash checks</span></li>
+        <li>GitHub Actions <em class="diff diff-medium">medium</em><span>age and tag-move checks for every <code>uses:</code> step</span></li>
+      </ul>
+    </div>
+    <div class="phase next reveal">
+      <span class="when">Then</span>
+      <h3>Enterprise staples</h3>
+      <ul>
+        <li>Maven &amp; Gradle <em class="diff diff-medium">medium</em><span>no per-version time in the metadata; immutable artifacts make it recoverable</span></li>
+        <li>Container images <em class="diff diff-medium">medium</em><span>tags move — young tags resolve to the last digest that has aged in</span></li>
+        <li>Terraform &amp; OpenTofu providers <em class="diff diff-easy">easy</em><span>official network-mirror protocol</span></li>
+        <li>Helm, pub.dev, JSR <em class="diff diff-easy">easy</em><span>unsigned indexes with publish dates</span></li>
+        <li>JetBrains plugins <em class="diff diff-medium">medium</em><span>custom plugin repository with per-update dates</span></li>
+      </ul>
+    </div>
+    <div class="phase later reveal">
+      <span class="when">Later</span>
+      <h3>The hard ones</h3>
+      <ul>
+        <li>conda, CRAN, Hugging Face, Composer, Julia, Bazel <em class="diff diff-medium">medium</em><span>author-set or missing timestamps — SlowShield keeps its own first-seen ledger</span></li>
+        <li>apt, dnf, apk <em class="diff diff-hard">hard</em><span>signed indexes — opt-in re-signing with your organisation's key</span></li>
+        <li>Homebrew, Hex <em class="diff diff-hard">hard</em><span>signed metadata — cache, verify and refuse at download</span></li>
+        <li>GitHub Releases &amp; ad-hoc downloads <em class="diff diff-hard">hard</em><span>no redirect knob — needs a forward proxy</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="why-hard reveal">
+    <h3>Why some ecosystems are harder</h3>
+    <ul>
+      <li><strong>Signed indexes.</strong> apt, apk, Homebrew and Hex sign their metadata, so a proxy can't quietly remove a version. It can still refuse the download.</li>
+      <li><strong>Untrustworthy dates.</strong> Some timestamps are set by the author or the build (Go commit time, conda builds, Composer). SlowShield records when it first saw each version instead.</li>
+      <li><strong>Exact pins.</strong> Maven, Go and Nix resolve exact versions, so a too-new version means a clear refusal rather than a silent downgrade — which lines up with Renovate's and Dependabot's cooldowns.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================== BEYOND: EDITORS & CI ============================== -->
+<section class="beyond" id="beyond">
+  <div class="section-head reveal">
+    <p class="eyebrow">Beyond package managers</p>
+    <h2>Your editor and your CI run with your keys. Shield them too.</h2>
+    <p class="lead">Attackers go where the trust is: extensions that auto-update on every laptop, and CI steps that
+      run with deployment credentials. The same patience protects both.</p>
+  </div>
+  <div class="beyond-grid">
+    <article class="beyond-card reveal">
+      <div class="bc-tag">Editor extensions</div>
+      <h3>An update live for minutes. 3,800 repositories gone.</h3>
+      <p>In May 2026 a stolen publishing token was used to push a malicious update of a popular VS Code extension.
+        Auto-update rolled it out within minutes; it was pulled in under an hour — not before a GitHub employee's machine
+        was compromised and about 3,800 internal GitHub repositories were stolen. The malware advisory came two weeks
+        later. <strong>An extension gallery that holds updates back for a few days would have hidden that release for its
+        entire life.</strong></p>
+      <ul class="plan">
+        <li>Extension gallery for VSCodium, Windsurf and code-server — and VS Code via its enterprise gallery policy —
+          with the same delay, blocklist and integrity checks</li>
+        <li>Ready-made policy packs: VS Code <code>extensions.autoUpdateDelay</code> and <code>AllowedExtensions</code>, Cursor's install cooldown</li>
+        <li>npm and pip installs triggered by extensions and MCP servers (<code>npx</code>, <code>uvx</code>) are covered today</li>
+      </ul>
+      <p class="src">Sources: <a href="https://www.helpnetsecurity.com/2026/05/20/github-breached-teampcp/" rel="noopener noreferrer">Help Net Security</a>,
+        <a href="https://github.com/nrwl/nx-console/security/advisories/GHSA-c9j4-9m59-847w" rel="noopener noreferrer">Nx Console advisory</a></p>
+    </article>
+    <article class="beyond-card reveal">
+      <div class="bc-tag">GitHub Actions</div>
+      <h3>Same tag, different code.</h3>
+      <p>In March 2025 (tj-actions) and again in March 2026 (Trivy) attackers moved existing version tags to malicious
+        commits. Every workflow using <code>@v1</code> ran the new code on its next build — with its secrets. Advisories
+        followed hours to days later. <strong>A gate that only accepts commits older than your delay, and refuses tags
+        that moved, would have stopped both.</strong></p>
+      <ul class="plan">
+        <li><code>slowshield actions check</code> resolves every <code>uses:</code> — including nested composite actions and
+          reusable workflows — and fails on young commits, moved release tags and blocklisted actions</li>
+        <li>SlowShield records when it first saw each tag → commit pair, because commit dates can be forged</li>
+        <li>Runs as a required pull-request check or a self-hosted runner hook; package installs inside steps already go through SlowShield</li>
+      </ul>
+      <p class="src">Sources: <a href="https://www.wiz.io/blog/new-github-action-supply-chain-attack-reviewdog-action-setup" rel="noopener noreferrer">Wiz</a>,
+        <a href="https://www.stepsecurity.io/blog/10-layers-deep-how-stepsecurity-stops-teampcps-trivy-supply-chain-attack-on-github-actions" rel="noopener noreferrer">StepSecurity</a></p>
+    </article>
+  </div>
+  <p class="beyond-note reveal">Honest limits: nothing that waits longer than your delay before turning malicious is caught by
+    the delay alone — that's what the advisory streams and integrity checks are for. Defence in depth, not magic.</p>
+</section>
+
+<!-- ============================== GET STARTED ============================== -->
+<section class="start" id="get-started">
+  <div class="section-head reveal">
+    <p class="eyebrow">Get started</p>
+    <h2>Up and running before your coffee is cold.</h2>
+  </div>
+  <ol class="start-steps">
+    <li class="reveal">
+      <h3><span>1</span> Run it</h3>
+      <div class="tabs" data-tabs>
+        <div class="tablist" role="tablist" aria-label="Deployment">
+          <button type="button" role="tab" aria-selected="true" aria-controls="tab-compose" id="t-compose">Docker Compose</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="tab-podman" id="t-podman" tabindex="-1">Podman</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="tab-helm" id="t-helm" tabindex="-1">Kubernetes</button>
+        </div>
+        <div class="code" role="tabpanel" id="tab-compose" aria-labelledby="t-compose"><pre><code>git clone https://github.com/squirro/slowshield
+cd slowshield/deploy/docker
+cp .env.example .env          # your hostname, TLS mode, optional GitHub token
+docker compose up -d
+# add the Grafana stack: docker compose -f compose.yaml -f compose.observability.yaml up -d</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <div class="code" role="tabpanel" id="tab-podman" aria-labelledby="t-podman" hidden><pre><code>git clone https://github.com/squirro/slowshield
+cp slowshield/deploy/podman/*.{pod,container,volume,network} ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user start slowshield-pod   # rootless, auto-updating</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <div class="code" role="tabpanel" id="tab-helm" aria-labelledby="t-helm" hidden><pre><code>git clone https://github.com/squirro/slowshield
+helm install slowshield slowshield/deploy/helm/slowshield \
+  --set hostnames='{slowshield.example.com}' \
+  --set tls.mode=acme --set tls.acmeEmail=you@example.com</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      </div>
+    </li>
+    <li class="reveal">
+      <h3><span>2</span> Point your tools at it</h3>
+      <div class="code"><pre><code>pip config set global.index-url https://slowshield.example.com/pypi/simple/
+export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
+npm config set registry https://slowshield.example.com/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted">Poetry, PDM, Pipenv, pnpm, Yarn and Bun snippets are on the built-in setup page.</p>
+    </li>
+    <li class="reveal">
+      <h3><span>3</span> Watch it work</h3>
+      <p>Open the dashboard to see what your organisation installs, which versions are waiting and what was blocked.
+        Add a GitHub token to enable the second advisory stream — SlowShield tells you how, right in the UI.</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ============================== STORY ============================== -->
+<section class="story-sec" id="story">
+  <div class="story-card reveal">
+    <p class="eyebrow">The story</p>
+    <h2>Built overnight, because we needed it.</h2>
+    <p>In March 2026 the TeamPCP campaign turned trusted security tooling into a delivery mechanism: a compromised
+      Trivy release leaked CI credentials, and within days backdoored packages were landing on PyPI. It came
+      uncomfortably close to us.</p>
+    <p>That night I built the first SlowShield around one simple rule that would have stopped the whole thing:
+      <em>don't install anything younger than a week.</em> It has protected our teams at Squirro ever since. Now it is
+      open source, so it can protect yours.</p>
+    <div class="maintainer">
+      <div class="avatar" aria-hidden="true">T</div>
+      <div>
+        <strong>Toni</strong> — co-founder of <a href="https://squirro.com" rel="noopener noreferrer">Squirro</a>, husband,
+        father, and wrangler of three cats and two dogs.
+        <span class="paws" aria-hidden="true">🐈 🐈 🐈 🐕 🐕</span>
+      </div>
+    </div>
+    <p class="muted squirro">SlowShield is maintained by the team at <a href="https://squirro.com" rel="noopener noreferrer">Squirro</a>,
+      which builds enterprise AI search and GenAI solutions for regulated industries.</p>
+  </div>
+</section>
+
+<!-- ============================== CLOSING CTA ============================== -->
+<section class="closing reveal">
+  <h2>Give every release a week to prove itself.</h2>
+  <p class="lead">Free and open source under the Apache 2.0 license.</p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="#get-started">Get started</a>
+    <a class="btn btn-ghost" href="https://github.com/squirro/slowshield" rel="noopener noreferrer">Star on GitHub</a>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="footer-brand"><img src="/assets/mark-dark.svg" alt="" width="24" height="24"> <span>SlowShield — <em>safety through patience</em></span></div>
+  <nav aria-label="Footer">
+    <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
+    <a href="https://github.com/squirro/slowshield/tree/main/docs" rel="noopener noreferrer">Docs</a>
+    <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
+    <a href="https://github.com/squirro/slowshield/blob/main/LICENSE" rel="noopener noreferrer">Apache-2.0</a>
+  </nav>
+  <p class="fine">© 2026 Squirro AG. SlowShield and the Shell-Shield logo are trademarks of Squirro AG.</p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# Grafana with provisioned datasources, dashboards and alert rules. Admin password from a Podman
+# secret:  openssl rand -base64 24 | podman secret create slowshield_grafana_admin_password -
+[Unit]
+Description=SlowShield observability: Grafana
+Wants=slowshield-prometheus.service slowshield-loki.service slowshield-tempo.service
+After=slowshield-prometheus.service slowshield-loki.service slowshield-tempo.service
+
+[Container]
+# Pinned by digest (observability/images.env); bump in the repo instead of podman auto-update.
+ContainerName=slowshield-grafana
+Image=docker.io/grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+UserNS=keep-id:uid=472,gid=472
+User=472
+Group=472
+Network=slowshield-telemetry.network
+NetworkAlias=grafana
+PidsLimit=512
+Ulimit=nofile=65536:65536
+# Second network so the UI port can be published (the telemetry network is internal).
+Network=slowshield.network
+PublishPort=127.0.0.1:3000:3000
+Volume=slowshield-grafana-data.volume:/var/lib/grafana
+Volume=%h/.config/slowshield/observability/grafana/provisioning:/etc/grafana/provisioning:ro,Z
+Volume=%h/.config/slowshield/observability/grafana/dashboards:/etc/grafana/dashboards:ro,Z
+Secret=slowshield_grafana_admin_password,type=mount,target=/run/secrets/grafana_admin_password,uid=472,gid=472,mode=0400
+Environment=GF_SECURITY_ADMIN_USER=admin
+Environment=GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+Environment=GF_SECURITY_DISABLE_GRAVATAR=true
+Environment=GF_SECURITY_COOKIE_SAMESITE=strict
+Environment=GF_AUTH_ANONYMOUS_ENABLED=false
+Environment=GF_USERS_ALLOW_SIGN_UP=false
+Environment=GF_ANALYTICS_REPORTING_ENABLED=false
+Environment=GF_ANALYTICS_CHECK_FOR_UPDATES=false
+Environment=GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+Environment=GF_NEWS_NEWS_FEED_ENABLED=false
+Environment=GF_PLUGINS_PREINSTALL_DISABLED=true
+Environment=GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/slowshield-overview.json
+Environment=GF_LOG_MODE=console
+Environment=GF_LOG_LEVEL=warn
+# Set a real receiver (Slack/Mattermost/Teams webhook, Alertmanager, ...) to get alerts.
+Environment=SLOWSHIELD_ALERT_WEBHOOK_URL=http://127.0.0.1:9/disabled
+HealthCmd=["wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+HealthInterval=30s
+PodmanArgs=--memory=512m --cpus=1
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

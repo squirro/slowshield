@@ -53,18 +53,21 @@ class TextFormatter(logging.Formatter):
         return f"{base} {extras}" if extras else base
 
 
+class _Handler(logging.StreamHandler):
+    """Marker type so repeated `configure()` calls replace (not stack) our handler."""
+
+
 def configure(level: str | None = None, fmt: str | None = None) -> None:
     level = (level or os.environ.get("SLOWSHIELD_LOG_LEVEL") or "info").upper()
     fmt = (fmt or os.environ.get("SLOWSHIELD_LOG_FORMAT") or ("json" if not sys.stderr.isatty() else "text")).lower()
-    handler = logging.StreamHandler(sys.stdout)
+    handler = _Handler(sys.stdout)
     handler.setFormatter(
         JsonFormatter() if fmt == "json" else TextFormatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
     )
     root = logging.getLogger()
     for h in list(root.handlers):
-        if getattr(h, "_slowshield", False):
+        if isinstance(h, _Handler):
             root.removeHandler(h)
-    handler._slowshield = True  # type: ignore[attr-defined]
     root.addHandler(handler)
     root.setLevel(level)
     # Quiet chatty libraries unless debugging.

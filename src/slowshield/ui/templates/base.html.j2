@@ -6,7 +6,9 @@
 <meta name="htmx-config" content="includeIndicatorCSS:false history:false">
 <meta name="color-scheme" content="light dark">
 <title>{% block title %}{{ title|default("Overview") }}{% endblock %} · SlowShield</title>
+<link rel="icon" href="/static/brand/favicon.ico" sizes="any">
 <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/app.css?v={{ version }}">
 <script src="/static/vendor/htmx.min.js?v={{ htmx_version }}" defer></script>
 <script src="/static/app.js?v={{ version }}" defer></script>
@@ -15,7 +17,8 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
   <a class="brand" href="/" aria-label="SlowShield home">
-    <img src="/static/brand/mark.svg" alt="" width="28" height="28">
+    <img class="logo logo-light" src="/static/brand/mark.svg" alt="" width="28" height="28">
+    <img class="logo logo-dark" src="/static/brand/mark-dark.svg" alt="" width="28" height="28">
     <span class="wordmark">Slow<b>Shield</b></span>
   </a>
   <nav aria-label="Main">

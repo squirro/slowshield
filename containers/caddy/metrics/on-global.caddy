@@ -1,0 +1,4 @@
+# Collect HTTP metrics per host (exposed on the internal :9180 listener).
+metrics {
+	per_host
+}

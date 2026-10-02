@@ -1,0 +1,9 @@
+# Internal network for the observability stack (no egress needed). The SlowShield pod joins it via
+# slowshield.pod.d/50-observability.conf so the app can push OTLP to Alloy.
+[Unit]
+Description=SlowShield telemetry network
+
+[Network]
+NetworkName=slowshield-telemetry
+Internal=true
+DisableDNS=false

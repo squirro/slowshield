@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "slowshield.fullname" . }}-test
+  labels: {{- include "slowshield.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: check
+      # Reuses the SlowShield image (no shell/curl needed): its healthcheck command probes any URL.
+      image: {{ include "slowshield.image" (list .Values.image .) }}
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- if .Values.caddy.enabled }}
+      # Caddy's plain-HTTP listener proxies /healthz to SlowShield (everything else redirects).
+      args: ["healthcheck", "--url", "http://{{ include "slowshield.fullname" . }}:{{ .Values.service.httpPort }}/healthz", "--timeout", "10"]
+      {{- else }}
+      args: ["healthcheck", "--url", "http://{{ include "slowshield.fullname" . }}:{{ .Values.service.httpPort }}/readyz", "--timeout", "10"]
+      {{- end }}
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { memory: 128Mi }

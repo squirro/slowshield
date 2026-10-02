@@ -1,0 +1,6 @@
+# Shared TLS parameters (imported inside every `tls` block).
+# TLS 1.3 only by default. Curves are left at Caddy's defaults (X25519MLKEM768 hybrid post-quantum,
+# X25519, P-256): narrowing them would break clients on older OpenSSL.
+protocols tls{$TLS_MIN_VERSION:1.3} tls1.3
+# Only used when TLS 1.2 is allowed: ECDHE key exchange with AEAD ciphers (no CBC, no RSA kex).
+ciphers TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256

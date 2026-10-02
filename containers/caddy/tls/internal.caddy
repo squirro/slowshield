@@ -1,0 +1,4 @@
+# Caddy's own CA. Clients must trust its root (/data/caddy/pki/authorities/local/root.crt).
+tls internal {
+	import ../snippets/tls-params.caddy
+}

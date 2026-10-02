@@ -41,6 +41,7 @@ dev = [
   "httpx>=0.28.1",
   "ruff>=0.16",
   "ty>=0.0.50",
+  "pytest-asyncio>=1.4.0",
 ]
 
 [build-system]
@@ -62,13 +63,17 @@ ignore = [
   "SIM105",
   "PLW0603",
   "N818",
+  "N812",     # short module aliases (V, P, Q) read better in dense code
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "S310", "PLR2004", "S311", "S104"]
-"perf/**" = ["S101", "S311", "S603", "S607", "S310", "S104"]
+"tests/**" = ["S101", "S105", "S106", "S310", "PLR2004", "S311", "S104", "PT018", "S108"]
+"perf/**" = ["S101", "S311", "S603", "S607", "S310", "S104", "S108", "PLR0917"]  # S108: container tmpfs mount spec
 "fakeupstream/**" = ["S311", "S104"]
-"scripts/**" = ["T201", "S603", "S607"]
+"scripts/**" = ["T201", "S603", "S607", "E501"]
+# Design/config generators: long SVG/JSON literals; the smoke test drives docker and polls localhost.
+"brand/**" = ["E501", "N802", "N806", "PLR0917", "RUF001", "S318"]
+"observability/**" = ["E501", "S310", "S603", "S607", "T201", "N806", "RUF001"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -81,7 +86,10 @@ include = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--import-mode=importlib"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--import-mode=importlib", "-m", "not e2e and not live"]
 markers = [
   "e2e: end-to-end tests against built containers (deselected unless -m e2e)",
   "live: tests that reach the real PyPI/npm registries",

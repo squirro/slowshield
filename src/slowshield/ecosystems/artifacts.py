@@ -32,7 +32,15 @@ IMMUTABLE_CACHE_CONTROL = "public, max-age=86400"
 
 
 class IntegrityAbort(Exception):
-    """Raised inside a streaming body to abort the response without completing it."""
+    """Raised inside a streaming body to abort the response without completing it.
+
+    If nothing has been sent yet (small artifacts arrive in one chunk), `response` is sent instead
+    so the client gets an explicit error rather than a reset connection.
+    """
+
+    def __init__(self, key: str, response: Response) -> None:
+        super().__init__(key)
+        self.response = response
 
 
 @dataclass(slots=True)
@@ -71,16 +79,40 @@ class StreamedArtifact:
         self.on_close = on_close
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        started = False
         try:
-            await send({"type": "http.response.start", "status": self.status, "headers": self.headers})
-            async for chunk in self.body:
-                await send({"type": "http.response.body", "body": bytes(chunk), "more_body": True})
+            try:
+                async for chunk in self.body:
+                    if not started:
+                        await send({"type": "http.response.start", "status": self.status, "headers": self.headers})
+                        started = True
+                    await send({"type": "http.response.body", "body": bytes(chunk), "more_body": True})
+            except IntegrityAbort as abort:
+                if started:
+                    raise  # mid-stream: abort the connection (the final chunk was withheld)
+                await abort.response(scope, receive, send)
+                return
+            if not started:
+                await send({"type": "http.response.start", "status": self.status, "headers": self.headers})
             await send({"type": "http.response.body", "body": b"", "more_body": False})
         finally:
             aclose = getattr(self.body, "aclose", None)
             if aclose is not None:
                 await aclose()
             await self.on_close()
+
+
+AsgiResponse = Response | StreamedArtifact
+
+
+def _tamper_response(req: ArtifactRequest) -> Response:
+    return error(
+        451,
+        "tamper_detected",
+        artifact=req.key,
+        stored_sha256=req.expected.tofu_sha256,
+        detail="this artifact changed upstream after it was first served; see the security events page",
+    )
 
 
 class ArtifactServer:
@@ -159,7 +191,7 @@ class ArtifactServer:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
             return error(502, "upstream_error", detail=exc.detail)
-        if up.status == 404 or up.status == 410:
+        if up.status in (404, 410):
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "not_found")
             return error(404, "not_found")
@@ -181,7 +213,7 @@ class ArtifactServer:
             out_headers["Content-Length"] = str(size)
         verifier = StreamVerifier(req.expected)
         tee = self.cache.open_tee()
-        state = {"ok": False}
+        state = {"verified": False, "delivered": False}
 
         async def body() -> AsyncIterator[bytes]:
             pending: bytes | None = None
@@ -202,25 +234,31 @@ class ArtifactServer:
                     await self._correct_legacy(req, verifier)
                 else:
                     await self._tamper(req, verifier, client_ip, problems)
-                    raise IntegrityAbort(req.key)
+                    raise IntegrityAbort(req.key, _tamper_response(req))
             if problems:
                 await self._integrity_mismatch(req, verifier, client_ip, problems)
-                raise IntegrityAbort(req.key)
+                raise IntegrityAbort(
+                    req.key,
+                    error(502, "integrity_mismatch", artifact=req.key, detail="; ".join(problems)),
+                )
             stored = await self._remember(req, verifier)
             if stored is not None and stored != verifier.sha256:
                 # Someone else stored different bytes for the same artifact a moment ago.
                 req.expected.tofu_sha256 = stored
                 await self._tamper(req, verifier, client_ip, ["concurrent first fetch saw different bytes"])
-                raise IntegrityAbort(req.key)
-            state["ok"] = True
+                raise IntegrityAbort(req.key, _tamper_response(req))
+            state["verified"] = True
             if pending is not None:
                 yield pending
+            state["delivered"] = True
 
         started = time.perf_counter()
 
         async def on_close() -> None:
             await stack.aclose()
-            await self._finish(req, tee, verifier, content_type, ok=state["ok"])
+            await self._finish(
+                req, tee, verifier, content_type, verified=state["verified"], delivered=state["delivered"]
+            )
             log.debug(
                 "artifact streamed",
                 extra={"artifact": req.key, "bytes": verifier.size, "seconds": round(time.perf_counter() - started, 3)},
@@ -229,14 +267,23 @@ class ArtifactServer:
         return StreamedArtifact(200, out_headers, body(), on_close)
 
     async def _finish(
-        self, req: ArtifactRequest, tee: TeeFile | None, verifier: StreamVerifier, content_type: str, *, ok: bool
+        self,
+        req: ArtifactRequest,
+        tee: TeeFile | None,
+        verifier: StreamVerifier,
+        content_type: str,
+        *,
+        verified: bool,
+        delivered: bool,
     ) -> None:
-        if not ok:
+        """Verified bytes are cached even if the client went away; only delivered ones count as served."""
+        if not verified:
             if tee is not None:
                 tee.abort()
             return
-        self.recorder.decision(req.ecosystem, "artifact", "served")
-        self.recorder.download(req.ecosystem, req.package, req.version, verifier.size, cache_hit=False)
+        if delivered:
+            self.recorder.decision(req.ecosystem, "artifact", "served")
+            self.recorder.download(req.ecosystem, req.package, req.version, verifier.size, cache_hit=False)
         if tee is not None:
             await self.cache.commit(tee, verifier.sha256, content_type)
 

@@ -1,0 +1,22 @@
+# Regression gate for release builds (perf/runner.py). A metric regresses when the median moves past
+# its threshold AND, with >= 5 rounds per side, the difference is statistically significant
+# (two-sided Mann-Whitney U, p < alpha). Regressions are re-measured once before the gate fails.
+
+[gate]
+alpha = 0.05
+min_rounds_for_significance = 5
+
+[defaults]
+throughput_drop = 0.10        # requests/s (throughput mode) may drop at most 10 %
+p95_increase = 0.15           # latency mode
+p99_increase = 0.20
+error_rate_max = 0.001        # absolute, per scenario
+rss_increase = 0.15           # peak resident memory of the proxy container
+startup_increase = 0.30       # container start -> /readyz
+image_size_increase = 0.05    # uncompressed image size
+
+[scenario.artifact_big]
+throughput_drop = 0.15        # large streams are dominated by I/O noise on shared runners
+
+[scenario.dashboard]
+p99_increase = 0.30

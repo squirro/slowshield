@@ -12,12 +12,13 @@ import logging
 import os
 import socket
 import uuid
+from typing import Any
 
 from opentelemetry import metrics, trace
 
 log = logging.getLogger(__name__)
 
-_state: dict[str, object] = {}
+_state: dict[str, Any] = {}
 
 SERVICE_NAME = "slowshield"
 
@@ -31,6 +32,57 @@ def _enabled(signal: str) -> bool:
         os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
         or os.environ.get(f"OTEL_EXPORTER_OTLP_{signal.upper()}_ENDPOINT", "").strip()
     )
+
+
+_RESERVED = set(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {"message", "asctime", "taskName"}
+_SECRET_HINTS = ("token", "authorization", "password", "secret", "api_key")
+
+
+class OTelLogHandler(logging.Handler):
+    """Bridges stdlib logging to OTLP logs (trace-correlated via the current context)."""
+
+    def __init__(self, provider: Any, level: int = logging.INFO) -> None:
+        super().__init__(level)
+        self._logger = provider.get_logger("slowshield")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        from opentelemetry._logs import SeverityNumber
+
+        try:
+            attributes: dict[str, Any] = {"code.namespace": record.name, "code.lineno": record.lineno}
+            for key, raw in record.__dict__.items():
+                if key in _RESERVED or key.startswith("_"):
+                    continue
+                value = "[redacted]" if any(h in key.lower() for h in _SECRET_HINTS) else raw
+                attributes[f"slowshield.{key}"] = value if isinstance(value, (str, bool, int, float)) else str(value)
+            if record.exc_info and record.exc_info[1] is not None:
+                attributes["exception.type"] = type(record.exc_info[1]).__name__
+                attributes["exception.message"] = str(record.exc_info[1])
+            number = _SEVERITY.get(record.levelno, SeverityNumber.INFO)
+            self._logger.emit(
+                timestamp=int(record.created * 1e9),
+                severity_number=number,
+                severity_text=record.levelname,
+                body=record.getMessage(),
+                attributes=attributes,
+            )
+        except Exception:  # pragma: no cover - logging must never raise
+            self.handleError(record)
+
+
+def _severity_map() -> dict[int, Any]:
+    from opentelemetry._logs import SeverityNumber
+
+    return {
+        logging.DEBUG: SeverityNumber.DEBUG,
+        logging.INFO: SeverityNumber.INFO,
+        logging.WARNING: SeverityNumber.WARN,
+        logging.ERROR: SeverityNumber.ERROR,
+        logging.CRITICAL: SeverityNumber.FATAL,
+    }
+
+
+_SEVERITY = _severity_map()
 
 
 def is_active() -> bool:
@@ -89,13 +141,13 @@ def setup(*, version: str, worker: int = 0) -> bool:
     if want["logs"]:
         from opentelemetry._logs import set_logger_provider
         from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs import LoggerProvider
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
         lp = LoggerProvider(resource=resource)
         lp.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
         set_logger_provider(lp)
-        handler = LoggingHandler(level=logging.INFO, logger_provider=lp)
+        handler = OTelLogHandler(lp)
         logging.getLogger().addHandler(handler)
         _state["logger_provider"] = lp
         _state["log_handler"] = handler
@@ -109,7 +161,7 @@ def shutdown() -> None:
     if isinstance(handler, logging.Handler):
         logging.getLogger().removeHandler(handler)
     for key in ("tracer_provider", "meter_provider", "logger_provider"):
-        provider = _state.pop(key, None)
+        provider: Any = _state.pop(key, None)
         if provider is not None:
             try:
                 provider.shutdown()  # type: ignore[attr-defined]

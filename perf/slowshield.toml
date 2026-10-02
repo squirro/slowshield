@@ -1,0 +1,31 @@
+# SlowShield configuration used by the perf harness: every upstream is the deterministic fakeupstream.
+bind_address = "0.0.0.0:8080"
+public_url = "http://127.0.0.1:18080"
+data_dir = "/data"
+default_delay_days = 7
+metadata_cache_ttl_hours = 6
+trusted_proxies = ["127.0.0.0/8"]
+
+[upstreams.pypi]
+mirrors = ["http://fakeupstream:9000/pypi"]
+files_url = "http://fakeupstream:9000/files"
+
+[upstreams.npm]
+mirrors = ["http://fakeupstream:9000/npm"]
+public_url = "http://127.0.0.1:18080/npm"
+
+[feeds]
+poll_interval_minutes = 60
+osv_base_url = "http://fakeupstream:9000/osv"
+github_api_url = "http://fakeupstream:9000/github"
+
+[feeds.osv]
+enabled = true
+
+[feeds.github_advisory]
+enabled = false
+
+[cache]
+metadata_max_mb = 256
+artifacts_enabled = true
+artifacts_max_gb = 4

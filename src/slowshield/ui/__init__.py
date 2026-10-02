@@ -10,7 +10,7 @@ import os
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import msgspec
@@ -115,7 +115,7 @@ class UI:
             cache_size=400,
         )
         env.filters.update(bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href)
-        env.globals.update(
+        cast(dict[str, Any], env.globals).update(
             version=__version__,
             build=build_info(),
             htmx_version=HTMX_VERSION,
@@ -149,7 +149,7 @@ class UI:
             Route("/ui/feeds", self.feeds),
             Route("/ui/setup", self.setup),
             Route("/ui/about", self.about),
-            Route("/favicon.ico", lambda r: RedirectResponse("/static/brand/favicon.svg", 301)),
+            Route("/favicon.ico", lambda r: RedirectResponse("/static/brand/favicon.ico", 301)),
         ]
 
     def _ago(self, ts: float | None) -> str:
@@ -489,7 +489,7 @@ class UI:
         docs = {}
         for name in ("CHANGELOG.md", "ATTRIBUTIONS.md"):
             text = _read_doc(name)
-            docs[name] = Markup(self.md.render(text)) if text else None
+            docs[name] = Markup(self.md.render(text)) if text else None  # noqa: S704 - markdown-it with html disabled
         return self._render("about.html.j2", request, docs=docs, info=build_info())
 
 

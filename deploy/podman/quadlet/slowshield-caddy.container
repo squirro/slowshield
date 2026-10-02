@@ -1,0 +1,34 @@
+# Caddy TLS edge for SlowShield (rootless, read-only, no capabilities).
+[Unit]
+Description=SlowShield Caddy TLS edge
+Requires=slowshield.service
+After=slowshield.service
+
+[Container]
+ContainerName=slowshield-caddy
+Image=registry.squirro.com/slowshield/slowshield-caddy:latest
+AutoUpdate=registry
+Pod=slowshield.pod
+User=65532
+Group=65532
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m
+Volume=slowshield-caddy-data.volume:/data
+Volume=slowshield-caddy-config.volume:/config
+Volume=slowshield-caddy-logs.volume:/var/log/caddy
+Volume=%h/.config/slowshield/certs:/certs:ro,Z
+EnvironmentFile=%h/.config/slowshield/slowshield.env
+Environment=SLOWSHIELD_UPSTREAM=127.0.0.1:8081
+PidsLimit=256
+Ulimit=nofile=65536:65536
+PodmanArgs=--memory=256m --cpus=1
+StopTimeout=20
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -7,6 +7,7 @@ import re
 from packaging.utils import InvalidSdistFilename, InvalidWheelFilename, parse_sdist_filename, parse_wheel_filename
 
 from slowshield.names import normalize_pypi
+from slowshield.versions import parse_pep440
 
 _LEGACY_EXT = (".tar.bz2", ".tar.xz", ".tgz", ".tar", ".egg", ".exe", ".msi", ".rpm", ".dmg")
 _EGG = re.compile(r"^(?P<name>.+?)-(?P<ver>[^-]+?)(-py\d+(\.\d+)?)?(-.+)?\.egg$")
@@ -23,6 +24,9 @@ def parse(
 
     `known_versions` / `project` let legacy filenames (ambiguous dashes) be resolved against the index.
     """
+    fast = _fast(filename)
+    if fast is not None:
+        return fast
     try:
         if filename.endswith(".whl"):
             name, ver, _build, _tags = parse_wheel_filename(filename)
@@ -30,13 +34,31 @@ def parse(
         if filename.endswith((".tar.gz", ".zip")):
             name, ver = parse_sdist_filename(filename)
             return str(name), str(ver)
-    except InvalidWheelFilename, InvalidSdistFilename:
+    except InvalidWheelFilename:
+        return None, None  # the wheel naming spec is strict: never guess
+    except InvalidSdistFilename:
         pass
     if filename.endswith(".egg"):
         m = _EGG.match(filename)
         if m:
             return normalize_pypi(m.group("name")), m.group("ver")
     return _guess(filename, known_versions or [], project)
+
+
+def _fast(filename: str) -> tuple[str, str] | None:
+    """Spec-shaped wheels and modern sdists without the (slow) tag parsing of `packaging`."""
+    if filename.endswith(".whl"):
+        parts = filename[:-4].split("-")
+        if len(parts) in (5, 6) and parse_pep440(parts[1]) is not None:
+            return normalize_pypi(parts[0]), parts[1]
+        return None
+    for ext in (".tar.gz", ".zip"):
+        if filename.endswith(ext):
+            name, sep, ver = filename[: -len(ext)].rpartition("-")
+            if sep and name and parse_pep440(ver) is not None:
+                return normalize_pypi(name), ver
+            return None
+    return None
 
 
 def _guess(filename: str, versions: list[str], project: str | None) -> tuple[str | None, str | None]:

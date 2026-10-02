@@ -64,7 +64,7 @@ class Feed(Protocol):
         ...
 
 
-FIX_GITHUB_TOKEN = (
+GITHUB_FEED_FIX = (
     "Create a GitHub token (a fine-grained personal access token with no extra permissions is enough; "
     "it only reads the public advisory database) and pass it as GITHUB_TOKEN, or mount it as a file and set "
     "GITHUB_TOKEN_FILE (Docker/Podman/Kubernetes secret). Restart SlowShield afterwards."
@@ -77,7 +77,8 @@ def apply_advisories(conn: sqlite3.Connection, advisories: Iterable[Advisory], n
     for adv in advisories:
         if adv.withdrawn:
             cur = conn.execute(
-                "UPDATE blocklist SET withdrawn = ?, updated = ? WHERE source = ? AND advisory_id = ? AND withdrawn IS NULL",
+                "UPDATE blocklist SET withdrawn = ?, updated = ? WHERE source = ? AND advisory_id = ? AND withdrawn "
+                "IS NULL",
                 (now, now, adv.source, adv.advisory_id),
             )
             changed += cur.rowcount
@@ -85,7 +86,8 @@ def apply_advisories(conn: sqlite3.Connection, advisories: Iterable[Advisory], n
         existing = {
             (r[1], r[2], r[3], r[4]): r[0]
             for r in conn.execute(
-                "SELECT id, ecosystem, name, version, version_range FROM blocklist WHERE source = ? AND advisory_id = ?",
+                "SELECT id, ecosystem, name, version, version_range FROM blocklist WHERE source = ? AND advisory_id "
+                "= ?",
                 (adv.source, adv.advisory_id),
             )
         }
@@ -102,7 +104,8 @@ def apply_advisories(conn: sqlite3.Connection, advisories: Iterable[Advisory], n
                 )
                 continue
             cur = conn.execute(
-                "INSERT OR IGNORE INTO blocklist (ecosystem, name, version, version_range, source, advisory_id, reason, url, "
+                "INSERT OR IGNORE INTO blocklist (ecosystem, name, version, version_range, source, advisory_id, "
+                "reason, url, "
                 "first_seen, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (eco, name, ver, rng, adv.source, adv.advisory_id, adv.reason, adv.url, now, now),
             )
@@ -125,7 +128,8 @@ def save_state(conn: sqlite3.Connection, source: str, **fields: Any) -> None:
 
 def load_state(conn: sqlite3.Connection, source: str) -> dict[str, Any]:
     row = conn.execute(
-        "SELECT watermark, etag, last_attempt, last_success, last_error, entries, details FROM feed_state WHERE source = ?",
+        "SELECT watermark, etag, last_attempt, last_success, last_error, entries, details FROM feed_state WHERE "
+        "source = ?",
         (source,),
     ).fetchone()
     if row is None:
@@ -149,7 +153,7 @@ class FeedScheduler:
             st: FeedStatus = self.ctx.feeds[f.name]
             enabled, reason = f.configured()
             st.enabled, st.reason = enabled, reason
-            st.fix = FIX_GITHUB_TOKEN if reason == "missing_token" else None
+            st.fix = GITHUB_FEED_FIX if reason == "missing_token" else None
             try:
                 state = load_state(self.ctx.db.readers.get(), f.name)
             except sqlite3.Error:
@@ -162,26 +166,21 @@ class FeedScheduler:
                 st.reason = "error"
 
     def _register_metrics(self) -> None:
-        def enabled() -> list[tuple[float, dict[str, str | int | float | bool]]]:
-            return [(1.0 if s.enabled else 0.0, {"feed": s.name, "reason": s.reason}) for s in self.ctx.feeds.values()]
-
-        def last_success() -> list[tuple[float, dict[str, str | int | float | bool]]]:
-            return [(s.last_success, {"feed": s.name}) for s in self.ctx.feeds.values() if s.last_success]
-
-        def blocklist() -> list[tuple[float, dict[str, str | int | float | bool]]]:
-            return [(float(n), {"source": src, "slowshield.ecosystem": eco}) for (src, eco), n in self._counts.items()]
-
         self._counts: dict[tuple[str, str], int] = {}
-        instruments.observe("slowshield.feed.enabled", enabled, unit="1", description="1 if the feed is active.")
-        instruments.observe(
-            "slowshield.feed.last_success.timestamp",
-            last_success,
-            unit="s",
-            description="UNIX time of the last good sync.",
-        )
-        instruments.observe(
-            "slowshield.blocklist.entries", blocklist, unit="{entry}", description="Active blocklist rows."
-        )
+        self.gauges: dict[str, instruments.GaugeCallback] = {
+            "slowshield.feed.enabled": lambda: [
+                (1.0 if st.enabled else 0.0, {"feed": st.name, "reason": st.reason}) for st in self.ctx.feeds.values()
+            ],
+            "slowshield.feed.last_success.timestamp": lambda: [
+                (st.last_success, {"feed": st.name}) for st in self.ctx.feeds.values() if st.last_success
+            ],
+            "slowshield.blocklist.entries": lambda: [
+                (float(n), {"source": src, "slowshield.ecosystem": eco}) for (src, eco), n in self._counts.items()
+            ],
+        }
+        units = {"slowshield.feed.enabled": "1", "slowshield.feed.last_success.timestamp": "s"}
+        for name, cb in self.gauges.items():
+            instruments.observe(name, cb, unit=units.get(name, "{entry}"))
 
     def refresh_counts(self) -> None:
         try:

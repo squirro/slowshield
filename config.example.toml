@@ -1,0 +1,70 @@
+# SlowShield configuration reference. Every key is optional; the values shown are the defaults.
+# Most keys can also be set via environment variables (see docs/configuration.md); secrets should
+# always come from the environment or mounted files (GITHUB_TOKEN / GITHUB_TOKEN_FILE).
+# Changes to policy keys (delays, exceptions, fail_open, feeds, mirrors) are picked up at runtime
+# within ~5 seconds; listener/storage/routing keys need a restart.
+
+bind_address = "0.0.0.0:8080"          # SLOWSHIELD_BIND
+public_url = "https://slowshield.example.com"   # SLOWSHIELD_PUBLIC_URL - how clients reach the UI host
+data_dir = "/data"                     # SLOWSHIELD_DATA_DIR - SQLite DB, artifact cache, leader lock
+# database_path = "/data/slowshield.db" # DATABASE_URL=sqlite:/path also accepted (Rust-version compat)
+workers = 1                            # SLOWSHIELD_WORKERS - Granian workers (processes; threads on 3.15t)
+
+# --- release-age policy -------------------------------------------------------------------------
+default_delay_days = 7                 # SLOWSHIELD_DEFAULT_DELAY_DAYS
+enforce_age_on_download = true         # 403 + Retry-After for direct downloads of too-new versions
+fail_open = true                       # if NO version is old enough, serve them anyway (logged)
+metadata_cache_ttl_hours = 6           # upstream index freshness (revalidated with ETag afterwards)
+
+# --- clients & privacy ---------------------------------------------------------------------------
+trusted_proxies = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+record_client_ip = true                # store the client IP on security events only
+client_ip_retention_days = 30
+event_retention_days = 365
+stats_retention_days = 400
+
+# --- upstream registries -------------------------------------------------------------------------
+[upstreams.pypi]
+enabled = true
+hostnames = []                         # e.g. ["pypi.slowshield.example.com"] for per-ecosystem hosts
+mirrors = ["https://pypi.org"]         # PEP 691 JSON-capable indexes, tried in order
+files_url = "https://files.pythonhosted.org"
+
+[upstreams.npm]
+enabled = true
+hostnames = []                         # e.g. ["npm.slowshield.example.com"]
+mirrors = ["https://registry.npmjs.org"]
+# public_url = "https://slowshield.example.com/npm"  # base for rewritten tarball URLs (defaults below)
+audit_passthrough = true               # forward `npm audit` bulk advisory queries
+
+# --- caches -------------------------------------------------------------------------------------
+[cache]
+metadata_max_mb = 256                  # in-memory, per worker
+artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs
+artifacts_max_gb = 20                  # LRU eviction above 90% of this
+scrub_interval_hours = 24              # re-hash cached files to detect disk corruption
+
+# --- threat feeds ------------------------------------------------------------------------------------
+[feeds]
+poll_interval_minutes = 60
+
+[feeds.osv]                            # OpenSSF malicious packages via OSV; no token needed
+enabled = true
+
+[feeds.github_advisory]                # GitHub Advisory Database (malware); needs GITHUB_TOKEN
+enabled = true
+
+# --- per-package exceptions ------------------------------------------------------------------------
+# Longer or shorter delays for specific packages, or release one specific version early.
+# [[exceptions]]
+# ecosystem = "pypi"
+# package = "litellm"
+# delay_days = 14
+# note = "supply chain incident 2026-03"
+#
+# [[exceptions]]
+# ecosystem = "npm"
+# package = "axios"
+# version = "1.15.1"
+# delay_days = 0
+# note = "urgent security fix, reviewed by SecOps"

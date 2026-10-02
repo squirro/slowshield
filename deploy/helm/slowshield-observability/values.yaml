@@ -1,0 +1,155 @@
+# SlowShield observability chart values.
+#
+# Grafana Alloy receives OTLP from SlowShield and its Caddy sidecar, scrapes Caddy's metrics and tails
+# its access log through the Kubernetes API, and forwards everything to Prometheus (metrics), Loki
+# (logs) and Tempo (traces); Grafana comes with the SlowShield datasources, dashboards and alert rules.
+#
+# The configs, dashboards and alert rules under files/ are copies of observability/ made by
+# `uv run python observability/sync.py`; edit the originals, never the copies.
+#
+# Every component is a single replica (Recreate strategy, ReadWriteOnce volume) running as its image's
+# own non-root user with a read-only root filesystem, no capabilities and the RuntimeDefault seccomp
+# profile (Pod Security Standard "restricted"). Images are the official upstream ones pinned by digest
+# (observability/images.env).
+
+# Namespace of the SlowShield release. Alloy watches only this namespace (Caddy metrics and access
+# logs) and gets a Role there, nothing cluster-wide. Defaults to this release's namespace.
+slowshieldNamespace: ""
+
+imagePullSecrets: []
+
+alloy:
+  image:
+    repository: docker.io/grafana/alloy
+    tag: "v1.20.1"
+    digest: "sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f"
+    pullPolicy: IfNotPresent
+  uid: 473
+  # Peers allowed to send OTLP (4317 gRPC, 4318 HTTP) when networkPolicy.enabled.
+  # Default: SlowShield pods (and their Caddy sidecar) in any namespace.
+  otlpFrom:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: slowshield
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+prometheus:
+  image:
+    repository: docker.io/prom/prometheus
+    tag: "v3.15.0"
+    digest: "sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e"
+    pullPolicy: IfNotPresent
+  uid: 65534
+  retention: 15d
+  # Optional size cap in addition to the time-based retention (e.g. 18GB); empty = none.
+  retentionSize: ""
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+loki:
+  image:
+    repository: docker.io/grafana/loki
+    tag: "3.7.8"
+    digest: "sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193"
+    pullPolicy: IfNotPresent
+  uid: 10001
+  # Retention (15 days) is set in observability/loki/loki.yaml.
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+tempo:
+  image:
+    repository: docker.io/grafana/tempo
+    tag: "3.1.0"
+    digest: "sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd"
+    pullPolicy: IfNotPresent
+  uid: 10001
+  # Retention (15 days) is set in observability/tempo/tempo.yaml.
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+grafana:
+  image:
+    repository: docker.io/grafana/grafana
+    tag: "13.2.3"
+    digest: "sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572"
+    pullPolicy: IfNotPresent
+  uid: 472
+  admin:
+    user: admin
+    # Existing Secret holding the admin password. Without it the chart generates one and keeps it
+    # across upgrades (via lookup; GitOps tools that render offline, such as Argo CD, should set this).
+    existingSecret: ""
+    passwordKey: password
+  # Public URL if Grafana sits behind an Ingress/Gateway (links in alert notifications).
+  rootUrl: ""
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  # Peers allowed to reach the UI (3000) when networkPolicy.enabled. Default: anyone.
+  ingressFrom: []
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+alerting:
+  # Receiver for Grafana alert notifications (Slack/Mattermost/Teams incoming webhook, Alertmanager,
+  # ...). Either give the URL (a Secret is created) or reference an existing Secret. Without one,
+  # alerts are evaluated and shown in Grafana but not sent anywhere.
+  webhookUrl: ""
+  existingSecret: ""
+  existingSecretKey: url
+
+networkPolicy:
+  enabled: true
+  # Alloy's egress to the Kubernetes API (pod discovery, Caddy log tailing). The API server is not a
+  # pod, so it is matched by port only; add an ipBlock with your control-plane addresses to narrow it.
+  apiServer:
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+  # Grafana's egress for alert notifications. Default: HTTPS anywhere.
+  grafanaEgress:
+    - ports:
+        - port: 443
+          protocol: TCP
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""

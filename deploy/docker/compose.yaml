@@ -1,0 +1,127 @@
+# SlowShield with Docker Compose (Caddy TLS edge + SlowShield).
+#
+#   cp .env.example .env        # adjust hostnames / TLS mode
+#   docker compose up -d
+#   open https://localhost/      # TLS_MODE=internal: trust Caddy's root CA (see README)
+#
+# Observability (Alloy, Prometheus, Loki, Tempo, Grafana):
+#   docker compose -f compose.yaml -f compose.observability.yaml up -d
+#
+# Hardening: read-only root filesystems, non-root UID 65532, no capabilities, no-new-privileges,
+# size-capped noexec /tmp, resource and PID limits. Only Caddy publishes ports; SlowShield is only
+# reachable on the internal `backend` network.
+name: slowshield
+
+x-hardened: &hardened
+  read_only: true
+  user: "65532:65532"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  init: false
+  ulimits:
+    nofile: { soft: 65536, hard: 65536 }
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  slowshield:
+    <<: *hardened
+    image: ${SLOWSHIELD_IMAGE:-registry.squirro.com/slowshield/slowshield:latest}
+    build:
+      context: ../..
+      dockerfile: containers/slowshield/Dockerfile
+    environment:
+      SLOWSHIELD_CONFIG: /etc/slowshield/config.toml
+      SLOWSHIELD_PUBLIC_URL: ${SLOWSHIELD_PUBLIC_URL:-https://localhost}
+      SLOWSHIELD_WORKERS: ${SLOWSHIELD_WORKERS:-2}
+      SLOWSHIELD_LOG_LEVEL: ${SLOWSHIELD_LOG_LEVEL:-info}
+      # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
+      GITHUB_TOKEN_FILE: /run/secrets/github_token
+    configs:
+      - source: slowshield_config
+        target: /etc/slowshield/config.toml
+        mode: 0444
+    secrets:
+      - source: github_token
+        target: github_token
+        mode: 0400
+        uid: "65532"
+        gid: "65532"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    volumes:
+      - slowshield_data:/data
+    networks: [backend]
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "slowshield", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "${SLOWSHIELD_CPUS:-2}", memory: "${SLOWSHIELD_MEMORY:-1g}", pids: 512 }
+        reservations: { memory: 128m }
+
+  caddy:
+    <<: *hardened
+    image: ${SLOWSHIELD_CADDY_IMAGE:-registry.squirro.com/slowshield/slowshield-caddy:latest}
+    build:
+      context: ../..
+      dockerfile: containers/caddy/Dockerfile
+    depends_on:
+      slowshield:
+        condition: service_healthy
+    environment:
+      SLOWSHIELD_HOSTNAMES: ${SLOWSHIELD_HOSTNAMES:-localhost}
+      SLOWSHIELD_UPSTREAM: slowshield:8080
+      SLOWSHIELD_TLS_MODE: ${SLOWSHIELD_TLS_MODE:-internal}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      TLS_CERT_FILE: /certs/${TLS_CERT_NAME:-tls.crt}
+      TLS_KEY_FILE: /certs/${TLS_KEY_NAME:-tls.key}
+      TLS_MIN_VERSION: ${TLS_MIN_VERSION:-1.3}
+      SLOWSHIELD_HSTS: ${SLOWSHIELD_HSTS:-max-age=63072000; includeSubDomains}
+      SLOWSHIELD_PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-443}
+      CADDY_METRICS: ${CADDY_METRICS:-off}
+      CADDY_TRACING: ${CADDY_TRACING:-off}
+      CADDY_ACCESS_LOG_FILE: ${CADDY_ACCESS_LOG_FILE:-off}
+    ports:
+      - "${HTTP_PORT:-80}:8080/tcp"
+      - "${HTTPS_PORT:-443}:8443/tcp"
+      - "${HTTPS_PORT:-443}:8443/udp"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+      - ${TLS_CERT_DIR:-./certs}:/certs:ro
+    networks: [edge, backend]
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "${CADDY_CPUS:-1}", memory: "${CADDY_MEMORY:-256m}", pids: 256 }
+
+networks:
+  edge: {}
+  backend: {}
+
+volumes:
+  slowshield_data: {}
+  caddy_data: {}
+  caddy_config: {}
+  caddy_logs: {}
+
+configs:
+  slowshield_config:
+    file: ${SLOWSHIELD_CONFIG_FILE:-./config.toml}
+
+secrets:
+  github_token:
+    file: ${GITHUB_TOKEN_SECRET_FILE:-./secrets/github_token.empty}

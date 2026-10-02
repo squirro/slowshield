@@ -8,7 +8,8 @@ import fcntl
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -231,10 +232,11 @@ class SlowShield:
                 ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
 
     async def _leader_loop(self, ctx: AppContext) -> None:
-        assert self._scheduler is not None
+        if self._scheduler is None:  # pragma: no cover - startup always creates it
+            return
         follower = asyncio.ensure_future(self._scheduler.follow())
         try:
-            while not self._leader.try_acquire():
+            while not self._leader.try_acquire():  # noqa: ASYNC110 - polling an OS file lock, not an event
                 await asyncio.sleep(30)
             follower.cancel()
             ctx.is_leader = True
@@ -255,9 +257,9 @@ class SlowShield:
                 if now - last_retention > 3600:
                     last_retention = now
                     await ctx.db.writer.run(
-                        lambda c: retention(
-                            c,
-                            now,
+                        partial(
+                            retention,
+                            now=now,
                             event_days=raw.event_retention_days,
                             stats_days=raw.stats_retention_days,
                             ip_days=raw.client_ip_retention_days,
@@ -349,9 +351,10 @@ class SlowShield:
 
 
 def _host(scope: Scope) -> str:
+    """Host header without the port, lower-cased (IPv6 literals keep their brackets)."""
     for k, v in scope.get("headers", ()):
         if k == b"host":
-            host = v.decode("latin-1").lower()
+            host = v.decode("latin-1").strip().lower()
             if host.startswith("["):
                 return host.split("]", 1)[0] + "]"
             return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
@@ -400,6 +403,9 @@ async def _traced(app: ASGIApp, scope: Scope, receive: Receive, send: Send) -> N
         )
 
 
+_UI_PAGES = frozenset(
+    {"packages", "partials", "leaderboards", "security", "security.csv", "blocklist", "feeds", "setup", "about"}
+)
 _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/pypi/simple/", "/pypi/simple/{project}/"),
     ("/pypi/packages/", "/pypi/packages/{file}"),
@@ -416,8 +422,9 @@ def _route_label(path: str) -> str:
         return path
     for prefix, label in _ROUTE_PREFIXES:
         if path.startswith(prefix):
-            if prefix.endswith("/ui/"):
-                return "/ui/" + path[4:].split("/", 1)[0]
+            if prefix == "/ui/":
+                page = path[4:].split("/", 1)[0]
+                return "/ui/" + page if page in _UI_PAGES else label
             return label
     if path.startswith("/npm/"):
         return "/npm/{package}/-/{file}" if "/-/" in path else "/npm/{package}"
@@ -430,12 +437,5 @@ def create_app(
     config: LoadedConfig | str | None = None, *, clock: Clock | None = None, background: bool = True
 ) -> SlowShield:
     """Granian calls this with no arguments (factory mode); tests pass a config and a clock."""
-    if isinstance(config, LoadedConfig):
-        cfg = config
-    else:
-        cfg = load(Path(config) if config else None)
+    cfg = config if isinstance(config, LoadedConfig) else load(Path(config) if config else None)
     return SlowShield(cfg, clock, background=background)
-
-
-AsyncHandler = Callable[[Request], Awaitable[Response]]
-_ = AsyncIterator

@@ -1,0 +1,35 @@
+SlowShield {{ .Chart.AppVersion }} is starting (single replica, Recreate strategy).
+
+Public URL: {{ include "slowshield.publicUrl" . }}
+
+  PyPI : {{ include "slowshield.publicUrl" . }}/pypi/simple/
+  npm  : {{ include "slowshield.publicUrl" . }}/npm/
+  UI   : {{ include "slowshield.publicUrl" . }}/
+
+{{- if .Values.caddy.enabled }}
+
+TLS mode: {{ .Values.tls.mode }}
+{{- if eq .Values.tls.mode "internal" }}
+  Clients must trust Caddy's internal root CA. The images have no shell or tar, so read it with an
+  ephemeral debug container (Amazon Linux 2023 minimal) that shares the caddy container's process namespace:
+    POD=$(kubectl -n {{ .Release.Namespace }} get pod -l app.kubernetes.io/instance={{ .Release.Name }} -o name | head -1)
+    kubectl -n {{ .Release.Namespace }} debug -q -i $POD --target=caddy --profile=restricted \
+      --image=public.ecr.aws/amazonlinux/amazonlinux:2023-minimal -- \
+      cat /proc/1/root/data/caddy/pki/authorities/local/root.crt > slowshield-root.crt
+{{- end }}
+{{- if eq .Values.service.type "ClusterIP" }}
+  The Service is ClusterIP. Expose it with service.type=LoadBalancer (TCP 80/443 + UDP 443) or port-forward:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "slowshield.fullname" . }} 8443:{{ .Values.service.httpsPort }}
+{{- end }}
+{{- else }}
+
+Caddy is disabled: route your Ingress/Gateway to service {{ include "slowshield.fullname" . }}:{{ .Values.service.httpPort }} (plain HTTP).
+Make sure the ingress controller's addresses are in SlowShield's trusted_proxies (private ranges by default).
+{{- end }}
+
+{{- if not (include "slowshield.githubSecretName" .) }}
+
+The GitHub Advisory feed is OFF (no token). Enable it with:
+  kubectl -n {{ .Release.Namespace }} create secret generic slowshield-github --from-literal=token='github_pat_...'
+  helm upgrade {{ .Release.Name }} <chart> --reuse-values --set feeds.github.existingSecret=slowshield-github
+{{- end }}

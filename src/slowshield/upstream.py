@@ -156,8 +156,7 @@ class Upstream:
                 last = UpstreamError(url, f"upstream returned {res.status}", res.status)
                 if attempt + 1 < attempts_per_mirror:
                     await asyncio.sleep(0.2 * (attempt + 1))
-        assert last is not None
-        raise last
+        raise last or UpstreamError(",".join(candidates), "no upstream configured")
 
     async def _get_once(self, url: str, headers: dict[str, str], max_bytes: int, kind: str) -> FetchResult:
         for _hop in range(4):

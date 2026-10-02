@@ -13,10 +13,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import msgspec
+from msgspec import UNSET, Raw, UnsetType
 
 from slowshield import versions as V
 
-_raw_map = msgspec.json.Decoder(dict[str, msgspec.Raw])
+_raw_map = msgspec.json.Decoder(dict[str, Raw])
 _any = msgspec.json.Decoder()
 _enc = msgspec.json.Encoder()
 
@@ -25,7 +26,7 @@ class _Dist(msgspec.Struct):
     tarball: str | None = None
     integrity: str | None = None
     shasum: str | None = None
-    unpackedSize: int | None = None  # noqa: N815 - npm field name
+    unpackedSize: int | float | None = None  # noqa: N815 - npm field name
 
 
 class _VersionLite(msgspec.Struct):
@@ -33,31 +34,42 @@ class _VersionLite(msgspec.Struct):
 
 
 _lite = msgspec.json.Decoder(_VersionLite)
+_lite_map = msgspec.json.Decoder(dict[str, _VersionLite])
 
-# Fields kept in the abbreviated ("corgi") format, per the npm registry docs.
-ABBREVIATED_FIELDS = (
-    "name",
-    "version",
-    "deprecated",
-    "dependencies",
-    "optionalDependencies",
-    "devDependencies",
-    "bundleDependencies",
-    "peerDependencies",
-    "peerDependenciesMeta",
-    "acceptDependencies",
-    "bin",
-    "directories",
-    "dist",
-    "engines",
-    "cpu",
-    "os",
-    "libc",
-    "funding",
-    "_hasShrinkwrap",
-    "hasInstallScript",
-)
+_R = Raw | UnsetType
+
+
+class _Corgi(msgspec.Struct, omit_defaults=True):
+    """Abbreviated ("corgi") version manifest, per the npm registry docs. Values stay raw JSON."""
+
+    name: _R = UNSET
+    version: _R = UNSET
+    deprecated: _R = UNSET
+    dependencies: _R = UNSET
+    optionalDependencies: _R = UNSET  # noqa: N815
+    devDependencies: _R = UNSET  # noqa: N815
+    bundleDependencies: _R = UNSET  # noqa: N815
+    peerDependencies: _R = UNSET  # noqa: N815
+    peerDependenciesMeta: _R = UNSET  # noqa: N815
+    acceptDependencies: _R = UNSET  # noqa: N815
+    bin: _R = UNSET
+    directories: _R = UNSET
+    dist: _R = UNSET
+    engines: _R = UNSET
+    cpu: _R = UNSET
+    os: _R = UNSET
+    libc: _R = UNSET
+    funding: _R = UNSET
+    has_shrinkwrap: _R = msgspec.field(default=UNSET, name="_hasShrinkwrap")
+    hasInstallScript: _R = UNSET  # noqa: N815
+    scripts: _R = UNSET  # decoded only to derive hasInstallScript; never emitted
+
+
+ABBREVIATED_FIELDS = tuple(_Corgi.__struct_encode_fields__[:-1])
+_corgi_map = msgspec.json.Decoder(dict[str, _Corgi])
 _INSTALL_SCRIPTS = ("preinstall", "install", "postinstall")
+_INSTALL_MARKERS = tuple(f'"{s}"'.encode() for s in _INSTALL_SCRIPTS)
+_TRUE = Raw(b"true")
 
 
 def parse_time(raw: Any) -> float | None:
@@ -75,18 +87,19 @@ def parse_time(raw: Any) -> float | None:
 @dataclass(slots=True)
 class VersionInfo:
     version: str
-    raw: bytes
+    raw: Raw | bytes
     published: float | None
     tarball: str | None
     integrity: str | None
     shasum: str | None
     size: int | None
+    key_json: bytes = b""
 
 
 @dataclass(slots=True)
 class Packument:
     name: str
-    top: dict[str, msgspec.Raw]
+    top: dict[str, Raw]
     versions: dict[str, VersionInfo]
     time: dict[str, Any]
     dist_tags: dict[str, str]
@@ -94,6 +107,20 @@ class Packument:
     raw_size: int
     unpublished: bool = False
     by_tarball_path: dict[str, str] = field(default_factory=dict)  # "/pkg/-/pkg-1.0.0.tgz" -> version
+
+
+def _lites(blob: Raw, raws: dict[str, Raw]) -> dict[str, _Dist]:
+    """dist info of every version in one pass; falls back to per-version decoding on odd data."""
+    try:
+        return {k: v.dist for k, v in _lite_map.decode(blob).items()}
+    except msgspec.ValidationError:
+        out: dict[str, _Dist] = {}
+        for k, raw in raws.items():
+            try:
+                out[k] = _lite.decode(raw).dist
+            except msgspec.ValidationError:
+                out[k] = _Dist()
+        return out
 
 
 def parse(raw: bytes, *, name: str, etag: str | None, upstream_bases: list[str]) -> Packument:
@@ -105,26 +132,34 @@ def parse(raw: bytes, *, name: str, etag: str | None, upstream_bases: list[str])
     dist_tags = {k: v for k, v in tags_raw.items() if isinstance(v, str)} if isinstance(tags_raw, dict) else {}
     versions: dict[str, VersionInfo] = {}
     by_path: dict[str, str] = {}
+    prefixes: list[str] = []
+    for base in upstream_bases:
+        prefixes.append(base + "/")
+        if base.startswith("https://"):
+            prefixes.append("http://" + base[len("https://") :] + "/")
     if "versions" in top:
-        for ver, blob in _raw_map.decode(top["versions"]).items():
-            data = bytes(blob)
-            lite = _lite.decode(data)
-            tarball = lite.dist.tarball
+        blob = top["versions"]
+        raws = _raw_map.decode(blob)
+        dists = _lites(blob, raws)
+        for ver, vraw in raws.items():
+            dist = dists.get(ver) or _Dist()
+            tarball = dist.tarball if isinstance(dist.tarball, str) else None
+            size = dist.unpackedSize
             versions[ver] = VersionInfo(
                 version=ver,
-                raw=data,
+                raw=vraw,
                 published=parse_time(time_map.get(ver)),
                 tarball=tarball,
-                integrity=lite.dist.integrity,
-                shasum=lite.dist.shasum,
-                size=lite.dist.unpackedSize,
+                integrity=dist.integrity,
+                shasum=dist.shasum,
+                size=int(size) if isinstance(size, (int, float)) else None,
+                key_json=_enc.encode(ver),
             )
             if tarball:
-                for base in upstream_bases:
-                    for scheme_base in (base, base.replace("https://", "http://", 1)):
-                        if tarball.startswith(scheme_base + "/"):
-                            by_path[tarball[len(scheme_base) :]] = ver
-                            break
+                for prefix in prefixes:
+                    if tarball.startswith(prefix):
+                        by_path[tarball[len(prefix) - 1 :]] = ver
+                        break
     return Packument(
         name=name,
         top=top,
@@ -139,53 +174,74 @@ def parse(raw: bytes, *, name: str, etag: str | None, upstream_bases: list[str])
 
 
 def recompute_tags(original: dict[str, str], kept: list[str]) -> dict[str, str]:
-    """`latest` -> highest kept stable version (falls back to highest kept); other tags kept only if
-    their target is still served."""
+    """`latest` -> highest kept stable version <= the original latest (falls back to the highest kept);
+    other tags are kept only if their target is still served."""
     if not kept:
         return {}
     kept_set = set(kept)
-    out: dict[str, str] = {}
-    for tag, target in original.items():
-        if tag != "latest" and target in kept_set:
-            out[tag] = target
+    out = {tag: target for tag, target in original.items() if tag != "latest" and target in kept_set}
     latest = original.get("latest")
-    if latest in kept_set:
-        out["latest"] = latest  # type: ignore[assignment]
-    else:
-        stable = [v for v in kept if not V.is_prerelease("npm", v)]
-        pool = stable or kept
-        cap = V.parse_semver(latest) if latest else None
-        below = [v for v in pool if cap is None or (V.parse_semver(v) is not None and V.parse_semver(v) <= cap)]  # type: ignore[operator]
-        out["latest"] = max(below or pool, key=lambda v: V.sort_key("npm", v))
-    return {"latest": out.pop("latest"), **out}
+    if latest is not None and latest in kept_set:
+        return {"latest": latest, **out}
+    cap_v = V.parse_semver(latest) if latest else None
+    cap = cap_v.key if cap_v is not None else None
+    # One pass; each slot holds (sort key, version).
+    stable_below = stable_any = any_below = any_any = None
+    for v in kept:
+        s = V.parse_semver(v)
+        key: Any = (1, s.key) if s is not None else (0, v)
+        below = cap is None or (s is not None and s.key <= cap)
+        item = (key, v)
+        if any_any is None or key > any_any[0]:
+            any_any = item
+        if below and (any_below is None or key > any_below[0]):
+            any_below = item
+        if s is None or not s.is_prerelease:
+            if stable_any is None or key > stable_any[0]:
+                stable_any = item
+            if below and (stable_below is None or key > stable_below[0]):
+                stable_below = item
+    pick = (stable_below or stable_any) if stable_any is not None else (any_below or any_any)
+    assert pick is not None  # kept is non-empty  # noqa: S101
+    return {"latest": pick[1], **out}
 
 
 def _rewrite(raw: bytes, upstream_bases: list[str], public_base: str) -> bytes:
-    pub = public_base.encode()
+    pub = public_base.encode() + b"/"
     for base in upstream_bases:
-        b = base.encode()
+        b = base.encode() + b"/"
         if b in raw:
-            raw = raw.replace(b + b"/", pub + b"/")
-        hb = b.replace(b"https://", b"http://", 1)
-        if hb != b and hb in raw:
-            raw = raw.replace(hb + b"/", pub + b"/")
+            raw = raw.replace(b, pub)
+        if b.startswith(b"https://"):
+            hb = b"http://" + b[len(b"https://") :]
+            if hb in raw:
+                raw = raw.replace(hb, pub)
     return raw
+
+
+def _versions_blob(p: Packument, kept: list[str], upstream_bases: list[str], public_base: str) -> bytes:
+    parts: list[Any] = [b"{"]
+    for i, v in enumerate(kept):
+        info = p.versions[v]
+        if i:
+            parts.append(b",")
+        parts.append(info.key_json or _enc.encode(v))
+        parts.append(b":")
+        parts.append(info.raw)
+    parts.append(b"}")
+    return _rewrite(b"".join(parts), upstream_bases, public_base)
 
 
 def render_full(
     p: Packument, kept: list[str], tags: dict[str, str], *, upstream_bases: list[str], public_base: str
 ) -> bytes:
-    versions_blob = (
-        b"{"
-        + b",".join(_enc.encode(v) + b":" + _rewrite(p.versions[v].raw, upstream_bases, public_base) for v in kept)
-        + b"}"
-    )
+    versions_blob = Raw(_versions_blob(p, kept, upstream_bases, public_base))
     kept_set = set(kept)
     time_out = {k: v for k, v in p.time.items() if k in ("created", "modified", "unpublished") or k in kept_set}
     out: dict[str, Any] = {}
     for key, blob in p.top.items():
         if key == "versions":
-            out[key] = msgspec.Raw(versions_blob)
+            out[key] = versions_blob
         elif key == "time":
             out[key] = time_out
         elif key == "dist-tags":
@@ -193,29 +249,40 @@ def render_full(
         else:
             out[key] = blob
     if "versions" not in out and kept:
-        out["versions"] = msgspec.Raw(versions_blob)
+        out["versions"] = versions_blob
     return _enc.encode(out)
 
 
 def render_abbreviated(
     p: Packument, kept: list[str], tags: dict[str, str], *, upstream_bases: list[str], public_base: str
 ) -> bytes:
-    vers: dict[str, Any] = {}
-    for v in kept:
-        doc = _any.decode(_rewrite(p.versions[v].raw, upstream_bases, public_base))
-        if not isinstance(doc, dict):
-            continue
-        slim = {k: doc[k] for k in ABBREVIATED_FIELDS if k in doc}
-        scripts = doc.get("scripts")
-        if "hasInstallScript" not in slim and isinstance(scripts, dict) and any(s in scripts for s in _INSTALL_SCRIPTS):
-            slim["hasInstallScript"] = True
-        vers[v] = slim
-    modified = p.time.get("modified")
+    blob = _versions_blob(p, kept, upstream_bases, public_base)
+    try:
+        vers = _corgi_map.decode(blob)
+    except msgspec.ValidationError:
+        vers = {}
+        for v in kept:
+            try:
+                vers[v] = msgspec.json.decode(
+                    _rewrite(bytes(p.versions[v].raw), upstream_bases, public_base), type=_Corgi
+                )
+            except msgspec.ValidationError:
+                continue
+    for c in vers.values():
+        scripts = c.scripts
+        if c.hasInstallScript is UNSET and isinstance(scripts, Raw):
+            raw = bytes(scripts)
+            if any(m in raw for m in _INSTALL_MARKERS):
+                decoded = _any.decode(raw)
+                if isinstance(decoded, dict) and any(s in decoded for s in _INSTALL_SCRIPTS):
+                    c.hasInstallScript = _TRUE
+        c.scripts = UNSET
     out: dict[str, Any] = {"name": p.name, "dist-tags": tags, "versions": vers}
+    modified = p.time.get("modified")
     if isinstance(modified, str):
         out["modified"] = modified
     return _enc.encode(out)
 
 
 def render_version(p: Packument, version: str, *, upstream_bases: list[str], public_base: str) -> bytes:
-    return _rewrite(p.versions[version].raw, upstream_bases, public_base)
+    return _rewrite(bytes(p.versions[version].raw), upstream_bases, public_base)

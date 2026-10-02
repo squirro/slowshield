@@ -1,0 +1,7 @@
+# Bridge network for the SlowShield pod (egress to PyPI/npm/feeds is required).
+[Unit]
+Description=SlowShield network
+
+[Network]
+NetworkName=slowshield
+DisableDNS=false

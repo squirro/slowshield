@@ -1,0 +1,54 @@
+# SlowShield configuration (mounted read-only at /etc/slowshield/config.toml).
+# Changes to delays, exceptions and feed settings are picked up within seconds (no restart).
+# Environment variables override these values (see docs/configuration.md).
+
+# Release-age policy
+default_delay_days = 7
+enforce_age_on_download = true   # lockfiles/direct URLs to too-new versions get 403 + Retry-After
+fail_open = true                 # brand-new packages with no old-enough version are served (and logged)
+metadata_cache_ttl_hours = 6
+
+# Security events record the client IP (taken from Caddy's X-Forwarded-For).
+record_client_ip = true
+client_ip_retention_days = 30
+event_retention_days = 365
+
+[upstreams.pypi]
+enabled = true
+# Optional dedicated hostnames (host routing). Without them PyPI is served at /pypi/simple/.
+hostnames = []
+mirrors = ["https://pypi.org"]
+
+[upstreams.npm]
+enabled = true
+hostnames = []
+mirrors = ["https://registry.npmjs.org"]
+
+[cache]
+artifacts_enabled = true
+artifacts_max_gb = 20
+metadata_max_mb = 256
+
+[feeds]
+poll_interval_minutes = 60
+
+[feeds.osv]
+enabled = true
+
+[feeds.github_advisory]
+# Needs GITHUB_TOKEN_FILE (see secrets/README.md); stays off with a UI warning otherwise.
+enabled = true
+
+# Per-package overrides, e.g. a longer delay after an incident or an early release of a hotfix:
+# [[exceptions]]
+# ecosystem = "pypi"
+# package = "litellm"
+# delay_days = 14
+# note = "supply chain incident 2026-03"
+#
+# [[exceptions]]
+# ecosystem = "npm"
+# package = "left-pad"
+# version = "1.3.1"
+# delay_days = 0
+# note = "security hotfix, reviewed by @secops"

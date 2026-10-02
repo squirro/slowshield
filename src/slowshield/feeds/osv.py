@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -158,7 +159,8 @@ class OsvFeed:
         key = f"osv:{osv_eco}"
         state = await asyncio.to_thread(lambda: load_state(self.ctx.db.readers.get(), key))
         mark = _parse_ts(state.get("watermark") or "")
-        if mark is None or datetime.now(UTC) - mark > FULL_RESYNC_AFTER:
+        now = datetime.fromtimestamp(self.ctx.clock.now(), UTC)
+        if mark is None or now - mark > FULL_RESYNC_AFTER:
             return await self._full(osv_eco, key, state.get("etag"))
         return await self._incremental(osv_eco, key, mark)
 
@@ -189,8 +191,12 @@ class OsvFeed:
                         view = view[os.write(fd, view) :]
             finally:
                 os.close(fd)
+        stop = threading.Event()
         try:
-            changed, watermark = await asyncio.to_thread(self._apply_zip, target)
+            changed, watermark = await asyncio.to_thread(self._apply_zip, target, stop)
+        except asyncio.CancelledError:
+            stop.set()  # let the worker thread finish promptly on shutdown
+            raise
         finally:
             target.unlink(missing_ok=True)
         await self.ctx.db.writer.run(
@@ -198,12 +204,14 @@ class OsvFeed:
         )
         return changed
 
-    def _apply_zip(self, path: Path) -> tuple[int, str | None]:
+    def _apply_zip(self, path: Path, stop: threading.Event | None = None) -> tuple[int, str | None]:
         changed = 0
-        watermark: str | None = None
+        newest: datetime | None = None
         batch: list[Advisory] = []
         with zipfile.ZipFile(path) as zf:
             for info in zf.infolist():
+                if stop is not None and stop.is_set():
+                    return changed, None  # cancelled: do not advance the watermark
                 fname = info.filename.rsplit("/", 1)[-1]
                 if not (fname.startswith("MAL-") and fname.endswith(".json")) or info.file_size > MAX_ENTRY_BYTES:
                     continue
@@ -215,8 +223,9 @@ class OsvFeed:
                     vuln = _decoder.decode(data)
                 except msgspec.DecodeError:
                     continue
-                if vuln.modified and (watermark is None or vuln.modified > watermark):
-                    watermark = vuln.modified
+                ts = _parse_ts(vuln.modified) if vuln.modified else None
+                if ts is not None and (newest is None or ts > newest):
+                    newest = ts
                 adv = to_advisory(vuln)
                 if adv is not None:
                     batch.append(adv)
@@ -225,12 +234,12 @@ class OsvFeed:
                     batch = []
         if batch:
             changed += self._write(batch)
-        return changed, watermark
+        return changed, (newest.isoformat() if newest else None)
 
     def _write(self, batch: list[Advisory]) -> int:
         now = self.ctx.clock.now()
         items = list(batch)
-        return self.ctx.db.writer.submit(lambda c: apply_advisories(c, items, now)).result()
+        return self.ctx.db.writer.submit(lambda c: apply_advisories(c, items, now)).result(timeout=120)
 
     # ---- incremental ------------------------------------------------------------------------------
 

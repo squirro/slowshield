@@ -1,0 +1,88 @@
+# Grafana datasources with trace <-> logs <-> metrics correlation (exemplars, trace-to-logs, logs-to-trace).
+apiVersion: 1
+
+prune: true
+
+datasources:
+  - name: Prometheus
+    uid: slowshield-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      timeInterval: 15s
+      incrementalQuerying: true
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: slowshield-tempo
+        - name: traceID
+          datasourceUid: slowshield-tempo
+
+  - name: Loki
+    uid: slowshield-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 2000
+      derivedFields:
+        # OTLP log records carry trace_id as structured metadata; Caddy logs as traceID.
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: slowshield-tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+        - name: traceID
+          matcherRegex: '"traceID":"(\w+)"'
+          datasourceUid: slowshield-tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: slowshield-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      streamingEnabled:
+        search: true
+        metrics: true
+      serviceMap:
+        datasourceUid: slowshield-prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: "-30m"
+        spanEndTimeShift: "30m"
+      tracesToLogsV2:
+        datasourceUid: slowshield-loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: '{service_name="$${__span.tags["service.name"]}"} | trace_id="$${__trace.traceId}"'
+      tracesToMetrics:
+        datasourceUid: slowshield-prometheus
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        tags:
+          - key: service.name
+            value: service
+        queries:
+          - name: Request rate
+            query: 'sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))'
+          - name: Error rate
+            query: 'sum(rate(traces_spanmetrics_calls_total{$$__tags,status_code="STATUS_CODE_ERROR"}[5m]))'
+      lokiSearch:
+        datasourceUid: slowshield-loki

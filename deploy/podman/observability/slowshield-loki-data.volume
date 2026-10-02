@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield observability: loki data
+
+[Volume]
+VolumeName=slowshield-loki-data

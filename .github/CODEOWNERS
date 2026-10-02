@@ -1,0 +1,6 @@
+# Default owners for everything in the repository.
+*                    @tonibirrer
+# Supply-chain sensitive paths get an explicit review.
+/.github/            @tonibirrer
+/containers/         @tonibirrer
+/src/slowshield/     @tonibirrer

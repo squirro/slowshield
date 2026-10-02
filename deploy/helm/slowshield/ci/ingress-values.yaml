@@ -1,0 +1,5 @@
+caddy:
+  enabled: false
+publicUrl: https://slowshield.example.com
+networkPolicy:
+  enabled: true

@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "slowshield.fullname" . }}
+  labels: {{- include "slowshield.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "slowshield.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Client traffic: Caddy's ports (or SlowShield's 8080 when running behind your own Ingress).
+    - ports:
+        - port: 8080
+          protocol: TCP
+        {{- if .Values.caddy.enabled }}
+        - port: 8443
+          protocol: TCP
+        - port: 8443
+          protocol: UDP
+        {{- end }}
+      {{- with .Values.networkPolicy.ingressFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if and .Values.caddy.enabled .Values.caddy.metrics }}
+    - ports:
+        - port: 9180
+          protocol: TCP
+      {{- with .Values.networkPolicy.metricsFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+  egress:
+    # DNS
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Registries, threat feeds and ACME: HTTPS only, anywhere except cluster-private ranges.
+    - ports:
+        - port: 443
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+        - ipBlock:
+            cidr: ::/0
+            except: ["fc00::/7", "fe80::/10"]
+    {{- if .Values.telemetry.otlpEndpoint }}
+    # OTLP collector inside the cluster.
+    - ports:
+        - port: {{ .Values.networkPolicy.otlpPort }}
+          protocol: TCP
+      to:
+        - namespaceSelector: {}
+    {{- end }}
+{{- end }}

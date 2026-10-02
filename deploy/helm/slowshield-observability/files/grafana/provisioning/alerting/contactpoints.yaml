@@ -1,0 +1,20 @@
+# Default contact point for SlowShield alerts.
+#
+# Out of the box the webhook points at a discard address (nothing is sent). To receive alerts set
+# SLOWSHIELD_ALERT_WEBHOOK_URL (e.g. a Slack/Mattermost/Teams incoming webhook or Alertmanager) in the
+# Grafana environment. For e-mail, configure GF_SMTP_* and add an `email` receiver here, or create
+# contact points in the Grafana UI: provisioned ones are read-only, UI-created ones are not.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slowshield-default
+    receivers:
+      - uid: slowshield-webhook
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: ${SLOWSHIELD_ALERT_WEBHOOK_URL}
+          httpMethod: POST
+          title: '{{ template "default.title" . }}'
+          message: '{{ template "default.message" . }}'

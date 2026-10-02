@@ -1,0 +1,59 @@
+# Tempo 3 monolithic (all components in-process, no Kafka), local block storage, 15 day retention.
+# The metrics-generator derives RED span-metrics and a service graph and remote-writes them to Prometheus.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+metrics_generator:
+  processor:
+    span_metrics:
+      # Extra span attributes promoted to span-metric labels (low cardinality only).
+      dimensions:
+        - http.route
+        - http.response.status_code
+        - server.address
+        - network.protocol.version
+    service_graphs:
+      dimensions:
+        - server.address
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+backend_worker:
+  compaction:
+    block_retention: 360h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: ["span-metrics", "service-graphs"]
+      generate_native_histograms: both
+
+usage_report:
+  reporting_enabled: false

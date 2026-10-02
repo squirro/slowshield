@@ -1,0 +1,33 @@
+# Prometheus: OTLP receiver (app metrics via Alloy) + remote-write receiver (Caddy, Tempo span-metrics).
+[Unit]
+Description=SlowShield observability: Prometheus
+
+[Container]
+# Pinned by digest (observability/images.env); bump in the repo instead of podman auto-update.
+ContainerName=slowshield-prometheus
+Image=docker.io/prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+UserNS=keep-id:uid=65534,gid=65534
+User=65534
+Group=65534
+Network=slowshield-telemetry.network
+NetworkAlias=prometheus
+PidsLimit=512
+Ulimit=nofile=65536:65536
+Volume=slowshield-prometheus-data.volume:/prometheus
+Volume=%h/.config/slowshield/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
+Exec=--config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d --web.enable-otlp-receiver --web.enable-remote-write-receiver
+HealthCmd=["wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+HealthInterval=30s
+PodmanArgs=--memory=1g --cpus=1
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

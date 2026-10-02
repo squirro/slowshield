@@ -35,7 +35,8 @@ def main(version: str) -> None:
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
         member = tf.getmember("package/dist/htmx.min.js")
         fh = tf.extractfile(member)
-        assert fh is not None
+        if fh is None:
+            sys.exit("htmx.min.js missing from the tarball")
         js = fh.read()
         try:
             lic = tf.extractfile(tf.getmember("package/LICENSE"))

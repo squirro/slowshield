@@ -1,0 +1,135 @@
+name: Nightly
+
+# Slower, broader checks: Kubernetes (kind + Helm), the full observability stack, live installs from
+# the real PyPI/npm through the proxy, and a GIL vs free-threaded (3.15t) performance comparison.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.12.19"
+
+jobs:
+  stack:
+    name: Kubernetes, observability & live smoke (amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build images
+        run: |
+          docker buildx build -f containers/slowshield/Dockerfile -t slowshield:nightly --load .
+          docker buildx build -f containers/caddy/Dockerfile -t slowshield-caddy:nightly --load .
+          docker buildx build -f containers/fakeupstream/Dockerfile -t slowshield-fakeupstream:nightly --load .
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Observability stack smoke test
+        env:
+          SLOWSHIELD_IMAGE: slowshield:nightly
+          SLOWSHIELD_CADDY_IMAGE: slowshield-caddy:nightly
+          FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:nightly
+        run: uv run python observability/smoke.py
+
+      - name: Live smoke test against pypi.org and registry.npmjs.org
+        env:
+          SLOWSHIELD_IMAGE: slowshield:nightly
+        run: uv run pytest -m live tests/e2e -v
+
+      - name: Create kind cluster
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          cluster_name: slowshield
+
+      - name: Install the Helm chart and probe it
+        run: |
+          set -euo pipefail
+          kind load docker-image slowshield:nightly slowshield-caddy:nightly --name slowshield
+          helm install slowshield deploy/helm/slowshield --wait --timeout 5m \
+            --set image.repository=slowshield --set image.tag=nightly --set image.pullPolicy=Never \
+            --set caddy.image.repository=slowshield-caddy --set caddy.image.tag=nightly --set caddy.image.pullPolicy=Never \
+            --set tls.mode=internal --set hostnames='{localhost}'
+          kubectl get pods -o wide
+          kubectl port-forward svc/slowshield 18443:443 >/tmp/pf.log 2>&1 &
+          for _ in $(seq 1 30); do curl -fsSk https://localhost:18443/healthz && break; sleep 2; done
+          curl -fsSk -H 'Accept: application/vnd.pypi.simple.v1+json' https://localhost:18443/pypi/simple/requests/ | head -c 300
+          kubectl get pod -l app.kubernetes.io/name=slowshield -o jsonpath='{.items[0].spec.securityContext}'
+
+  free-threaded:
+    name: GIL vs free-threaded performance (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+
+      - name: Build GIL and free-threaded images
+        run: |
+          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15 -t slowshield:gil --load .
+          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15t -t slowshield:ft --load .
+          docker buildx build -f containers/fakeupstream/Dockerfile -t slowshield-fakeupstream:nightly --load .
+          docker image ls --filter reference='slowshield:*'
+
+      - name: Compare (free-threaded = candidate, GIL = baseline)
+        continue-on-error: true
+        run: |
+          uv sync --locked
+          uv run python -m perf run --candidate slowshield:ft --baseline slowshield:gil \
+            --fakeupstream slowshield-fakeupstream:nightly --profile full --rounds 5 --duration 15s \
+            --workers 2 --out perf/results/free-threaded
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-free-threaded-${{ matrix.arch }}
+          path: perf/results/
+          if-no-files-found: ignore
+          retention-days: 30

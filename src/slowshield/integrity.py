@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -37,10 +38,10 @@ def parse_sri(integrity: str | None) -> bytes | None:
 @dataclass(slots=True)
 class StreamVerifier:
     expected: Expected
-    _sha256: hashlib._Hash = field(default_factory=hashlib.sha256)  # type: ignore[name-defined]
-    _blake: hashlib._Hash | None = None  # type: ignore[name-defined]
-    _sha512: hashlib._Hash | None = None  # type: ignore[name-defined]
-    _sha1: hashlib._Hash | None = None  # type: ignore[name-defined]
+    _sha256: Any = field(default_factory=hashlib.sha256)
+    _blake: Any = None
+    _sha512: Any = None
+    _sha1: Any = None
     size: int = 0
 
     def __post_init__(self) -> None:

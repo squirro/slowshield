@@ -1,0 +1,16 @@
+apiVersion: v2
+name: slowshield
+description: Supply-chain defence proxy for PyPI and npm (release-age delay, malware blocklist, tamper detection) with an optional Caddy TLS edge.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/squirro/slowshield
+sources:
+  - https://github.com/squirro/slowshield
+keywords: [supply-chain, security, pypi, npm, proxy]
+maintainers:
+  - name: Squirro AG
+icon: https://raw.githubusercontent.com/squirro/slowshield/main/brand/mark.svg
+annotations:
+  artifacthub.io/license: Apache-2.0

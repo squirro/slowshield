@@ -23,7 +23,7 @@ from slowshield import versions as V
 from slowshield.blocklist import BlockEntry, PackageBlocks
 from slowshield.cache.metadata import SingleFlight
 from slowshield.context import AppContext
-from slowshield.ecosystems.artifacts import ArtifactRequest
+from slowshield.ecosystems.artifacts import ArtifactRequest, AsgiResponse
 from slowshield.ecosystems.npm import packument as P
 from slowshield.integrity import Expected, parse_sri
 from slowshield.policy import DAY, Candidate, evaluate, retry_after
@@ -245,40 +245,48 @@ class NpmService:
             client_ip=client_ip(request.scope, ctx.cfg.trusted_networks),
             details=entry.as_json(),
         )
-        return error(451, "blocked", package=name, version=version, **entry.as_json())
+        return error(
+            451,
+            "blocked",
+            package=name,
+            version=version,
+            advisory_id=entry.advisory_id or None,
+            reason=entry.reason,
+            source=entry.source,
+            url=entry.url,
+        )
 
-    async def _resolve(self, request: Request, name: str, kind: str) -> tuple[View | None, Response | None]:
+    async def _resolve(self, request: Request, name: str, kind: str) -> View | Response:
         ctx = self.ctx
         blocks = ctx.blocklist.for_package(ECO, name)
         if blocks.package_block is not None:
-            return None, self._blocked(request, name, None, blocks.package_block, kind=kind)
+            return self._blocked(request, name, None, blocks.package_block, kind=kind)
         try:
             doc = await self.doc(name)
         except TooLargeError:
-            return None, error(502, "upstream_error", detail="upstream packument too large")
+            return error(502, "upstream_error", detail="upstream packument too large")
         except UpstreamError as exc:
             ctx.recorder.decision(ECO, kind, "upstream_error")
-            return None, error(502, "upstream_error", detail=exc.detail)
+            return error(502, "upstream_error", detail=exc.detail)
         if doc is None:
             ctx.recorder.decision(ECO, kind, "not_found")
-            return None, not_found()
+            return not_found()
         v = self.view(doc)
         if v.package_block is not None:
-            return None, self._blocked(request, name, None, v.package_block, kind=kind)
-        return v, None
+            return self._blocked(request, name, None, v.package_block, kind=kind)
+        return v
 
     # ---- handlers --------------------------------------------------------------------------------------
 
     async def packument(self, request: Request, name: str) -> Response:
         ctx = self.ctx
-        v, err = await self._resolve(request, name, "metadata")
-        if err is not None:
-            return err
-        assert v is not None
+        v = await self._resolve(request, name, "metadata")
+        if not isinstance(v, View):
+            return v
         doc = v.doc
         if not v.kept and v.blocked and not v.held:
             return self._blocked(request, name, None, next(iter(v.blocked.values())), kind="metadata")
-        fmt = accept_prefers(request.headers.get("accept"), (ABBREVIATED, "application/json"), "application/json")
+        fmt = accept_prefers(request.headers.get("accept"), ("application/json", ABBREVIATED), "application/json")
         if doc.unpublished:
             fmt = "application/json"
         etag = f'"{v.digest}-{"a" if fmt == ABBREVIATED else "f"}"'
@@ -317,10 +325,9 @@ class NpmService:
         return Response(body, media_type=fmt if fmt == ABBREVIATED else "application/json", headers=headers)
 
     async def version_manifest(self, request: Request, name: str, spec: str) -> Response:
-        v, err = await self._resolve(request, name, "metadata")
-        if err is not None:
-            return err
-        assert v is not None
+        v = await self._resolve(request, name, "metadata")
+        if not isinstance(v, View):
+            return v
         version = v.tags.get(spec, spec)
         if version not in v.kept:
             return not_found()
@@ -329,7 +336,7 @@ class NpmService:
         )
         return Response(body, media_type="application/json", headers={"Cache-Control": "max-age=300"})
 
-    async def tarball(self, request: Request, name: str, filename: str) -> Response:
+    async def tarball(self, request: Request, name: str, filename: str) -> AsgiResponse:
         ctx = self.ctx
         base = names.npm_basename(name)
         if not filename.startswith(base + "-"):
@@ -338,30 +345,28 @@ class NpmService:
         if V.parse_semver(version) is None:
             return not_found()
         ip = client_ip(request.scope, ctx.cfg.trusted_networks)
-        v, err = await self._resolve(request, name, "artifact")
-        if err is not None:
-            return err
-        assert v is not None
+        v = await self._resolve(request, name, "artifact")
+        if not isinstance(v, View):
+            return v
         info = v.doc.versions.get(version)
         tar_path = f"/{name}/-/{filename}"
-        if info is None or v.doc.by_tarball_path.get(tar_path) != version:
-            # Fall back to an exact match on the version's declared tarball path.
-            if info is None or not info.tarball or not unquote(info.tarball).endswith(tar_path):
-                ctx.recorder.decision(ECO, "artifact", "not_found")
-                return not_found()
+        # The tarball must be the one the packument declares (by path under a configured mirror).
+        declared = info is not None and (
+            v.doc.by_tarball_path.get(tar_path) == version
+            or bool(info.tarball and unquote(info.tarball).endswith(tar_path))
+        )
+        if info is None or not declared:
+            ctx.recorder.decision(ECO, "artifact", "not_found")
+            return not_found()
         if version in v.blocked:
             return self._blocked(request, name, version, v.blocked[version], kind="artifact")
         if ctx.cfg.raw.enforce_age_on_download and version not in v.kept:
             return self._too_new(request, name, version, info.published, ip)
         sri = parse_sri(info.integrity)
         expected = Expected(sha512=sri, sha1=None if sri else info.shasum)
-        upstream_url = (
-            info.tarball
-            if info.tarball and info.tarball.startswith(("https://", "http://"))
-            else self.upstream_bases[0] + tar_path
-        )
-        if upstream_url.startswith("http://"):
-            upstream_url = "https://" + upstream_url[len("http://") :]
+        # Always fetch from a configured mirror (with its configured scheme), never from a URL the
+        # packument points at: legacy `http://registry.npmjs.org/...` tarballs are upgraded this way too.
+        upstream_url = self.upstream_bases[0] + tar_path
         req = ArtifactRequest(
             ecosystem=ECO,
             key=tar_path,
@@ -371,9 +376,7 @@ class NpmService:
             upstream_url=upstream_url,
             expected=expected,
         )
-        return await ctx.artifacts.serve(  # type: ignore[return-value]
-            req, method=request.method, headers_in=dict(request.headers), client_ip=ip
-        )
+        return await ctx.artifacts.serve(req, method=request.method, headers_in=dict(request.headers), client_ip=ip)
 
     def _too_new(self, request: Request, name: str, version: str, published: float | None, ip: str | None) -> Response:
         ctx = self.ctx

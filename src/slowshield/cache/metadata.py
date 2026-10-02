@@ -6,19 +6,17 @@ import asyncio
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
-
-V = TypeVar("V")
+from typing import Any, cast
 
 
 @dataclass(slots=True)
-class Entry(Generic[V]):
+class Entry[V]:
     value: V
     size: int
     expires: float  # monotonic-independent: wall-clock seconds from the injected Clock
 
 
-class LRUCache(Generic[V]):
+class LRUCache[V]:
     def __init__(self, max_bytes: int) -> None:
         self.max_bytes = max(1, max_bytes)
         self._data: OrderedDict[Hashable, Entry[V]] = OrderedDict()
@@ -80,12 +78,12 @@ class SingleFlight:
     """Coalesce concurrent loads of the same key into one upstream request."""
 
     def __init__(self) -> None:
-        self._inflight: dict[Hashable, asyncio.Future[object]] = {}
+        self._inflight: dict[Hashable, asyncio.Future[Any]] = {}
 
-    async def run(self, key: Hashable, fn: Callable[[], Awaitable[V]]) -> V:
+    async def run[V](self, key: Hashable, fn: Callable[[], Awaitable[V]]) -> V:
         while (fut := self._inflight.get(key)) is not None:
             try:
-                return await asyncio.shield(fut)  # type: ignore[return-value]
+                return cast(V, await asyncio.shield(fut))
             except asyncio.CancelledError:
                 if fut.cancelled():  # the leader was cancelled: take over
                     continue

@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield observability: prometheus data
+
+[Volume]
+VolumeName=slowshield-prometheus-data

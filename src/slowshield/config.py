@@ -180,14 +180,19 @@ class LoadedConfig:
         return (self.raw.public_url or "http://localhost:8080").rstrip("/")
 
 
-def _read_secret(name: str) -> tuple[str | None, str]:
-    """Read ``NAME`` or ``NAME_FILE`` from the environment (file wins, as with Docker/K8s secrets)."""
+def _read_secret(name: str, warnings: list[str]) -> tuple[str | None, str]:
+    """Read ``NAME`` or ``NAME_FILE`` from the environment (file wins, as with Docker/K8s secrets).
+
+    An unreadable or missing file is treated as "no secret" (the dependent feature switches off and the
+    UI explains how to fix it) rather than preventing startup.
+    """
     file_path = os.environ.get(f"{name}_FILE", "").strip()
     if file_path:
         try:
             value = Path(file_path).read_text(encoding="utf-8").strip()
         except OSError as exc:
-            raise ConfigError(f"{name}_FILE={file_path!r} cannot be read: {exc.strerror}") from exc
+            warnings.append(f"{name}_FILE={file_path!r} cannot be read ({exc.strerror}); treating {name} as unset")
+            return None, "file"
         return (value or None), "file"
     value = os.environ.get(name, "").strip()
     return (value or None), "env"
@@ -331,7 +336,7 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
         except ValueError as exc:
             raise ConfigError(f"trusted_proxies: invalid network {cidr!r}") from exc
 
-    token, origin = _read_secret("GITHUB_TOKEN")
+    token, origin = _read_secret("GITHUB_TOKEN", warnings)
     if token is None and cfg.feeds.github_advisory.api_key:
         token, origin = cfg.feeds.github_advisory.api_key, "config"
     status = FeedTokenStatus(token is not None, origin if token else "missing")

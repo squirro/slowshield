@@ -14,6 +14,8 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, TypeVar
 
+from slowshield.telemetry import instruments
+
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -116,6 +118,7 @@ class Writer:
         self._q: queue.SimpleQueue[tuple[Op, concurrent.futures.Future[Any] | None] | None] = queue.SimpleQueue()
         self._thread = threading.Thread(target=self._run, name="slowshield-db-writer", daemon=True)
         self._started = False
+        self._closed = False
         self._pending = 0
         self._lock = threading.Lock()
         self.last_flush_seconds = 0.0
@@ -133,14 +136,21 @@ class Writer:
 
     def enqueue(self, op: Op) -> None:
         with self._lock:
+            if self._closed:
+                log.debug("write dropped: writer is stopped")
+                return
             self._pending += 1
-        self._q.put((op, None))
+            self._q.put((op, None))
 
     def submit(self, op: Callable[[sqlite3.Connection], T]) -> concurrent.futures.Future[T]:
+        """Queue `op`; after `stop()` the returned future fails immediately instead of hanging."""
         fut: concurrent.futures.Future[T] = concurrent.futures.Future()
         with self._lock:
+            if self._closed:
+                fut.set_exception(RuntimeError("database writer is stopped"))
+                return fut
             self._pending += 1
-        self._q.put((op, fut))
+            self._q.put((op, fut))
         return fut
 
     async def run(self, op: Callable[[sqlite3.Connection], T]) -> T:
@@ -155,8 +165,12 @@ class Writer:
             self.enqueue(lambda c: c.executemany(sql, rows))
 
     def stop(self, timeout: float = 10.0) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._q.put(None)  # everything queued before this still gets written
         if self._started:
-            self._q.put(None)
             self._thread.join(timeout)
             self._started = False
 
@@ -180,7 +194,10 @@ class Writer:
                         stop = True
                         break
                     items.append(nxt)
-                self._flush(conn, items)
+                try:
+                    self._flush(conn, items)
+                except Exception:  # pragma: no cover - defensive: the writer must never die
+                    log.exception("database writer flush crashed; continuing")
                 if stop:
                     return
         finally:
@@ -205,13 +222,19 @@ class Writer:
                 self._pending -= len(items)
         self.last_flush_seconds = time.perf_counter() - started
         self.flushes += 1
+        instruments.db_flush_duration.record(self.last_flush_seconds)
         for fut, value, exc in results:
-            if fut is None:
+            # The awaiting coroutine may have been cancelled (asyncio.wrap_future cancels the
+            # concurrent future too); the write itself still happened, so just drop the result.
+            if fut is None or fut.cancelled():
                 continue
-            if exc is not None:
-                fut.set_exception(exc)
-            else:
-                fut.set_result(value)
+            try:
+                if exc is not None:
+                    fut.set_exception(exc)
+                else:
+                    fut.set_result(value)
+            except concurrent.futures.InvalidStateError:  # pragma: no cover - lost a race with cancel()
+                continue
 
     def _run_one(
         self, conn: sqlite3.Connection, op: Op, fut: concurrent.futures.Future[Any] | None

@@ -1,0 +1,34 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the request (URL, client and version) and the response status/body.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SlowShield version
+      description: Shown in the UI footer or via `slowshield version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options: [Docker Compose, Podman (Quadlet), Kubernetes (Helm), Other]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: json

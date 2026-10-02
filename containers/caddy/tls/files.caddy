@@ -1,0 +1,4 @@
+# Bring your own certificate (e.g. from an internal CA or a Kubernetes TLS secret).
+tls {$TLS_CERT_FILE:/certs/tls.crt} {$TLS_KEY_FILE:/certs/tls.key} {
+	import ../snippets/tls-params.caddy
+}

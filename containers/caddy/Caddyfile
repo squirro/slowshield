@@ -1,0 +1,125 @@
+# SlowShield edge: TLS termination for the SlowShield proxy.
+#
+# Everything is configured through environment variables (substituted before parsing):
+#   SLOWSHIELD_HOSTNAMES   site addresses, space separated          (default: localhost)
+#   SLOWSHIELD_UPSTREAM    host:port of the SlowShield container     (default: slowshield:8080)
+#   SLOWSHIELD_TLS_MODE    internal | acme | files                    (default: internal)
+#     acme:  ACME_EMAIL (optional), ACME_CA (default: Let's Encrypt production)
+#     files: TLS_CERT_FILE, TLS_KEY_FILE (PEM; default /certs/tls.crt, /certs/tls.key)
+#   TLS_MIN_VERSION        1.3 (default) or 1.2 (adds AEAD-only ECDHE suites for legacy clients)
+#   SLOWSHIELD_HSTS        Strict-Transport-Security value (default: 2 years, includeSubDomains)
+#   SLOWSHIELD_PUBLIC_HTTPS_PORT  externally published HTTPS port (default 443), used for the
+#                          HTTP->HTTPS redirect and the HTTP/3 Alt-Svc advertisement
+#   CADDY_METRICS          on | off: Prometheus metrics on the internal :9180 listener (never publish it)
+#   CADDY_TRACING          on | off: OTLP traces (uses the standard OTEL_* variables)
+#   CADDY_ACCESS_LOG_FILE  on | off: also write JSON access logs to /var/log/caddy/access.log
+#
+# Ports inside the container are unprivileged: 8080 (HTTP, redirects + ACME HTTP-01) and 8443
+# (HTTPS over TCP and HTTP/3 over UDP). Publish them as 80 and 443.
+{
+	admin off
+	skip_install_trust
+	http_port 8080
+	https_port 8443
+	grace_period 15s
+	# Redirects are handled by the explicit http:// site below so they never leak the internal port.
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2 h3
+		strict_sni_host on
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+	log default {
+		output stdout
+		format json
+		level INFO
+	}
+	import metrics/{$CADDY_METRICS:off}-global.caddy
+}
+
+(slowshield_site) {
+	import tls/{$SLOWSHIELD_TLS_MODE:internal}.caddy
+
+	header {
+		Strict-Transport-Security "{$SLOWSHIELD_HSTS:max-age=63072000; includeSubDomains}"
+		X-Content-Type-Options nosniff
+		# Advertise HTTP/3 on the *published* port, not the container's internal 8443.
+		Alt-Svc "h3=\":{$SLOWSHIELD_PUBLIC_HTTPS_PORT:443}\"; ma=86400"
+		-Server
+		-Via
+	}
+
+	# Only GET/HEAD, plus POST for `npm audit` (forwarded to the registry by SlowShield).
+	@audit {
+		method POST
+		path_regexp audit ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
+	}
+	@forbidden_method {
+		not method GET HEAD
+		not {
+			method POST
+			path_regexp ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
+		}
+	}
+	respond @forbidden_method 405
+	request_body @audit {
+		max_size 10MB
+	}
+	request_body {
+		max_size 16KB
+	}
+
+	# Compress metadata (indexes, packuments, UI); artifacts are already compressed archives.
+	encode {
+		zstd
+		gzip 5
+		minimum_length 1024
+		match {
+			header Content-Type application/json*
+			header Content-Type application/vnd.pypi.simple*
+			header Content-Type application/vnd.npm.install-v1+json*
+			header Content-Type text/*
+			header Content-Type application/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	reverse_proxy {$SLOWSHIELD_UPSTREAM:slowshield:8080} {
+		# Stream artifacts as they arrive; SlowShield holds back the last chunk until verified.
+		flush_interval -1
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 5m
+			keepalive 90s
+			keepalive_idle_conns 64
+		}
+	}
+
+	import tracing/{$CADDY_TRACING:off}.caddy
+	import logs/{$CADDY_ACCESS_LOG_FILE:off}.caddy
+	log access {
+		output stdout
+		format json
+	}
+}
+
+{$SLOWSHIELD_HOSTNAMES:localhost} {
+	import slowshield_site
+}
+
+# Plain HTTP: /healthz is proxied to SlowShield (load-balancer and in-cluster health checks);
+# everything else is permanently redirected to HTTPS. ACME HTTP-01 challenges are answered
+# automatically before these handlers run.
+http:// {
+	handle /healthz {
+		reverse_proxy {$SLOWSHIELD_UPSTREAM:slowshield:8080}
+	}
+	handle {
+		redir https://{host}:{$SLOWSHIELD_PUBLIC_HTTPS_PORT:443}{uri} 308
+	}
+}
+
+import metrics/{$CADDY_METRICS:off}-site.caddy

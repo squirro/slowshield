@@ -1,0 +1,14 @@
+hostnames: [pypi.example.com]
+tls:
+  mode: acme
+  acme:
+    email: ops@example.com
+service:
+  type: LoadBalancer
+feeds:
+  github:
+    existingSecret: slowshield-github
+telemetry:
+  otlpEndpoint: http://alloy.observability.svc:4318
+caddy:
+  metrics: true

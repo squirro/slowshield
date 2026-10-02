@@ -145,7 +145,8 @@ def top_packages(
     return _rows(
         conn,
         f"SELECT ecosystem, package, sum(serves) s, sum(bytes) b, sum(cache_hits) h, count(DISTINCT version) v "
-        f"FROM {w.table} WHERE bucket >= ? AND bucket < ?{ec} GROUP BY ecosystem, package ORDER BY {order} DESC LIMIT ?",
+        f"FROM {w.table} WHERE bucket >= ? AND bucket < ?{ec} GROUP BY ecosystem, package ORDER BY {order} DESC LIMIT "
+        "?",
         (w.start, w.end + 1, *ep, limit),
     )
 
@@ -251,7 +252,8 @@ def package_series(conn: sqlite3.Connection, eco: str, name: str, w: Window) -> 
         int(b): int(s)
         for b, s in _rows(
             conn,
-            f"SELECT bucket, sum(serves) FROM {w.table} WHERE ecosystem = ? AND package = ? AND bucket >= ? AND bucket < ? "
+            f"SELECT bucket, sum(serves) FROM {w.table} WHERE ecosystem = ? AND package = ? AND bucket >= ? AND "
+            "bucket < ? "
             "GROUP BY bucket",
             (eco, name, w.start, w.end + 1),
         )
@@ -295,7 +297,8 @@ def event_leaders(
     ec, ep = _eco_clause(eco)
     return _rows(
         conn,
-        f"SELECT ecosystem, package, sum(count) n, count(DISTINCT version) v, count(DISTINCT client_ip) clients, max(ts) last "
+        "SELECT ecosystem, package, sum(count) n, count(DISTINCT version) v, count(DISTINCT client_ip) clients, "
+        "max(ts) last "
         f"FROM events WHERE type = ? AND ts >= ?{ec} GROUP BY ecosystem, package ORDER BY n DESC LIMIT ?",
         (type_, w.start, *ep, limit),
     )
@@ -390,7 +393,8 @@ def blocklist_page(
 def blocklist_counts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return _rows(
         conn,
-        "SELECT source, ecosystem, count(*) n, sum(version IS NULL AND version_range IS NULL) pkg, max(first_seen) newest "
+        "SELECT source, ecosystem, count(*) n, sum(version IS NULL AND version_range IS NULL) pkg, max(first_seen) "
+        "newest "
         "FROM blocklist WHERE withdrawn IS NULL GROUP BY source, ecosystem ORDER BY source, ecosystem",
     )
 

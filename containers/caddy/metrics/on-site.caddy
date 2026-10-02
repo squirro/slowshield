@@ -1,0 +1,5 @@
+# Internal metrics listener for Prometheus/Alloy. Never publish this port.
+http://:9180 {
+	metrics /metrics
+	respond /healthz 200
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 _PEP503_SEP = re.compile(r"[-_.]+")
 # PEP 508 project names (also enforced by PyPI on upload).
@@ -14,6 +15,7 @@ NPM_MAX_LEN = 214
 PYPI_MAX_LEN = 200
 
 
+@lru_cache(maxsize=65536)
 def normalize_pypi(name: str) -> str:
     """PEP 503 normalised form: lower case, runs of `-_.` collapsed into `-`."""
     return _PEP503_SEP.sub("-", name).lower()

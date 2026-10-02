@@ -15,22 +15,19 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
 
 DAY = 86400.0
 
-T = TypeVar("T")
-
 
 @dataclass(frozen=True, slots=True)
-class Candidate(Generic[T]):
+class Candidate[T]:
     item: T
     version: str | None
     published: float | None  # UNIX seconds
 
 
 @dataclass(slots=True)
-class Evaluation(Generic[T]):
+class Evaluation[T]:
     allowed: list[Candidate[T]] = field(default_factory=list)
     held: list[Candidate[T]] = field(default_factory=list)  # too new (and not blocked)
     blocked: list[Candidate[T]] = field(default_factory=list)
@@ -62,7 +59,7 @@ def retry_after(published: float | None, delay_days: float, now: float) -> int |
     return max(0, math.ceil(published + delay_days * DAY - now))
 
 
-def evaluate(
+def evaluate[T](
     candidates: Iterable[Candidate[T]],
     *,
     now: float,

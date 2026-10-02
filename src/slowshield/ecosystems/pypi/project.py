@@ -60,6 +60,9 @@ class PyFile:
     core_metadata: dict[str, str] | bool  # hashes of the PEP 658 .metadata file, True if present w/o hashes
     provenance: str | None
     version: str | None
+    # Render caches (a file's JSON item / HTML anchor never changes once parsed).
+    json_item: bytes | None = field(default=None, repr=False, compare=False)
+    html_line: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(slots=True)
@@ -103,16 +106,28 @@ def _api_version(raw: str) -> tuple[int, int]:
         return (1, 0)
 
 
-def parse_project(raw: bytes, *, base_url: str, name: str, etag: str | None) -> Project:
+def _artifact_path(abs_url: str, files_url: str | None) -> str | None:
+    """`/packages/...` path of a file URL, or None if it is not served from `files_url`."""
+    clean = abs_url.split("#", 1)[0].split("?", 1)[0]
+    if files_url is None:
+        return urlsplit(clean).path
+    prefix = files_url.rstrip("/")
+    if not clean.startswith(prefix + "/"):
+        return None
+    return clean[len(prefix) :]
+
+
+def parse_project(raw: bytes, *, base_url: str, name: str, etag: str | None, files_url: str | None = None) -> Project:
+    """Parse a PEP 691 document. Files not hosted under `files_url` (when given) are skipped."""
     doc = _decoder.decode(raw)
     versions = list(doc.versions or [])
     files: list[PyFile] = []
     skipped = 0
     for f in doc.files:
-        abs_url = urljoin(base_url, f.url)
-        path = urlsplit(abs_url).path
-        m = filenames.PACKAGES_PATH.match(path)
-        if m is None or m.group(4) != f.filename:
+        url = f.url if f.url.startswith(("https://", "http://")) else urljoin(base_url, f.url)
+        path = _artifact_path(url, files_url)
+        m = filenames.PACKAGES_PATH.match(path) if path is not None else None
+        if path is None or m is None or m.group(4) != f.filename:
             skipped += 1
             continue
         blake = m.group(1) + m.group(2) + m.group(3)

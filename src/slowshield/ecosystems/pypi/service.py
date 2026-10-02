@@ -17,7 +17,7 @@ from slowshield import names
 from slowshield.blocklist import BlockEntry, PackageBlocks
 from slowshield.cache.metadata import SingleFlight
 from slowshield.context import AppContext
-from slowshield.ecosystems.artifacts import ArtifactRequest
+from slowshield.ecosystems.artifacts import ArtifactRequest, AsgiResponse
 from slowshield.ecosystems.pypi import filenames
 from slowshield.ecosystems.pypi.project import HTML_V1, JSON_V1, Project, PyFile, parse_project
 from slowshield.ecosystems.pypi.render import render_html, render_json, render_root
@@ -111,7 +111,13 @@ class PypiService:
         ctype = res.headers.get("content-type", "")
         if not ctype.startswith(JSON_V1):
             raise UpstreamError(res.url, f"upstream does not speak the PEP 691 JSON API (got {ctype or 'no type'})")
-        project = parse_project(res.body, base_url=res.url, name=name, etag=res.etag)
+        project = parse_project(
+            res.body,
+            base_url=res.url,
+            name=name,
+            etag=res.etag,
+            files_url=ctx.cfg.raw.upstreams.pypi.files_url,
+        )
         ctx.metadata_cache.put(key, project, project.raw_size * 2 + 1024, now + ttl)
         published: dict[str, float | None] = {}
         yanked: dict[str, bool] = {}
@@ -273,9 +279,18 @@ class PypiService:
             client_ip=client_ip(request.scope, ctx.cfg.trusted_networks),
             details=entry.as_json(),
         )
-        return error(451, "blocked", package=name, version=version, **entry.as_json())
+        return error(
+            451,
+            "blocked",
+            package=name,
+            version=version,
+            advisory_id=entry.advisory_id or None,
+            reason=entry.reason,
+            source=entry.source,
+            url=entry.url,
+        )
 
-    async def artifact(self, request: Request) -> Response:
+    async def artifact(self, request: Request) -> AsgiResponse:
         ctx = self.ctx
         raw_path = request.scope.get("raw_path") or b""
         if b"%" in raw_path:
@@ -343,7 +358,7 @@ class PypiService:
             headers_in=dict(request.headers),
             client_ip=ip,
             size_hint=None if is_metadata else pf.size,
-        )  # type: ignore[return-value]
+        )
 
     def _too_new(self, request: Request, name: str, pf: PyFile, ip: str | None) -> Response:
         ctx = self.ctx

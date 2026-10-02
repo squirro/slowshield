@@ -1,0 +1,3 @@
+# TLS_MODE=files: put tls.crt + tls.key here (never committed).
+*
+!.gitignore

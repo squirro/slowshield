@@ -1,0 +1,4 @@
+# OTLP traces; endpoint and protocol come from the standard OTEL_* environment variables.
+tracing {
+	span caddy
+}

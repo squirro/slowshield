@@ -1,0 +1,152 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ctx := . }}
+# Alloy: OTLP in from SlowShield; out to the backends, the Kubernetes API and Caddy's metrics port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "obs.componentName" (list . "alloy") }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "alloy") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP
+      {{- with .Values.alloy.otlpFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- include "obs.dnsEgress" . | nindent 4 }}
+    - ports:
+        - port: 9090
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "prometheus") | nindent 8 }}
+    - ports:
+        - port: 3100
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "loki") | nindent 8 }}
+    - ports:
+        - port: 4317
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "tempo") | nindent 8 }}
+    - ports:
+        - port: 9180
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "obs.slowshieldNamespace" . }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: slowshield
+    {{- with .Values.networkPolicy.apiServer }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+# Prometheus: OTLP and remote-write from Alloy, remote-write from Tempo, queries from Grafana.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "obs.componentName" (list . "prometheus") }}
+  labels: {{- include "obs.labels" (list . "prometheus") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "prometheus") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 9090
+          protocol: TCP
+      from:
+        {{- range $component := list "alloy" "tempo" "grafana" }}
+        {{- include "obs.peer" (list $ctx $component) | nindent 8 }}
+        {{- end }}
+  egress:
+    {{- include "obs.dnsEgress" . | nindent 4 }}
+---
+# Loki: pushes from Alloy, queries from Grafana.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "obs.componentName" (list . "loki") }}
+  labels: {{- include "obs.labels" (list . "loki") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "loki") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 3100
+          protocol: TCP
+      from:
+        {{- range $component := list "alloy" "grafana" }}
+        {{- include "obs.peer" (list $ctx $component) | nindent 8 }}
+        {{- end }}
+  egress:
+    {{- include "obs.dnsEgress" . | nindent 4 }}
+---
+# Tempo: OTLP from Alloy, queries from Grafana; remote-writes span-metrics to Prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "obs.componentName" (list . "tempo") }}
+  labels: {{- include "obs.labels" (list . "tempo") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "tempo") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 4317
+          protocol: TCP
+      from: {{- include "obs.peer" (list . "alloy") | nindent 8 }}
+    - ports:
+        - port: 3200
+          protocol: TCP
+      from: {{- include "obs.peer" (list . "grafana") | nindent 8 }}
+  egress:
+    {{- include "obs.dnsEgress" . | nindent 4 }}
+    - ports:
+        - port: 9090
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "prometheus") | nindent 8 }}
+---
+# Grafana: the UI in; out to the backends and to the alert notification receiver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "obs.componentName" (list . "grafana") }}
+  labels: {{- include "obs.labels" (list . "grafana") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "grafana") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 3000
+          protocol: TCP
+      {{- with .Values.grafana.ingressFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- include "obs.dnsEgress" . | nindent 4 }}
+    - ports:
+        - port: 9090
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "prometheus") | nindent 8 }}
+    - ports:
+        - port: 3100
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "loki") | nindent 8 }}
+    - ports:
+        - port: 3200
+          protocol: TCP
+      to: {{- include "obs.peer" (list . "tempo") | nindent 8 }}
+    {{- with .Values.networkPolicy.grafanaEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

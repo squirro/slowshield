@@ -1,0 +1,21 @@
+# SlowShield configuration for the e2e stack: every upstream is the fake registry.
+default_delay_days = 7
+enforce_age_on_download = true
+fail_open = true
+metadata_cache_ttl_hours = 6
+
+[upstreams.pypi]
+mirrors = ["http://fakeupstream:9000/pypi"]
+files_url = "http://fakeupstream:9000/files"
+
+[upstreams.npm]
+mirrors = ["http://fakeupstream:9000/npm"]
+
+[cache]
+artifacts_enabled = true
+artifacts_max_gb = 1
+
+[feeds]
+poll_interval_minutes = 60
+osv_base_url = "http://fakeupstream:9000/osv"
+github_api_url = "http://fakeupstream:9000/github"

@@ -1,0 +1,51 @@
+# Canonical host; every other host in `ingress.hosts` gets a 308 redirect to it.
+canonicalHost: slowshield.net
+
+image:
+  repository: registry.squirro.com/slowshield/slowshield-website
+  tag: latest
+  # Prefer pinning by digest in production: digest: sha256:...
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 2
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - slowshield.net
+    - www.slowshield.net
+    - slowshield.com
+    - www.slowshield.com
+    - slowshield.org
+    - www.slowshield.org
+  tls:
+    enabled: true
+    secretName: slowshield-website-tls
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  # Namespace label selector of your ingress controller.
+  ingressNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: ingress-nginx
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []

@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield data (SQLite database + verified artifact cache)
+
+[Volume]
+VolumeName=slowshield-data

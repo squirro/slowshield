@@ -1,0 +1,35 @@
+{{- if not .Values.persistence.data.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "slowshield.fullname" . }}-data
+  labels: {{- include "slowshield.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: {{- toYaml .Values.persistence.data.accessModes | nindent 4 }}
+  {{- with .Values.persistence.data.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+{{- end }}
+{{- if and .Values.caddy.enabled (not .Values.persistence.caddy.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "slowshield.fullname" . }}-caddy
+  labels: {{- include "slowshield.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: {{- toYaml .Values.persistence.caddy.accessModes | nindent 4 }}
+  {{- with .Values.persistence.caddy.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.caddy.size }}
+{{- end }}

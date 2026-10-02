@@ -1,0 +1,36 @@
+/* SlowShield brand tokens (Shell-Shield identity). Mirrored in src/slowshield/ui/static/app.css and in the
+   Grafana dashboards. All text tokens meet WCAG AA on their surfaces and on their own soft badge tints. */
+:root {
+  --brand: #0f6e5d;        /* primary, links, active nav, "Shield" in the wordmark */
+  --brand-deep: #0b4f43;   /* secondary faces of the mark, snail body */
+  --brand-soft: #d8efe9;   /* selected rows, chips */
+  --hold: #a44a07;         /* held back / too new / fail-open text */
+  --hold-bright: #d98a1c;  /* the amber package in the mark, chart fills */
+  --blocked: #c0262d;      /* known malware, HTTP 451 */
+  --tampered: #a21caf;     /* tamper detections */
+  --available: #137334;    /* available versions, healthy feeds */
+  --ink: #17201b;
+  --muted: #5d6b63;
+  --surface: #ffffff;
+  --ground: #f6f7f5;
+  --pypi: #2f6fb3;
+  --npm: #cb3837;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #3cc4a6;
+    --brand-deep: #1f8f78;
+    --brand-soft: #133a32;
+    --hold: #f0a54a;
+    --hold-bright: #f0a54a;
+    --blocked: #f2686d;
+    --tampered: #e77ef2;
+    --available: #4ccf7d;
+    --ink: #e6ece8;
+    --muted: #93a39a;
+    --surface: #141c19;
+    --ground: #0d1311;
+    --pypi: #6fa6e6;
+    --npm: #ef6b6a;
+  }
+}

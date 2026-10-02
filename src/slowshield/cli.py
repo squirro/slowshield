@@ -66,8 +66,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def cmd_healthcheck(args: argparse.Namespace) -> int:
     url = args.url or f"http://127.0.0.1:{_port()}/readyz"
+    if not url.startswith(("http://", "https://")):  # urlopen would also read file:// and ftp:// URLs
+        print(f"unhealthy: --url must be http(s), got {url!r}", file=sys.stderr)
+        return 2
     try:
-        with urllib.request.urlopen(url, timeout=args.timeout) as resp:  # noqa: S310 - local URL
+        with urllib.request.urlopen(url, timeout=args.timeout) as resp:  # noqa: S310 - http(s) checked above
             ok = resp.status == 200
     except (urllib.error.URLError, OSError) as exc:
         print(f"unhealthy: {exc}", file=sys.stderr)

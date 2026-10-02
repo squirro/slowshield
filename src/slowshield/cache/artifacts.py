@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from pathlib import Path
 from slowshield.clock import Clock
 from slowshield.db import Database
 from slowshield.telemetry import instruments
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 log = logging.getLogger(__name__)
 
@@ -96,10 +99,14 @@ class ArtifactCache:
             d.mkdir(parents=True, exist_ok=True)
 
     def object_path(self, sha256: str) -> Path:
+        """Where an object lives. Only a hex SHA-256 is accepted, so no digest (for example one imported from
+        a legacy database) can ever point outside the cache directory."""
+        if not _SHA256.fullmatch(sha256):
+            raise ValueError(f"not a sha256 digest: {sha256!r}")
         return self.objects / sha256[:2] / sha256[2:4] / sha256
 
     def lookup(self, sha256: str | None) -> CachedFile | None:
-        if not self.enabled or not sha256:
+        if not self.enabled or not sha256 or not _SHA256.fullmatch(sha256):
             return None
         path = self.object_path(sha256)
         try:

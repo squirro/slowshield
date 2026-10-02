@@ -259,3 +259,16 @@ async def test_mid_stream_tamper_aborts_and_withholds_last_chunk(start_app, monk
     assert 0 < len(res.body) < len(first.content)  # the final chunk was withheld
     await run.drain()
     assert run.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(1,)]
+
+
+async def test_cache_paths_accept_only_sha256_digests(running: Running) -> None:
+    """A digest is the only thing that names a cached file, so nothing else can point outside the cache."""
+    import pytest
+
+    cache = running.ctx.artifact_cache
+    good = "ab" * 32
+    assert cache.object_path(good).is_relative_to(cache.root)
+    for bad in ("../../etc/passwd", "AB" * 32, "ab" * 31, "ab" * 32 + "/x", ""):
+        with pytest.raises(ValueError, match="not a sha256 digest"):
+            cache.object_path(bad)
+        assert cache.lookup(bad) is None

@@ -10,6 +10,11 @@ FIVE_MIN = 300
 HOUR = 3600
 DAY = 86400
 STEP = {"5min": FIVE_MIN, "hourly": HOUR, "daily": DAY}
+# Table names are the only interpolated SQL identifiers; they come from these fixed maps, never from input
+# (everything else is a bound parameter). Decisions and lookups have no daily rollup: daily windows sum hourly.
+_DOWNLOADS = {"5min": "downloads_5min", "hourly": "downloads_hourly", "daily": "downloads_daily"}
+_DECISIONS = {"5min": "decisions_5min", "hourly": "decisions_hourly", "daily": "decisions_hourly"}
+_LOOKUPS = {"5min": "lookups_5min", "hourly": "lookups_hourly", "daily": "lookups_hourly"}
 
 RANGES: dict[str, tuple[int, str]] = {
     "1h": (HOUR, "5min"),
@@ -30,22 +35,25 @@ class Window:
     start: int
     end: int
 
+    def __post_init__(self) -> None:
+        if self.granularity not in STEP:
+            raise ValueError(f"unknown granularity {self.granularity!r}")
+
     @property
     def step(self) -> int:
         return STEP[self.granularity]
 
     @property
     def table(self) -> str:
-        return f"downloads_{self.granularity}"
+        return _DOWNLOADS[self.granularity]
 
     @property
     def decisions_table(self) -> str:
-        # Decisions and lookups have no daily rollup; daily windows sum the hourly rows.
-        return "decisions_5min" if self.granularity == "5min" else "decisions_hourly"
+        return _DECISIONS[self.granularity]
 
     @property
     def lookups_table(self) -> str:
-        return "lookups_5min" if self.granularity == "5min" else "lookups_hourly"
+        return _LOOKUPS[self.granularity]
 
     @property
     def previous(self) -> Window:

@@ -576,3 +576,23 @@ async def test_streamed_artifact_skips_empty_chunks() -> None:
         ("http.response.body", b"", False),
     ]
     assert closed == [True]
+
+
+def test_ui_window_rejects_unknown_granularity() -> None:
+    from slowshield.ui.queries import Window, window
+
+    w = window("24h", 1_790_000_000)
+    assert (w.table, w.decisions_table, w.lookups_table) == ("downloads_hourly", "decisions_hourly", "lookups_hourly")
+    assert window("1h", 1_790_000_000).decisions_table == "decisions_5min"
+    assert window("30d", 1_790_000_000).table == "downloads_daily"
+    with pytest.raises(ValueError, match="unknown granularity"):
+        Window("x", 60, "daily; DROP TABLE events", 0, 60)
+
+
+def test_healthcheck_only_accepts_http_urls(capsys: pytest.CaptureFixture[str]) -> None:
+    import argparse
+
+    from slowshield.cli import cmd_healthcheck
+
+    assert cmd_healthcheck(argparse.Namespace(url="file:///etc/passwd", timeout=1)) == 2
+    assert "must be http(s)" in capsys.readouterr().err

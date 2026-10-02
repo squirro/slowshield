@@ -34,20 +34,46 @@ pip / uv / poetry / npm / pnpm / yarn / bun
      pypi.org · files.pythonhosted.org · registry.npmjs.org
 ```
 
-## Quick start (Docker Compose)
+## Quick start
+
+Try it on your laptop: one container, plain HTTP on localhost, nothing kept after you stop it.
 
 ```bash
-cd deploy/docker
-cp .env.example .env              # set SLOWSHIELD_HOSTNAMES, TLS mode, optional GITHUB_TOKEN
+docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
+pip install --index-url http://localhost:8080/pypi/simple/ requests
+```
+
+The dashboard is at `http://localhost:8080`. Releases younger than a week are held back; known malware is
+refused with HTTP 451. To send pip, uv and npm through it in every new terminal (bash shown; use `~/.zshrc`
+for zsh, or `set -Ux NAME value` in fish):
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
+export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
+export npm_config_registry=http://localhost:8080/npm/
+EOF
+source ~/.bashrc
+```
+
+Remove the lines to switch it off.
+
+## Run it for your team
+
+```bash
+git clone https://github.com/squirro/slowshield
+cd slowshield/deploy/docker
+cp .env.example .env              # your hostname, TLS mode, optional GITHUB_TOKEN
 docker compose up -d
 # with the full Grafana stack:
 docker compose -f compose.yaml -f compose.observability.yaml up -d
 ```
 
-Open `https://localhost/` for the UI (with `SLOWSHIELD_TLS_MODE=internal`, trust Caddy's root CA or use
-`-k` while testing). Podman (rootless Quadlet) and Kubernetes (Helm) examples live in
-[`deploy/podman`](deploy/podman/README.md) and [`deploy/helm`](deploy/helm/slowshield/README.md); every
-variant has an observability flavour.
+Caddy in front handles TLS (ACME, your own certificates, or an internal CA for testing). Podman (rootless
+Quadlet) and Kubernetes (Helm) setups live in [`deploy/podman`](deploy/podman/README.md) and
+[`deploy/helm`](deploy/helm/slowshield/README.md); every variant has an observability flavour. Images:
+`ghcr.io/squirro/slowshield` and `ghcr.io/squirro/slowshield-caddy` (amd64 and arm64, SBOM and provenance
+attached); pin a release or a digest in production.
 
 ## Point your clients at it
 
@@ -116,12 +142,6 @@ cp .env.example .env && uv run slowshield serve --config config.example.toml
 ```
 
 More in [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/development.md](docs/development.md).
-
-## Migrating from the Rust version
-
-The config file format is compatible (unsupported keys are ignored with a warning). Import the old
-database once to keep tamper-detection fingerprints and history:
-`slowshield import-legacy /path/to/mirror.db` — see [docs/operations.md](docs/operations.md).
 
 ## License
 

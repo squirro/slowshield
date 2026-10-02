@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Overview: three upstream-offload figures (traffic saved, fetched from upstream, upstream requests saved) and a
+  1-hour range backed by 5-minute rollups (schema migration 2).
+- `SLOWSHIELD_LOCAL_HTTP`: plain HTTP for localhost so local clients work without trusting Caddy's CA; the
+  Setup page and npm tarball URLs follow it.
+
+### Changed
+- New brand: the Inbound mark, Night Field palette and an outlined Schibsted Grotesk wordmark across the UI,
+  Grafana dashboards and README.
+
+### Fixed
+- Known-malicious versions that the registry has since removed returned 404; they are now refused with 451
+  and recorded as blocked, so a lockfile pinned during an attack window shows up as a security event.
+- The database writer's flush-duration histogram was never recorded.
+
 ## [1.0.0] - unreleased
 
 First open-source release: a rewrite of the internal Rust SlowShield (v0–v8) in Python 3.15.

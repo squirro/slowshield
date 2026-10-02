@@ -13,6 +13,9 @@
 #   CADDY_METRICS          on | off: Prometheus metrics on the internal :9180 listener (never publish it)
 #   CADDY_TRACING          on | off: OTLP traces (uses the standard OTEL_* variables)
 #   CADDY_ACCESS_LOG_FILE  on | off: also write JSON access logs to /var/log/caddy/access.log
+#   SLOWSHIELD_LOCAL_HTTP  on | off (default): also serve http://localhost, 127.0.0.1 and [::1] over plain
+#                          HTTP so local clients work without trusting the internal CA. Requests for any
+#                          other hostname are still redirected to HTTPS. Meant for a workstation.
 #
 # Ports inside the container are unprivileged: 8080 (HTTP, redirects + ACME HTTP-01) and 8443
 # (HTTPS over TCP and HTTP/3 over UDP). Publish them as 80 and 443.
@@ -40,14 +43,10 @@
 	import metrics/{$CADDY_METRICS:off}-global.caddy
 }
 
-(slowshield_site) {
-	import tls/{$SLOWSHIELD_TLS_MODE:internal}.caddy
-
+# Everything except TLS: shared by the HTTPS sites and the optional local plain-HTTP site.
+(slowshield_proxy) {
 	header {
-		Strict-Transport-Security "{$SLOWSHIELD_HSTS:max-age=63072000; includeSubDomains}"
 		X-Content-Type-Options nosniff
-		# Advertise HTTP/3 on the *published* port, not the container's internal 8443.
-		Alt-Svc "h3=\":{$SLOWSHIELD_PUBLIC_HTTPS_PORT:443}\"; ma=86400"
 		-Server
 		-Via
 	}
@@ -106,9 +105,22 @@
 	}
 }
 
+(slowshield_site) {
+	import tls/{$SLOWSHIELD_TLS_MODE:internal}.caddy
+
+	header {
+		Strict-Transport-Security "{$SLOWSHIELD_HSTS:max-age=63072000; includeSubDomains}"
+		# Advertise HTTP/3 on the *published* port, not the container's internal 8443.
+		Alt-Svc "h3=\":{$SLOWSHIELD_PUBLIC_HTTPS_PORT:443}\"; ma=86400"
+	}
+	import slowshield_proxy
+}
+
 {$SLOWSHIELD_HOSTNAMES:localhost} {
 	import slowshield_site
 }
+
+import local-http/{$SLOWSHIELD_LOCAL_HTTP:off}.caddy
 
 # Plain HTTP: /healthz is proxied to SlowShield (load-balancer and in-cluster health checks);
 # everything else is permanently redirected to HTTPS. ACME HTTP-01 challenges are answered

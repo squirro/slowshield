@@ -208,3 +208,36 @@ async def test_feed_sync_failure_is_recorded(running: Running) -> None:
     await running.drain()
     sched.refresh_status()
     assert running.ctx.feeds["osv"].reason == "error"
+
+
+async def test_removed_malicious_version_is_still_refused_and_recorded(running: Running) -> None:
+    """A lockfile pinned during an attack window asks for a version the registry has since removed.
+
+    It must get 451 and a security event, not a quiet 404.
+    """
+    from slowshield.blocklist import bump_generation
+    from slowshield.feeds import Advisory, BlockSpec, apply_advisories
+
+    adv = Advisory(
+        "osv",
+        "MAL-TEST-0001",
+        [BlockSpec("npm", "left-pad-ng", "9.9.9"), BlockSpec("pypi", "alpha", "9.9.9")],
+        "test",
+        None,
+    )
+
+    def seed(conn):  # type: ignore[no-untyped-def]
+        apply_advisories(conn, [adv], running.clock.now())
+        bump_generation(conn)
+
+    await running.ctx.db.writer.run(seed)
+    running.ctx.blocklist.refresh_generation(force=True)
+    r = await running.client.get("/npm/left-pad-ng/-/left-pad-ng-9.9.9.tgz")
+    assert r.status_code == 451 and r.json()["advisory_id"] == "MAL-TEST-0001"
+    r = await running.client.get(f"/pypi/packages/ab/cd/{'e' * 60}/alpha-9.9.9-py3-none-any.whl")
+    assert r.status_code == 451
+    r = await running.client.get("/npm/left-pad-ng/-/left-pad-ng-9.9.8.tgz")  # unknown but not blocked: still 404
+    assert r.status_code == 404
+    await running.drain()
+    events = running.rows("SELECT ecosystem, package, version FROM events WHERE type = 'blocked'")
+    assert ("npm", "left-pad-ng", "9.9.9") in events and ("pypi", "alpha", "9.9.9") in events

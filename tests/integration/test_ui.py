@@ -10,6 +10,7 @@ from tests.conftest import Running
 
 PAGES = [
     "/",
+    "/?range=1h",
     "/?range=24h",
     "/?range=30d&eco=pypi",
     "/?range=bogus&eco=bogus",
@@ -26,6 +27,9 @@ PAGES = [
     "/ui/packages/cargo/serde",
     "/ui/leaderboards",
     "/ui/leaderboards?range=24h&eco=npm",
+    "/ui/leaderboards?range=1h",
+    "/ui/packages/pypi/alpha?range=1h",
+    "/ui/security?range=1h",
     "/ui/security",
     "/ui/security?type=blocked&eco=npm&q=evil&ip=10.0.0.1&range=7d",
     "/ui/partials/security?page=2",
@@ -96,6 +100,10 @@ async def test_dashboard_reflects_activity(running: Running) -> None:
     r = await running.client.get("/?range=24h")
     assert "alpha" in r.text and "Top packages" in r.text
     assert "Malware blocked" in r.text
+    for label in ("Upstream traffic saved", "Fetched from upstream", "Upstream requests saved"):
+        assert label in r.text
+    r = await running.client.get("/?range=1h")
+    assert "alpha" in r.text and 'aria-current="true">1h<' in r.text
     r = await running.client.get("/ui/packages/pypi/alpha")
     assert "Held back" in r.text and "2.0.0" in r.text and "countdown" in r.text
     r = await running.client.get("/ui/leaderboards")
@@ -146,3 +154,25 @@ def test_formatters() -> None:
     assert fmt_ts(None) == "—" and fmt_ts(1).startswith("1970-01-01")
     assert safe_href("https://osv.dev/x") == "https://osv.dev/x"
     assert safe_href("javascript:alert(1)") == "#" and safe_href(None) == "#"
+
+
+async def test_setup_offers_plain_http_on_localhost(start_app) -> None:
+    run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
+    r = await run.client.get("/ui/setup", headers={"X-Forwarded-Proto": "http"})
+    assert "http://localhost:8080/pypi/simple/" in r.text and "http://localhost:8080/npm/" in r.text
+    assert "unsafeHttpWhitelist" in r.text and "verify_ssl = false" in r.text
+    assert "https://localhost/pypi/simple/" in r.text  # HTTPS stays documented as the alternative
+    # Viewed over HTTPS, the page still offers plain HTTP for the loopback public URL (default port).
+    r = await run.client.get("/ui/setup", headers={"X-Forwarded-Proto": "https"})
+    assert "http://localhost/pypi/simple/" in r.text
+
+
+async def test_setup_without_local_http(start_app) -> None:
+    run = await start_app('public_url = "https://localhost"\n', host="localhost")
+    r = await run.client.get("/ui/setup", headers={"X-Forwarded-Proto": "http"})
+    assert "http://localhost/pypi/simple/" not in r.text and "https://localhost/pypi/simple/" in r.text
+    assert "unsafeHttpWhitelist" not in r.text and "verify_ssl = true" in r.text
+    # A non-loopback public URL never switches to plain HTTP, whatever Host the request carries.
+    run = await start_app('local_http = true\npublic_url = "https://slowshield.example.com"\n', host="evil.test")
+    r = await run.client.get("/ui/setup", headers={"X-Forwarded-Proto": "http"})
+    assert "http://evil.test" not in r.text and "https://slowshield.example.com/pypi/simple/" in r.text

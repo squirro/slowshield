@@ -101,6 +101,9 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     bind_address: str = "0.0.0.0:8080"
     # Externally visible base URL of the UI host (e.g. https://slowshield.example.com).
     public_url: str | None = None
+    # Caddy also serves localhost / 127.0.0.1 / [::1] over plain HTTP (SLOWSHIELD_LOCAL_HTTP=on), so local
+    # clients work without trusting its internal CA. The Setup page and npm tarball URLs then use http://.
+    local_http: bool = False
     data_dir: str = "/data"
     database_path: str | None = None
     workers: int = 1
@@ -274,6 +277,7 @@ def _apply_env(cfg: Config) -> None:
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
+        ("SLOWSHIELD_LOCAL_HTTP", lambda b: setattr(cfg, "local_http", b)),
         ("SLOWSHIELD_ARTIFACT_CACHE", lambda b: setattr(cfg.cache, "artifacts_enabled", b)),
         ("SLOWSHIELD_FEED_OSV", lambda b: setattr(cfg.feeds.osv, "enabled", b)),
         ("SLOWSHIELD_FEED_GITHUB", lambda b: setattr(cfg.feeds.github_advisory, "enabled", b)),

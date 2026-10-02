@@ -38,6 +38,8 @@ services:
       SLOWSHIELD_PUBLIC_URL: ${SLOWSHIELD_PUBLIC_URL:-https://localhost}
       SLOWSHIELD_WORKERS: ${SLOWSHIELD_WORKERS:-2}
       SLOWSHIELD_LOG_LEVEL: ${SLOWSHIELD_LOG_LEVEL:-info}
+      # Same switch as Caddy's: the Setup page and npm tarball URLs then offer http://localhost.
+      SLOWSHIELD_LOCAL_HTTP: ${SLOWSHIELD_LOCAL_HTTP:-on}
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token
     configs:
@@ -91,6 +93,8 @@ services:
       CADDY_METRICS: ${CADDY_METRICS:-off}
       CADDY_TRACING: ${CADDY_TRACING:-off}
       CADDY_ACCESS_LOG_FILE: ${CADDY_ACCESS_LOG_FILE:-off}
+      # Plain HTTP for localhost / 127.0.0.1 / [::1] (local testing without trusting the internal CA).
+      SLOWSHIELD_LOCAL_HTTP: ${SLOWSHIELD_LOCAL_HTTP:-on}
     ports:
       - "${HTTP_PORT:-80}:8080/tcp"
       - "${HTTPS_PORT:-443}:8443/tcp"

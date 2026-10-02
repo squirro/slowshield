@@ -73,6 +73,42 @@ def _valid_ip(value: str) -> str | None:
         return None
 
 
+def request_scheme(scope: Scope, trusted: Sequence[Network]) -> str:
+    """The scheme the client used: X-Forwarded-Proto when set by a trusted proxy (Caddy), else the connection's."""
+    client = scope.get("client")
+    if client and _is_trusted(client[0], trusted):
+        proto = (header(scope, b"x-forwarded-proto") or "").strip().lower()
+        if proto in ("http", "https"):
+            return proto
+    return str(scope.get("scheme", "http"))
+
+
+def is_loopback_host(host: str) -> bool:
+    """`localhost`, `*.localhost`, 127.0.0.0/8 or ::1, with or without a port."""
+    h = host.strip().lower()
+    if h.startswith("["):
+        h = h[1 : h.find("]")] if "]" in h else h[1:]
+    elif h.count(":") == 1:
+        h = h.rsplit(":", 1)[0]
+    if h == "localhost" or h.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def local_http_origin(scope: Scope, local_http: bool, trusted: Sequence[Network]) -> str | None:
+    """`http://<host>` when local plain HTTP is enabled and this request came in over it for a loopback host.
+
+    Only loopback Host headers are echoed back, so a spoofed Host can never end up in a response.
+    """
+    if not local_http or request_scheme(scope, trusted) != "http":
+        return None
+    host = header(scope, b"host") or ""
+    return f"http://{host.strip()}" if host and is_loopback_host(host) else None
+
+
 def _is_trusted(addr: str, trusted: Sequence[Network]) -> bool:
     try:
         ip = ipaddress.ip_address(addr.strip("[]"))

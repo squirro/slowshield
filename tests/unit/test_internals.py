@@ -53,6 +53,39 @@ def test_client_ip() -> None:
     assert web.client_ip(_scope("10.0.0.1", "[2001:db8::1]"), TRUSTED) == "2001:db8::1"
 
 
+def test_local_http_helpers() -> None:
+    for host in (
+        "localhost",
+        "localhost:8080",
+        "app.localhost",
+        "127.0.0.1",
+        "127.9.9.9:80",
+        "[::1]",
+        "[::1]:8080",
+        "::1",
+    ):
+        assert web.is_loopback_host(host), host
+    for host in ("slowshield.test", "10.0.0.1", "localhost.evil.test", "[2001:db8::1]", ""):
+        assert not web.is_loopback_host(host), host
+
+    def scope(peer: str, proto: str | None, host: str) -> dict:
+        s = _scope(peer, host=host)
+        if proto:
+            s["headers"].append((b"x-forwarded-proto", proto.encode()))
+        s["scheme"] = "https"
+        return s
+
+    assert web.request_scheme(scope("10.0.0.1", "http", "x"), TRUSTED) == "http"  # from the trusted proxy
+    assert web.request_scheme(scope("203.0.113.1", "http", "x"), TRUSTED) == "https"  # untrusted: ignored
+    assert web.request_scheme(scope("10.0.0.1", "gopher", "x"), TRUSTED) == "https"
+    assert web.local_http_origin(scope("10.0.0.1", "http", "localhost:8080"), True, TRUSTED) == "http://localhost:8080"
+    assert web.local_http_origin(scope("10.0.0.1", "http", "localhost"), False, TRUSTED) is None  # disabled
+    assert web.local_http_origin(scope("10.0.0.1", "https", "localhost"), True, TRUSTED) is None  # came in over TLS
+    assert (
+        web.local_http_origin(scope("10.0.0.1", "http", "evil.test"), True, TRUSTED) is None
+    )  # never echo other hosts
+
+
 def test_route_path_and_header() -> None:
     assert web.route_path({"path": "/npm/x", "root_path": "/npm"}) == "/x"
     assert web.route_path({"path": "/npm", "root_path": "/npm"}) == ""
@@ -156,7 +189,7 @@ def test_split_sql() -> None:
 async def test_writer_isolates_failures(tmp_path: Path) -> None:
     path = tmp_path / "w.db"
     migrate(path)
-    assert migrate(path) == 1  # idempotent
+    assert migrate(path) == 2  # idempotent
     db = Database(path)
     db.open()
     try:
@@ -426,6 +459,12 @@ async def test_recorder_aggregates_and_collapses(tmp_path: Path) -> None:
             rec.event("blocked", "pypi", "a", "1.0", client_ip="1.2.3.4", details={"x": 1})
         rec.download("pypi", "a", None, 50, cache_hit=False)
         rec.decision("pypi", "artifact", "served", 4)
+        rec.lookup("pypi", cached=True)
+        rec.lookup("pypi", cached=True)
+        rec.lookup("pypi", cached=False)
+        clock.advance(300)  # next 5-minute bucket, same hour
+        rec.download("pypi", "a", "1.0", 10, cache_hit=True)
+        rec.lookup("pypi", cached=True)
         rec.catalog("pypi", "a", [("1.0", 1.0, False), ("2.0", None, True)])
         rec.catalog("pypi", "a")  # within an hour: skipped
         clock.advance(4000)
@@ -433,15 +472,25 @@ async def test_recorder_aggregates_and_collapses(tmp_path: Path) -> None:
         rec.flush()
         await db.writer.run(lambda _c: None)
         q = db.readers.query
-        assert tuple(q("SELECT serves, cache_hits, bytes FROM packages WHERE name='a'")[0]) == (4, 3, 350)
+        assert tuple(q("SELECT serves, cache_hits, bytes FROM packages WHERE name='a'")[0]) == (5, 4, 360)
         assert tuple(q("SELECT count, client_ip FROM events")[0]) == (3, None)
         assert q("SELECT sum(count) FROM decisions_hourly")[0][0] == 4
+        assert q("SELECT sum(count) FROM decisions_5min")[0][0] == 4
         assert q("SELECT count(*) FROM package_versions")[0][0] == 3  # 1.0, 2.0 and "" (unknown)
         assert q("SELECT count(*) FROM downloads_daily")[0][0] == 2
+        # 5-minute rows roll up into one hourly row per version; cache bytes are tracked separately
+        assert q("SELECT count(*) FROM downloads_5min WHERE version = '1.0'")[0][0] == 2
+        hourly = q("SELECT serves, cache_hits, bytes, cache_bytes FROM downloads_hourly WHERE version = '1.0'")
+        assert tuple(hourly[0]) == (4, 4, 310, 310)
+        assert tuple(q("SELECT bytes, cache_bytes FROM downloads_daily WHERE version = ''")[0]) == (50, 0)
+        assert dict(q("SELECT source, sum(count) FROM lookups_hourly GROUP BY source")) == {"cache": 3, "upstream": 1}
+        assert q("SELECT count(*) FROM lookups_5min")[0][0] == 3
         clock.advance(400 * 86400)
         await db.writer.run(lambda c: retention(c, clock.now(), event_days=30, stats_days=30, ip_days=1))
         assert q("SELECT count(*) FROM events")[0][0] == 0
         assert q("SELECT count(*) FROM downloads_daily")[0][0] == 0
+        assert q("SELECT count(*) FROM downloads_5min")[0][0] == 0
+        assert q("SELECT count(*) FROM lookups_hourly")[0][0] == 0
     finally:
         db.close()
 

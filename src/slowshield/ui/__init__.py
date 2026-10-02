@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -27,6 +27,7 @@ from slowshield.context import AppContext
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
 from slowshield.ui import svg
+from slowshield.web import is_loopback_host, local_http_origin
 
 TEMPLATES = Path(__file__).parent / "templates"
 HTMX_VERSION = "4.0.0"
@@ -483,7 +484,28 @@ class UI:
             else f"{base}/pypi/simple/"
         )
         npm_registry = cfg.npm_public_base() + "/"
-        return self._render("setup.html.j2", request, pypi_index=pypi_index, npm_registry=npm_registry, base=base)
+        # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
+        local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
+        if local is None and raw.local_http:
+            host = urlsplit(base).hostname or ""
+            if is_loopback_host(host):
+                local = f"http://{'[' + host + ']' if ':' in host else host}"
+        secure = None
+        if local:
+            secure = {"pypi": pypi_index, "npm": npm_registry}
+            if not raw.upstreams.pypi.hostnames:
+                pypi_index = f"{local}/pypi/simple/"
+            if not (raw.upstreams.npm.hostnames or raw.upstreams.npm.public_url):
+                npm_registry = f"{local}/npm/"
+        return self._render(
+            "setup.html.j2",
+            request,
+            pypi_index=pypi_index,
+            npm_registry=npm_registry,
+            base=base,
+            plain_http=pypi_index.startswith("http://") or npm_registry.startswith("http://"),
+            secure=secure,
+        )
 
     async def about(self, request: Request) -> Response:
         docs = {}

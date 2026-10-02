@@ -1,0 +1,1 @@
+# Local plain HTTP disabled (SLOWSHIELD_LOCAL_HTTP=off): every plain-HTTP request is redirected to HTTPS.

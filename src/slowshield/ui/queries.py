@@ -6,10 +6,13 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+FIVE_MIN = 300
 HOUR = 3600
 DAY = 86400
+STEP = {"5min": FIVE_MIN, "hourly": HOUR, "daily": DAY}
 
 RANGES: dict[str, tuple[int, str]] = {
+    "1h": (HOUR, "5min"),
     "24h": (DAY, "hourly"),
     "7d": (7 * DAY, "daily"),
     "30d": (30 * DAY, "daily"),
@@ -23,17 +26,26 @@ DEFAULT_RANGE = "7d"
 class Window:
     key: str
     seconds: int
-    granularity: str  # hourly | daily
+    granularity: str  # 5min | hourly | daily
     start: int
     end: int
 
     @property
     def step(self) -> int:
-        return HOUR if self.granularity == "hourly" else DAY
+        return STEP[self.granularity]
 
     @property
     def table(self) -> str:
-        return "downloads_hourly" if self.granularity == "hourly" else "downloads_daily"
+        return f"downloads_{self.granularity}"
+
+    @property
+    def decisions_table(self) -> str:
+        # Decisions and lookups have no daily rollup; daily windows sum the hourly rows.
+        return "decisions_5min" if self.granularity == "5min" else "decisions_hourly"
+
+    @property
+    def lookups_table(self) -> str:
+        return "lookups_5min" if self.granularity == "5min" else "lookups_hourly"
 
     @property
     def previous(self) -> Window:
@@ -48,7 +60,7 @@ def window(key: str | None, now: float) -> Window:
     k = key if key in RANGES else DEFAULT_RANGE
     seconds, gran = RANGES[k]
     end = int(now)
-    step = HOUR if gran == "hourly" else DAY
+    step = STEP[gran]
     start = (end - seconds) // step * step + step
     return Window(k, seconds, gran, start, end)
 
@@ -72,20 +84,30 @@ def kpis(conn: sqlite3.Connection, w: Window, eco: str | None = None) -> dict[st
     def downloads(win: Window) -> sqlite3.Row:
         return conn.execute(
             f"SELECT coalesce(sum(serves),0) s, coalesce(sum(cache_hits),0) h, coalesce(sum(bytes),0) b, "
-            f"count(DISTINCT ecosystem || ':' || package) p FROM {win.table} WHERE bucket >= ? AND bucket < ?{ec}",
+            f"coalesce(sum(cache_bytes),0) cb, count(DISTINCT ecosystem || ':' || package) p "
+            f"FROM {win.table} WHERE bucket >= ? AND bucket < ?{ec}",
             (win.start, win.end + 1, *ep),
         ).fetchone()
 
     def decisions(win: Window) -> dict[str, int]:
         rows = _rows(
             conn,
-            f"SELECT decision, sum(count) FROM decisions_hourly WHERE bucket >= ? AND bucket < ?{ec} GROUP BY decision",
+            f"SELECT decision, sum(count) FROM {win.decisions_table} WHERE bucket >= ? AND bucket < ?{ec} "
+            "GROUP BY decision",
             (win.start, win.end + 1, *ep),
         )
         return {r[0]: int(r[1]) for r in rows}
 
+    def lookups_from_cache(win: Window) -> int:
+        return conn.execute(
+            f"SELECT coalesce(sum(count),0) FROM {win.lookups_table} WHERE source = 'cache' AND bucket >= ? "
+            f"AND bucket < ?{ec}",
+            (win.start, win.end + 1, *ep),
+        ).fetchone()[0]
+
     cur, prev = downloads(w), downloads(w.previous)
     dcur, dprev = decisions(w), decisions(w.previous)
+    lcur, lprev = lookups_from_cache(w), lookups_from_cache(w.previous)
     new_deps = conn.execute(f"SELECT count(*) FROM packages WHERE first_served >= ?{ec}", (w.start, *ep)).fetchone()[0]
     new_prev = conn.execute(
         f"SELECT count(*) FROM packages WHERE first_served >= ? AND first_served < ?{ec}",
@@ -98,6 +120,11 @@ def kpis(conn: sqlite3.Connection, w: Window, eco: str | None = None) -> dict[st
     return {
         "installs": pair(cur["s"], prev["s"]),
         "bytes": pair(cur["b"], prev["b"]),
+        # Kept off the upstream registries: artifact bytes served from the verified cache, and requests
+        # (artifact downloads + metadata lookups) answered without contacting the registry.
+        "upstream_saved": pair(cur["cb"], prev["cb"]),
+        "upstream_fetched": pair(cur["b"] - cur["cb"], prev["b"] - prev["cb"]),
+        "upstream_requests_saved": pair(cur["h"] + lcur, prev["h"] + lprev),
         "packages": pair(cur["p"], prev["p"]),
         "hit_ratio": pair(cur["h"] / cur["s"] if cur["s"] else 0.0, prev["h"] / prev["s"] if prev["s"] else 0.0),
         "age_gated": pair(dcur.get("age_gated", 0), dprev.get("age_gated", 0)),
@@ -129,7 +156,7 @@ def series_decisions(conn: sqlite3.Connection, w: Window, eco: str | None = None
     out: dict[str, dict[int, int]] = {}
     for bucket, decision, n in _rows(
         conn,
-        f"SELECT bucket / ? * ? b, decision, sum(count) FROM decisions_hourly WHERE bucket >= ? AND bucket < ?{ec} "
+        f"SELECT bucket / ? * ? b, decision, sum(count) FROM {w.decisions_table} WHERE bucket >= ? AND bucket < ?{ec} "
         "GROUP BY b, decision",
         (w.step, w.step, w.start, w.end + 1, *ep),
     ):

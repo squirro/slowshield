@@ -42,6 +42,7 @@ COPY containers/caddy/snippets/ /out/etc/caddy/snippets/
 COPY containers/caddy/metrics/ /out/etc/caddy/metrics/
 COPY containers/caddy/tracing/ /out/etc/caddy/tracing/
 COPY containers/caddy/logs/ /out/etc/caddy/logs/
+COPY containers/caddy/local-http/ /out/etc/caddy/local-http/
 RUN chown -R 65532:65532 /out/config /out/var/log/caddy \
  && XDG_DATA_HOME=/tmp/d XDG_CONFIG_HOME=/tmp/c /out/usr/bin/caddy fmt /out/etc/caddy/Caddyfile >/dev/null \
  && for mode in internal acme files; do \

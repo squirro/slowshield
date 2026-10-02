@@ -21,6 +21,7 @@ from slowshield.telemetry import instruments
 
 log = logging.getLogger(__name__)
 
+FIVE_MIN = 300
 HOUR = 3600
 DAY = 86400
 
@@ -32,6 +33,7 @@ class _Dl:
     serves: int = 0
     cache_hits: int = 0
     bytes: int = 0
+    cache_bytes: int = 0
     first: float = 0.0
     last: float = 0.0
 
@@ -50,6 +52,7 @@ class Recorder:
         self.record_client_ip = record_client_ip
         self._downloads: dict[tuple[str, str, str, int], _Dl] = {}
         self._decisions: defaultdict[tuple[int, str, str, str], int] = defaultdict(int)
+        self._lookups: defaultdict[tuple[int, str, str], int] = defaultdict(int)
         self._events: dict[tuple[str, str, str, str | None, str | None], _Ev] = {}
         self._seen: dict[tuple[str, str], float] = {}
         self._encoder = msgspec.json.Encoder()
@@ -58,13 +61,14 @@ class Recorder:
 
     def download(self, ecosystem: str, package: str, version: str | None, nbytes: int, *, cache_hit: bool) -> None:
         now = self.clock.now()
-        key = (ecosystem, package, version or "", int(now // HOUR) * HOUR)
+        key = (ecosystem, package, version or "", int(now // FIVE_MIN) * FIVE_MIN)
         d = self._downloads.get(key)
         if d is None:
             d = self._downloads[key] = _Dl(first=now)
         d.serves += 1
         d.cache_hits += int(cache_hit)
         d.bytes += nbytes
+        d.cache_bytes += nbytes if cache_hit else 0
         d.last = now
         instruments.artifact_bytes.add(
             nbytes, {"slowshield.ecosystem": ecosystem, "source": "cache" if cache_hit else "upstream"}
@@ -72,10 +76,15 @@ class Recorder:
 
     def decision(self, ecosystem: str, kind: str, decision: str, n: int = 1) -> None:
         now = self.clock.now()
-        self._decisions[(int(now // HOUR) * HOUR, ecosystem, kind, decision)] += n
+        self._decisions[(int(now // FIVE_MIN) * FIVE_MIN, ecosystem, kind, decision)] += n
         instruments.decisions.add(
             n, {"slowshield.ecosystem": ecosystem, "slowshield.kind": kind, "slowshield.decision": decision}
         )
+
+    def lookup(self, ecosystem: str, *, cached: bool) -> None:
+        """A metadata request answered from the cache, or one that needed the upstream registry."""
+        bucket = int(self.clock.now() // FIVE_MIN) * FIVE_MIN
+        self._lookups[(bucket, ecosystem, "cache" if cached else "upstream")] += 1
 
     def event(
         self,
@@ -133,17 +142,17 @@ class Recorder:
     def flush(self) -> None:
         downloads, self._downloads = self._downloads, {}
         decisions, self._decisions = self._decisions, defaultdict(int)
+        lookups, self._lookups = self._lookups, defaultdict(int)
         events, self._events = self._events, {}
-        if not (downloads or decisions or events):
+        if not (downloads or decisions or lookups or events):
             return
         enc = self._encoder
 
-        hourly, daily = [], []
+        five: list[tuple[Any, ...]] = []
         pkg_rows: dict[tuple[str, str], _Dl] = {}
         ver_rows: dict[tuple[str, str, str], _Dl] = {}
-        for (eco, pkg, ver, hour), d in downloads.items():
-            hourly.append((hour, eco, pkg, ver, d.serves, d.cache_hits, d.bytes))
-            daily.append((hour // DAY * DAY, eco, pkg, ver, d.serves, d.cache_hits, d.bytes))
+        for (eco, pkg, ver, bucket), d in downloads.items():
+            five.append((bucket, eco, pkg, ver, d.serves, d.cache_hits, d.bytes, d.cache_bytes))
             for agg in (
                 pkg_rows.setdefault((eco, pkg), _Dl(first=d.first)),
                 ver_rows.setdefault((eco, pkg, ver), _Dl(first=d.first)),
@@ -153,7 +162,11 @@ class Recorder:
                 agg.bytes += d.bytes
                 agg.first = min(agg.first, d.first)
                 agg.last = max(agg.last, d.last)
-        dec_rows = [(b, e, k, dec, n) for (b, e, k, dec), n in decisions.items()]
+        hourly, daily = _rollup(five, HOUR, 3), _rollup(five, DAY, 3)
+        dec_five = [(b, e, k, dec, n) for (b, e, k, dec), n in decisions.items()]
+        dec_rows = _rollup(dec_five, HOUR, 3)
+        look_five = [(b, e, src, n) for (b, e, src), n in lookups.items()]
+        look_rows = _rollup(look_five, HOUR, 2)
         ev_rows = [
             (ev.ts, t, eco, pkg, ver, ip, ev.count, enc.encode(ev.details).decode() if ev.details else None)
             for (t, eco, pkg, ver, ip), ev in events.items()
@@ -161,13 +174,16 @@ class Recorder:
 
         def op(conn: Any) -> None:
             upsert = (
-                " (bucket, ecosystem, package, version, serves, cache_hits, bytes) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                " (bucket, ecosystem, package, version, serves, cache_hits, bytes, cache_bytes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (bucket, ecosystem, package, version) DO UPDATE SET serves = serves + excluded.serves, "
-                "cache_hits = cache_hits + excluded.cache_hits, bytes = bytes + excluded.bytes"
+                "cache_hits = cache_hits + excluded.cache_hits, bytes = bytes + excluded.bytes, "
+                "cache_bytes = cache_bytes + excluded.cache_bytes"
             )
-            if hourly:
+            if five:
+                conn.executemany("INSERT INTO downloads_5min" + upsert, five)
                 conn.executemany("INSERT INTO downloads_hourly" + upsert, hourly)
-                conn.executemany("INSERT INTO downloads_daily" + upsert, _merge(daily))
+                conn.executemany("INSERT INTO downloads_daily" + upsert, daily)
             if pkg_rows:
                 conn.executemany(
                     "INSERT INTO packages (ecosystem, name, first_seen, last_seen, first_served, last_served, "
@@ -189,12 +205,20 @@ class Recorder:
                     "serves = serves + excluded.serves, bytes = bytes + excluded.bytes",
                     [(e, p, v, d.first, d.last, d.serves, d.bytes) for (e, p, v), d in ver_rows.items()],
                 )
-            if dec_rows:
-                conn.executemany(
-                    "INSERT INTO decisions_hourly (bucket, ecosystem, kind, decision, count) VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT (bucket, ecosystem, kind, decision) DO UPDATE SET count = count + excluded.count",
-                    dec_rows,
-                )
+            if dec_five:
+                for table, rows in (("decisions_5min", dec_five), ("decisions_hourly", dec_rows)):
+                    conn.executemany(
+                        f"INSERT INTO {table} (bucket, ecosystem, kind, decision, count) VALUES (?, ?, ?, ?, ?) "
+                        "ON CONFLICT (bucket, ecosystem, kind, decision) DO UPDATE SET count = count + excluded.count",
+                        rows,
+                    )
+            if look_five:
+                for table, rows in (("lookups_5min", look_five), ("lookups_hourly", look_rows)):
+                    conn.executemany(
+                        f"INSERT INTO {table} (bucket, ecosystem, source, count) VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT (bucket, ecosystem, source) DO UPDATE SET count = count + excluded.count",
+                        rows,
+                    )
             if ev_rows:
                 conn.executemany(
                     "INSERT INTO events (ts, type, ecosystem, package, version, client_ip, count, details) "
@@ -213,19 +237,23 @@ class Recorder:
                 log.exception("stats flush failed")
 
 
-def _merge(rows: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+def _rollup(rows: list[tuple[Any, ...]], step: int, keys: int) -> list[tuple[Any, ...]]:
+    """Re-bucket (bucket, *keys, *counts) rows to a coarser step, summing the count columns."""
     acc: dict[tuple[Any, ...], list[int]] = {}
-    for b, e, p, v, s, c, n in rows:
-        cur = acc.setdefault((b, e, p, v), [0, 0, 0])
-        cur[0] += s
-        cur[1] += c
-        cur[2] += n
+    for row in rows:
+        counts = row[1 + keys :]
+        cur = acc.setdefault((row[0] // step * step, *row[1 : 1 + keys]), [0] * len(counts))
+        for i, n in enumerate(counts):
+            cur[i] += n
     return [(*k, *v) for k, v in acc.items()]
 
 
 def retention(conn: Any, now: float, *, event_days: float, stats_days: float, ip_days: float) -> None:
     conn.execute("DELETE FROM events WHERE ts < ?", (now - event_days * DAY,))
     conn.execute("UPDATE events SET client_ip = NULL WHERE client_ip IS NOT NULL AND ts < ?", (now - ip_days * DAY,))
+    for table in ("downloads_5min", "decisions_5min", "lookups_5min"):
+        conn.execute(f"DELETE FROM {table} WHERE bucket < ?", (now - 2 * DAY,))
     conn.execute("DELETE FROM downloads_hourly WHERE bucket < ?", (now - 15 * DAY,))
     conn.execute("DELETE FROM decisions_hourly WHERE bucket < ?", (now - stats_days * DAY,))
+    conn.execute("DELETE FROM lookups_hourly WHERE bucket < ?", (now - stats_days * DAY,))
     conn.execute("DELETE FROM downloads_daily WHERE bucket < ?", (now - stats_days * DAY,))

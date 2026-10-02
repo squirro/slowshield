@@ -1,12 +1,18 @@
 {% import "macros.html.j2" as m with context %}
 <div class="htmx-region" id="dashboard-body"
      hx-get="/ui/partials/dashboard{{ qs({'range': w.key, 'eco': eco}) }}" hx-trigger="every 30s" hx-swap="outerHTML">
-  <section class="kpis" aria-label="Key figures">
+  <section class="kpis kpis-12" aria-label="Key figures">
+    {# Row 1: usage #}
     {{ m.kpi("Installs served", kpis.installs.value|num, kpis.installs.delta, spark=installs_spark, href="/ui/packages?range=" ~ w.key) }}
     {{ m.kpi("Packages in use", kpis.packages.value|num, kpis.packages.delta, href="/ui/packages?range=" ~ w.key) }}
     {{ m.kpi("New dependencies", kpis.new_deps.value|num, kpis.new_deps.delta, href="/ui/leaderboards?range=" ~ w.key ~ "#new") }}
     {{ m.kpi("Data served", kpis.bytes.value|bytes, kpis.bytes.delta) }}
+    {# Row 2: traffic kept off the upstream registries #}
+    {{ m.kpi("Upstream traffic saved", kpis.upstream_saved.value|bytes, kpis.upstream_saved.delta, hint="Artifact bytes served from SlowShield's verified cache instead of being downloaded from the registry again.") }}
+    {{ m.kpi("Fetched from upstream", kpis.upstream_fetched.value|bytes, kpis.upstream_fetched.delta, invert=True, hint="Artifact bytes SlowShield had to download from pypi.org, files.pythonhosted.org or registry.npmjs.org.") }}
+    {{ m.kpi("Upstream requests saved", kpis.upstream_requests_saved.value|num, kpis.upstream_requests_saved.delta, hint="Downloads and metadata lookups answered from the cache without contacting the registry.") }}
     {{ m.kpi("Cache hit ratio", kpis.hit_ratio.value|pct, None if not kpis.hit_ratio.previous else (kpis.hit_ratio.value - kpis.hit_ratio.previous)) }}
+    {# Row 3: protection #}
     {{ m.kpi("Too new (blocked downloads)", kpis.age_gated.value|num, kpis.age_gated.delta, invert=True, href="/ui/security?type=age_gate&range=" ~ w.key, tone="hold") }}
     {{ m.kpi("Malware blocked", kpis.blocked.value|num, kpis.blocked.delta, invert=True, href="/ui/security?type=blocked&range=" ~ w.key, tone="danger" if kpis.blocked.value else "") }}
     {{ m.kpi("Tamper detections", kpis.tampered.value|num, kpis.tampered.delta, invert=True, href="/ui/security?type=tampered&range=" ~ w.key, tone="danger" if kpis.tampered.value else "") }}

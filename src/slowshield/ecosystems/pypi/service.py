@@ -74,6 +74,7 @@ class PypiService:
         hit = self.ctx.metadata_cache.get(key, self.ctx.clock.now())
         if hit is not None:
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
+            self.ctx.recorder.lookup(ECO, cached=True)
             return None if hit is _NOT_FOUND else hit
         return await self.flight.run(key, lambda: self._load(name))
 
@@ -86,6 +87,7 @@ class PypiService:
         headers = {"Accept": JSON_V1}
         if isinstance(stale, Project) and stale.etag:
             headers["If-None-Match"] = stale.etag
+        ctx.recorder.lookup(ECO, cached=False)
         try:
             res = await ctx.upstream.fetch(self._index_urls(name), headers=headers, max_bytes=MAX_INDEX_BYTES)
         except TooLargeError:
@@ -313,6 +315,11 @@ class PypiService:
         blocks = ctx.blocklist.for_package(ECO, pname)
         if blocks.package_block is not None:
             return self._blocked(request, pname, _ver, blocks.package_block, kind="artifact")
+        # A file whose name carries a known-malicious version is refused (and recorded) before the index lookup,
+        # so it is a security event even after PyPI has removed the release.
+        early = blocks.match(ECO, _ver) if _ver else None
+        if early is not None:
+            return self._blocked(request, pname, _ver, early, kind="artifact")
         try:
             project = await self.project(pname)
         except UpstreamError as exc:

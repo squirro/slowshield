@@ -33,8 +33,8 @@
 {% else %}<span class="delta flat">±0%</span>{% endif %}
 {%- endmacro %}
 
-{% macro kpi(label, value, d=None, invert=False, href=None, spark=None, tone="") -%}
-<div class="kpi {{ tone }}">
+{% macro kpi(label, value, d=None, invert=False, href=None, spark=None, tone="", hint=None) -%}
+<div class="kpi {{ tone }}"{% if hint %} title="{{ hint }}"{% endif %}>
   <div class="kpi-label">{% if href %}<a href="{{ href }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</div>
   <div class="kpi-value">{{ value }}</div>
   <div class="kpi-foot">{{ delta(d, invert) }}{% if spark %}{{ spark }}{% endif %}</div>

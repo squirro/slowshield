@@ -29,6 +29,11 @@ Selected with one variable everywhere (`SLOWSHIELD_TLS_MODE` / `tls.mode`):
 | `acme` | Hostnames resolvable from the internet (or an internal ACME CA) | `ACME_EMAIL`, optional `ACME_CA` |
 | `files` | Certificates from your own PKI / cert-manager | `TLS_CERT_FILE`, `TLS_KEY_FILE` (Compose/Podman) or `tls.existingSecret` (Helm) |
 
+**Local testing:** with `SLOWSHIELD_LOCAL_HTTP=on` (the Compose default) Caddy also answers
+`http://localhost`, `http://127.0.0.1` and `http://[::1]` over plain HTTP, so pip, uv and npm on the same machine
+work without trusting the internal CA. Requests for any other hostname are still redirected to HTTPS. Turn it
+off on a shared server; Podman and Helm leave it off.
+
 Defaults: TLS 1.3 only (`TLS_MIN_VERSION=1.2` re-enables 1.2 with ECDHE+AEAD suites only), Caddy's
 default key exchange groups (hybrid post-quantum X25519MLKEM768, X25519, P-256), ECDSA P-256
 certificates for ACME, HTTP/3, HSTS (2 years), `strict_sni_host`, no `Server` header, request

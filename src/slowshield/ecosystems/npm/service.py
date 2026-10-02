@@ -29,7 +29,7 @@ from slowshield.integrity import Expected, parse_sri
 from slowshield.policy import DAY, Candidate, evaluate, retry_after
 from slowshield.telemetry import instruments
 from slowshield.upstream import TooLargeError, UpstreamError
-from slowshield.web import JSONResponse, accept_prefers, client_ip, error, not_found, route_path
+from slowshield.web import JSONResponse, accept_prefers, client_ip, error, local_http_origin, not_found, route_path
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class View:
     fail_open: bool = False
     next_change: float = float("inf")
     package_block: BlockEntry | None = None
-    rendered: dict[str, bytes] = field(default_factory=dict)
+    rendered: dict[tuple[str, str], bytes] = field(default_factory=dict)  # (format, tarball base) -> body
     digest: str = ""
 
 
@@ -152,6 +152,7 @@ class NpmService:
         hit = self.ctx.metadata_cache.get(key, self.ctx.clock.now())
         if hit is not None:
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "hit"})
+            self.ctx.recorder.lookup(ECO, cached=True)
             return None if hit is _NOT_FOUND else hit
         return await self.flight.run(key, lambda: self._load(name))
 
@@ -165,6 +166,7 @@ class NpmService:
         if isinstance(stale, P.Packument) and stale.etag:
             headers["If-None-Match"] = stale.etag
         path = "/" + name.replace("/", "%2f") if name.startswith("@") else "/" + name
+        ctx.recorder.lookup(ECO, cached=False)
         try:
             res = await ctx.upstream.fetch(
                 [b + path for b in self.upstream_bases], headers=headers, max_bytes=MAX_PACKUMENT_BYTES
@@ -314,15 +316,25 @@ class NpmService:
             ctx.recorder.decision(ECO, "metadata", "served")
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers=headers)
-        body = v.rendered.get(fmt)
+        pub = self.public_base(request)
+        body = v.rendered.get((fmt, pub))
         if body is None:
-            pub = ctx.cfg.npm_public_base()
             if fmt == ABBREVIATED:
                 body = P.render_abbreviated(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
             else:
                 body = P.render_full(doc, v.kept, v.tags, upstream_bases=self.upstream_bases, public_base=pub)
-            v.rendered[fmt] = body
+            v.rendered[(fmt, pub)] = body
         return Response(body, media_type=fmt if fmt == ABBREVIATED else "application/json", headers=headers)
+
+    def public_base(self, request: Request) -> str:
+        """Base for tarball URLs: the configured public URL, or http://localhost when the client used local HTTP."""
+        cfg = self.ctx.cfg
+        npm = cfg.raw.upstreams.npm
+        if not (npm.public_url or npm.hostnames):
+            local = local_http_origin(request.scope, cfg.raw.local_http, cfg.trusted_networks)
+            if local:
+                return f"{local}/npm"
+        return cfg.npm_public_base()
 
     async def version_manifest(self, request: Request, name: str, spec: str) -> Response:
         v = await self._resolve(request, name, "metadata")
@@ -332,7 +344,7 @@ class NpmService:
         if version not in v.kept:
             return not_found()
         body = P.render_version(
-            v.doc, version, upstream_bases=self.upstream_bases, public_base=self.ctx.cfg.npm_public_base()
+            v.doc, version, upstream_bases=self.upstream_bases, public_base=self.public_base(request)
         )
         return Response(body, media_type="application/json", headers={"Cache-Control": "max-age=300"})
 
@@ -345,6 +357,12 @@ class NpmService:
         if V.parse_semver(version) is None:
             return not_found()
         ip = client_ip(request.scope, ctx.cfg.trusted_networks)
+        # Known malware is refused (and recorded) before anything else, even when the registry has since removed
+        # the version: a lockfile pinned during an attack window must show up as a security event, not a 404.
+        blocks = ctx.blocklist.for_package(ECO, name)
+        entry = blocks.package_block or blocks.match(ECO, version)
+        if entry is not None:
+            return self._blocked(request, name, version, entry, kind="artifact")
         v = await self._resolve(request, name, "artifact")
         if not isinstance(v, View):
             return v

@@ -169,3 +169,14 @@ async def test_npm_upstream_errors(running: Running) -> None:
     assert r.status_code == 502
     r = await running.client.get("/npm/-/npm/v1/keys")
     assert r.status_code == 502
+
+
+async def test_tarball_urls_follow_local_http(start_app) -> None:
+    run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
+    r = await run.client.get("/npm/left-pad-ng", headers={"X-Forwarded-Proto": "http"})
+    assert r.json()["versions"]["1.0.0"]["dist"]["tarball"].startswith("http://localhost:8080/npm/")
+    r = await run.client.get("/npm/left-pad-ng/1.0.0", headers={"X-Forwarded-Proto": "http"})
+    assert r.json()["dist"]["tarball"].startswith("http://localhost:8080/npm/")
+    # The same packument over HTTPS keeps the configured public URL (renders are cached per base).
+    r = await run.client.get("/npm/left-pad-ng", headers={"X-Forwarded-Proto": "https"})
+    assert r.json()["versions"]["1.0.0"]["dist"]["tarball"].startswith("https://localhost/npm/")

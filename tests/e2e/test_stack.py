@@ -86,15 +86,35 @@ def test_plain_http_redirects_and_health(stack: Stack) -> None:
     import http.client
 
     conn = http.client.HTTPConnection("127.0.0.1", stack.http_port, timeout=10)
-    conn.request("GET", "/pypi/simple/alpha/", headers={"Host": "localhost"})
+    conn.request("GET", "/pypi/simple/alpha/", headers={"Host": "slowshield.example.com"})
     r = conn.getresponse()
     r.read()
     assert r.status == 308
-    assert r.getheader("Location") == f"https://localhost:{stack.https_port}/pypi/simple/alpha/"
-    conn.request("GET", "/healthz", headers={"Host": "localhost"})
+    assert r.getheader("Location") == f"https://slowshield.example.com:{stack.https_port}/pypi/simple/alpha/"
+    conn.request("GET", "/healthz", headers={"Host": "slowshield.example.com"})
     health = conn.getresponse()
     health.read()
     assert health.status == 200
+
+
+def test_local_plain_http(stack: Stack) -> None:
+    """SLOWSHIELD_LOCAL_HTTP=on (the Compose default): localhost is served over HTTP, tarballs follow."""
+    import http.client
+
+    conn = http.client.HTTPConnection("127.0.0.1", stack.http_port, timeout=10)
+    conn.request(
+        "GET", "/pypi/simple/alpha/", headers={"Host": "localhost", "Accept": "application/vnd.pypi.simple.v1+json"}
+    )
+    r = conn.getresponse()
+    body = r.read()
+    assert r.status == 200 and b"alpha" in body
+    assert r.getheader("Strict-Transport-Security") is None
+    conn.request("GET", "/npm/left-pad-ng", headers={"Host": f"localhost:{stack.http_port}"})
+    r = conn.getresponse()
+    doc = json.loads(r.read())
+    assert r.status == 200
+    tarballs = [v["dist"]["tarball"] for v in doc["versions"].values()]
+    assert tarballs and all(t.startswith(f"http://localhost:{stack.http_port}/npm/") for t in tarballs)
 
 
 def test_unsafe_methods_rejected(stack: Stack) -> None:

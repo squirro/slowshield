@@ -19,6 +19,7 @@ accepted and ignored with a warning, and `database_url = "sqlite:/path"` is stil
 | `SLOWSHIELD_BIND` | `bind_address` | `host:port` |
 | `SLOWSHIELD_PUBLIC_URL` | `public_url` | external URL of the UI host, used in setup snippets and as default npm base |
 | `SLOWSHIELD_NPM_PUBLIC_URL` | `upstreams.npm.public_url` | base URL written into npm tarball links |
+| `SLOWSHIELD_LOCAL_HTTP` | `local_http` | with Caddy's switch of the same name: offer `http://localhost` in the Setup page and npm tarball links (Compose default `on`) |
 | `SLOWSHIELD_DATA_DIR` | `data_dir` | SQLite DB, artifact cache, leader lock |
 | `SLOWSHIELD_DATABASE_PATH`, `DATABASE_URL` | `database_path` | `DATABASE_URL` takes `sqlite:/path` |
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |

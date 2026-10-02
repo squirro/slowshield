@@ -24,7 +24,6 @@ what got stopped. Patient, verified packages pass through the dotted side. Tagli
 | `tokens.css` | Colours (light, dark, `.ss-light` / `.ss-dark` scopes), fonts, radii |
 | `fonts/` | Schibsted Grotesk (SIL OFL 1.1): the variable TTF used to outline the wordmark, a Latin WOFF2 for the website |
 | `palette.html` | Palette tables with measured contrast, included into the guide |
-| `proposals/` | The round-2 exploration that led here (Inbound = `proposals/glance-shield/2d/inbound`) |
 
 ## Rebuilding
 

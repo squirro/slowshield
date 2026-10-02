@@ -1,0 +1,7 @@
+# Enable the GitHub Advisory feed. First create the secret (once):
+#   printf %s 'github_pat_...' | podman secret create slowshield_github_token -
+# then copy this file to slowshield.container.d/github-token.conf and run
+#   systemctl --user daemon-reload && systemctl --user restart slowshield-pod
+[Container]
+Secret=slowshield_github_token,type=mount,target=/run/secrets/github_token,uid=65532,gid=65532,mode=0400
+Environment=GITHUB_TOKEN_FILE=/run/secrets/github_token

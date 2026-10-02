@@ -1,0 +1,8 @@
+{
+  "name": "slowshield-website-deploy",
+  "private": true,
+  "description": "Pinned Wrangler for deploying slowshield.org (CI only).",
+  "devDependencies": {
+    "wrangler": "4.140.0"
+  }
+}

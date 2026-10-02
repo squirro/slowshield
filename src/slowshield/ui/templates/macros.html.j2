@@ -1,0 +1,56 @@
+{% macro range_picker(current, base_path, extra={}) -%}
+<div class="segmented" role="group" aria-label="Time range">
+  {% for r in ranges %}
+  <a href="{{ base_path }}{{ qs(extra, range=r) }}"{% if r == current %} aria-current="true"{% endif %}>{{ r }}</a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro eco_filter(current, base_path, extra={}) -%}
+<div class="segmented" role="group" aria-label="Ecosystem">
+  <a href="{{ base_path }}{{ qs(extra, eco=None) }}"{% if not current %} aria-current="true"{% endif %}>All</a>
+  <a href="{{ base_path }}{{ qs(extra, eco='pypi') }}"{% if current == 'pypi' %} aria-current="true"{% endif %}>PyPI</a>
+  <a href="{{ base_path }}{{ qs(extra, eco='npm') }}"{% if current == 'npm' %} aria-current="true"{% endif %}>npm</a>
+</div>
+{%- endmacro %}
+
+{% macro eco(e) -%}<span class="eco eco-{{ e }}">{{ eco_label.get(e, e) }}</span>{%- endmacro %}
+
+{% macro pkg_link(e, name) -%}
+<a class="pkg" href="/ui/packages/{{ e }}/{{ name }}">{{ name }}</a>
+{%- endmacro %}
+
+{% macro event_badge(t) -%}<span class="badge ev-{{ t }}">{{ event_label.get(t, t) }}</span>{%- endmacro %}
+
+{% macro status_badge(s) -%}
+<span class="badge st-{{ s }}">{{ {"available": "Available", "held": "Held back", "blocked": "Blocked", "tampered": "Tampered", "yanked": "Yanked", "unknown": "Unknown age"}.get(s, s) }}</span>
+{%- endmacro %}
+
+{% macro delta(d, invert=False) -%}
+{% if d is none %}<span class="delta flat">new</span>
+{% elif d > 0.005 %}<span class="delta {{ 'bad' if invert else 'up' }}">▲ {{ (d * 100)|round|int }}%</span>
+{% elif d < -0.005 %}<span class="delta {{ 'up' if invert else 'down' }}">▼ {{ (-d * 100)|round|int }}%</span>
+{% else %}<span class="delta flat">±0%</span>{% endif %}
+{%- endmacro %}
+
+{% macro kpi(label, value, d=None, invert=False, href=None, spark=None, tone="", hint=None) -%}
+<div class="kpi {{ tone }}"{% if hint %} title="{{ hint }}"{% endif %}>
+  <div class="kpi-label">{% if href %}<a href="{{ href }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</div>
+  <div class="kpi-value">{{ value }}</div>
+  <div class="kpi-foot">{{ delta(d, invert) }}{% if spark %}{{ spark }}{% endif %}</div>
+</div>
+{%- endmacro %}
+
+{% macro advisory(entry) -%}
+{% if entry.url %}<a href="{{ entry.url|href }}" rel="noopener noreferrer" target="_blank">{{ entry.advisory_id or "advisory" }}</a>{% else %}{{ entry.advisory_id or "—" }}{% endif %}
+{%- endmacro %}
+
+{% macro pager(page, has_next, base_path, extra={}, target=None) -%}
+{% if page > 1 or has_next %}
+<nav class="pager" aria-label="Pagination">
+  {% if page > 1 %}<a href="{{ base_path }}{{ qs(extra, page=page - 1) }}"{% if target %} hx-get="{{ target }}{{ qs(extra, page=page - 1) }}" hx-target="closest .htmx-region" hx-swap="outerHTML"{% endif %}>← Previous</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="{{ base_path }}{{ qs(extra, page=page + 1) }}"{% if target %} hx-get="{{ target }}{{ qs(extra, page=page + 1) }}" hx-target="closest .htmx-region" hx-swap="outerHTML"{% endif %}>Next →</a>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

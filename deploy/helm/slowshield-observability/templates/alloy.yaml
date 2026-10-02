@@ -1,0 +1,108 @@
+{{- $c := .Values.alloy }}
+{{- $name := include "obs.componentName" (list . "alloy") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+spec:
+  # One collector: a second replica would scrape Caddy and tail its log twice.
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "alloy") | nindent 6 }}
+  template:
+    metadata: {{- include "obs.podMetadata" (list . "alloy" (include "obs.filesConfig" (list . "alloy"))) | nindent 6 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      # Needs the Kubernetes API (Role in the SlowShield namespace only, see rbac.yaml).
+      automountServiceAccountToken: true
+      {{- include "obs.podCommon" (list . "alloy") | nindent 6 }}
+      securityContext: {{- include "obs.podSecurityContext" (list . $c) | nindent 8 }}
+      containers:
+        - name: alloy
+          image: {{ include "obs.image" $c.image }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy/data
+            - --server.http.listen-addr=0.0.0.0:12345
+            - --disable-reporting
+          securityContext: {{- include "obs.securityContext" . | nindent 12 }}
+          env:
+            - name: SLOWSHIELD_NAMESPACE
+              value: {{ include "obs.slowshieldNamespace" . | quote }}
+            - name: PROMETHEUS_OTLP_URL
+              value: http://{{ include "obs.componentName" (list . "prometheus") }}:9090/api/v1/otlp
+            - name: PROMETHEUS_REMOTE_WRITE_URL
+              value: http://{{ include "obs.componentName" (list . "prometheus") }}:9090/api/v1/write
+            - name: LOKI_OTLP_URL
+              value: http://{{ include "obs.componentName" (list . "loki") }}:3100/otlp
+            - name: LOKI_PUSH_URL
+              value: http://{{ include "obs.componentName" (list . "loki") }}:3100/loki/api/v1/push
+            - name: TEMPO_OTLP_ENDPOINT
+              value: {{ include "obs.componentName" (list . "tempo") }}:4317
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: http-metrics
+              containerPort: 12345
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http-metrics
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http-metrics
+            periodSeconds: 30
+            failureThreshold: 4
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/alloy/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        # WAL and log positions; losing them on rescheduling only re-reads recent Caddy logs.
+        - name: data
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "obs.selectorLabels" (list . "alloy") | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      appProtocol: grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP

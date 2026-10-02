@@ -1,0 +1,22 @@
+{{- range $component := list "prometheus" "loki" "tempo" "grafana" }}
+{{- $p := (index $.Values $component).persistence }}
+{{- if and $p.enabled (not $p.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "obs.componentName" (list $ $component) }}
+  labels: {{- include "obs.labels" (list $ $component) | nindent 4 }}
+  annotations:
+    # Keep the data when the release is uninstalled.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: {{- toYaml $p.accessModes | nindent 4 }}
+  {{- with $p.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $p.size }}
+---
+{{- end }}
+{{- end }}

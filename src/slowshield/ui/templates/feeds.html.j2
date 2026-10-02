@@ -1,0 +1,55 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Feeds{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Threat feeds</h1><p class="muted">Sources of known-malicious packages. They sync every {{ cfg.feeds.poll_interval_minutes|round|int }} minutes; feeds that need a token stay off until one is configured.</p></div>
+</div>
+<div class="grid-2">
+{% for f in feeds.values() %}
+  <section class="card feed feed-{{ f.reason }}">
+    <header class="card-head"><h2>{{ f.title }}</h2>
+      <span class="badge feed-badge-{{ f.reason }}">{{ {"ok": "Active", "disabled": "Disabled", "missing_token": "Needs a token", "error": "Failing"}.get(f.reason, f.reason) }}</span></header>
+    <dl class="facts">
+      <dt>Last successful sync</dt><dd>{{ ago(f.last_success) }}{% if f.last_success %} <span class="muted small">({{ f.last_success|ts }})</span>{% endif %}</dd>
+      <dt>Last attempt</dt><dd>{{ ago(f.last_attempt) }}</dd>
+      <dt>Active entries</dt><dd>{{ f.entries|num }}</dd>
+      <dt>Token required</dt><dd>{{ "yes" if f.requires_token else "no" }}</dd>
+      {% if f.last_error %}<dt>Last error</dt><dd class="error-text">{{ f.last_error }}</dd>{% endif %}
+    </dl>
+    {% if f.reason == "missing_token" %}
+    <div class="howto">
+      <h3>How to enable</h3>
+      <ol>
+        <li>Create a token at <a href="https://github.com/settings/personal-access-tokens/new" rel="noopener noreferrer" target="_blank">GitHub → Settings → Developer settings → Fine-grained tokens</a>.
+          It needs <em>no</em> repository access or permissions: it only reads the public advisory database.</li>
+        <li>Give it to SlowShield as a secret, then restart:
+          <pre><code># Docker / Compose (.env next to compose.yaml)
+GITHUB_TOKEN=github_pat_…
+
+# Podman (rootless)
+printf %s 'github_pat_…' | podman secret create slowshield_github_token -
+
+# Kubernetes (Helm)
+kubectl create secret generic slowshield-github --from-literal=token='github_pat_…'
+helm upgrade slowshield deploy/helm/slowshield --set feeds.github.existingSecret=slowshield-github</code></pre></li>
+        <li>Alternatively mount the token as a file and set <code>GITHUB_TOKEN_FILE=/run/secrets/github_token</code>.</li>
+      </ol>
+      <p class="muted small">Alerting: <code>slowshield_feed_enabled{feed="{{ f.name }}",reason="missing_token"} == 0</code> fires the shipped “feed disabled” alert.</p>
+    </div>
+    {% elif f.reason == "disabled" %}
+    <p class="muted">Disabled in the configuration (<code>[feeds.{{ "github_advisory" if f.name == "github" else f.name }}] enabled = false</code>).</p>
+    {% endif %}
+  </section>
+{% endfor %}
+</div>
+<section class="card">
+  <header class="card-head"><h2>Sync cursors</h2></header>
+  {% if states %}
+  <table class="table compact">
+    <thead><tr><th>Stream</th><th>Watermark</th><th>Last success</th><th>Last error</th></tr></thead>
+    <tbody>{% for s in states %}<tr><td><code>{{ s.source }}</code></td><td><code>{{ s.watermark or "—" }}</code></td><td>{{ ago(s.last_success) }}</td><td class="details">{{ s.last_error or "—" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p class="empty">No sync has run yet.</p>{% endif %}
+</section>
+{% endblock %}

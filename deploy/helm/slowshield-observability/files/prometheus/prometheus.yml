@@ -1,0 +1,32 @@
+# Prometheus for the SlowShield observability stack.
+# Metrics arrive two ways: OTLP from Alloy (/api/v1/otlp, SlowShield app metrics) and remote-write
+# (/api/v1/write, Caddy scraped by Alloy + Tempo span-metrics/service-graphs).
+# Start flags (set by compose/quadlet/helm): --web.enable-otlp-receiver --web.enable-remote-write-receiver
+#   --storage.tsdb.retention.time=15d
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    stack: slowshield
+
+otlp:
+  # Copy these resource attributes onto every series (job/instance come from service.* already).
+  promote_resource_attributes:
+    - service.version
+    - slowshield.worker
+    - deployment.environment.name
+    - k8s.namespace.name
+    - k8s.pod.name
+  keep_identifying_resource_attributes: true
+  translation_strategy: UnderscoreEscapingWithSuffixes
+
+storage:
+  tsdb:
+    # OTLP pushes from several workers/collectors may arrive slightly out of order.
+    out_of_order_time_window: 10m
+
+scrape_configs:
+  - job_name: prometheus
+    scrape_native_histograms: true
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -1,0 +1,44 @@
+# SlowShield proxy (rootless, read-only, no capabilities).
+[Unit]
+Description=SlowShield supply-chain defence proxy
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=slowshield-app
+Image=ghcr.io/squirro/slowshield:latest
+AutoUpdate=registry
+Pod=slowshield.pod
+User=65532
+Group=65532
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+SecurityLabelDisable=false
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+Volume=slowshield-data.volume:/data
+Volume=%h/.config/slowshield/config.toml:/etc/slowshield/config.toml:ro,Z
+EnvironmentFile=%h/.config/slowshield/slowshield.env
+Environment=SLOWSHIELD_CONFIG=/etc/slowshield/config.toml
+Environment=SLOWSHIELD_BIND=127.0.0.1:8081
+Environment=SLOWSHIELD_DATA_DIR=/data
+# GitHub Advisory feed: see slowshield.container.d/github-token.conf.example
+# Exec form (JSON array): the image has no shell, so a plain string would fail via /bin/sh -c.
+HealthCmd=["slowshield", "healthcheck"]
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=30s
+Notify=healthy
+PidsLimit=512
+Ulimit=nofile=65536:65536
+PodmanArgs=--memory=1g --cpus=2
+StopTimeout=30
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

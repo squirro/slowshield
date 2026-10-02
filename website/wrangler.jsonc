@@ -1,0 +1,31 @@
+// slowshield.org production: an assets-only Worker (no script, so nothing is billed per request).
+// Deployed by .github/workflows/website.yml after `website/build.py --out dist/site`.
+//
+// The custom domain slowshield.org is attached ONCE in the dashboard (Workers & Pages >
+// slowshield-website > Settings > Domains & Routes > Add > Custom domain), not here: with no routes
+// in this file `wrangler deploy` never touches domains, so the CI token needs only Editor on this
+// one Worker. To manage it as code instead, add
+//   "routes": [{ "pattern": "slowshield.org", "custom_domain": true }]
+// and give the token "Workers Routes: Edit" on the slowshield.org zone (Wrangler >= 4.143.1, see
+// https://github.com/cloudflare/workers-sdk/issues/15863).
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "slowshield-website",
+  // Must not be newer than the pinned Wrangler's workerd supports.
+  "compatibility_date": "2026-09-24",
+  "assets": {
+    // Relative to this file: the build output at the repository root.
+    "directory": "../dist/site",
+    // Unknown paths get the nearest 404.html with status 404.
+    "not_found_handling": "404-page",
+    // /brand -> /brand/ and /index.html -> / (307): the URLs the site links to.
+    "html_handling": "auto-trailing-slash"
+  },
+  // Production answers only on the custom domain: no <name>.<account>.workers.dev URL and no
+  // per-version URLs. PR previews go to a separate Worker (wrangler.preview.jsonc).
+  "workers_dev": false,
+  "preview_urls": false,
+  // www.slowshield.org and the .com/.net domains are redirected by Cloudflare Redirect Rules.
+  "send_metrics": false,
+  "dependencies_instrumentation": { "enabled": false }
+}

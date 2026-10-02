@@ -1,0 +1,18 @@
+{% extends "base.html.j2" %}
+{% block title %}About{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>About SlowShield</h1>
+  <p class="muted">Supply-chain defence proxy for PyPI and npm. Licensed under Apache-2.0.</p></div></div>
+<section class="card">
+  <dl class="facts">
+    <dt>Version</dt><dd><code>{{ info.version }}</code></dd>
+    <dt>Commit</dt><dd><code>{{ info.git_sha }}</code></dd>
+    <dt>Python</dt><dd>{{ info.python }} (GIL {{ info.gil }})</dd>
+  </dl>
+</section>
+{% for name, html in docs.items() %}
+<section class="card prose">
+  {% if html %}{{ html }}{% else %}<p class="empty">{{ name }} is not bundled with this build.</p>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

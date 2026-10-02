@@ -1,0 +1,333 @@
+name: Release
+
+# Tag vX.Y.Z -> build both architectures natively (no caches: release artifacts must not depend on
+# shared CI caches) -> push by digest -> e2e + performance gate against the previous release ->
+# promote tags (X.Y.Z, X.Y, X, latest) -> GitHub Release with notes and perf reports.
+# Registry: environment `production`, variable IMAGE_PREFIX (ghcr.io/squirro). For GHCR the job's own
+# GITHUB_TOKEN pushes; REGISTRY_USERNAME / REGISTRY_PASSWORD are only needed for another registry.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.12.19"
+
+jobs:
+  build:
+    name: Build & push by digest (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read # check out the tagged commit
+      packages: write # push to GHCR with the job token
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tag matches pyproject.toml and the Helm chart
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          project="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n1)"
+          chart="$(sed -n 's/^appVersion: "\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' deploy/helm/slowshield/Chart.yaml)"
+          if [ "$project" != "$version" ] || [ "$chart" != "$version" ]; then
+            echo "Tag ${REF_NAME}, but pyproject.toml says ${project} and Chart.yaml appVersion says ${chart}."
+            exit 1
+          fi
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
+
+      - name: Build and push (by digest, with SBOM and provenance)
+        env:
+          ARCH: ${{ matrix.arch }}
+          REF_NAME: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          mkdir -p digests
+          for name in slowshield caddy; do
+            repo="$IMAGE"; [ "$name" = caddy ] && repo="$CADDY_IMAGE"
+            docker buildx build \
+              --platform "linux/${ARCH}" \
+              --file "containers/${name}/Dockerfile" \
+              --build-arg "SLOWSHIELD_VERSION=${version}" \
+              --build-arg "SLOWSHIELD_GIT_SHA=${GIT_SHA}" \
+              --build-arg "BUILD_CACHE=off" \
+              --label "org.opencontainers.image.version=${version}" \
+              --label "org.opencontainers.image.revision=${GIT_SHA}" \
+              --sbom=true --provenance=mode=max \
+              --output "type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file "digests/${name}-${ARCH}.json" .
+          done
+          # Test-only fake upstream, kept local and handed to the verify job.
+          docker buildx build --platform "linux/${ARCH}" --file containers/fakeupstream/Dockerfile \
+            --tag slowshield-fakeupstream:release --output "type=docker,dest=digests/fakeupstream-${ARCH}.tar" .
+
+      - name: Upload digests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.arch }}
+          path: digests/
+          retention-days: 7
+
+  verify:
+    name: Verify e2e & performance gate (${{ matrix.arch }})
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    environment: production
+    permissions:
+      contents: read # check out tests and the perf harness
+      packages: read # pull the candidate and the previous release from GHCR
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: digests-${{ matrix.arch }}
+          path: digests
+
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
+
+      - name: Pull candidate and previous release
+        id: images
+        env:
+          ARCH: ${{ matrix.arch }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
+        run: |
+          set -euo pipefail
+          app_digest=$(jq -r '."containerimage.digest"' "digests/slowshield-${ARCH}.json")
+          caddy_digest=$(jq -r '."containerimage.digest"' "digests/caddy-${ARCH}.json")
+          docker pull "${IMAGE}@${app_digest}"
+          docker pull "${CADDY_IMAGE}@${caddy_digest}"
+          docker load --input "digests/fakeupstream-${ARCH}.tar"
+          echo "app=${IMAGE}@${app_digest}" >> "$GITHUB_OUTPUT"
+          echo "caddy=${CADDY_IMAGE}@${caddy_digest}" >> "$GITHUB_OUTPUT"
+          if docker pull --platform "linux/${ARCH}" "${IMAGE}:latest"; then
+            echo "baseline=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install test dependencies
+        run: uv sync --locked
+
+      - name: End-to-end tests
+        env:
+          E2E: "1"
+          SLOWSHIELD_IMAGE: ${{ steps.images.outputs.app }}
+          SLOWSHIELD_CADDY_IMAGE: ${{ steps.images.outputs.caddy }}
+          FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:release
+        run: uv run pytest -m e2e tests/e2e -v
+
+      - name: Performance gate against the previous release
+        env:
+          CANDIDATE: ${{ steps.images.outputs.app }}
+          BASELINE: ${{ steps.images.outputs.baseline }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          baseline_args=()
+          if [ -n "${BASELINE}" ]; then baseline_args=(--baseline "$BASELINE"); fi
+          uv run python -m perf run --gate --candidate "$CANDIDATE" "${baseline_args[@]}" \
+            --fakeupstream slowshield-fakeupstream:release --profile full --rounds 5 --duration 20s \
+            --out "perf/results/release-${ARCH}"
+
+      - name: Observability smoke test
+        env:
+          SLOWSHIELD_IMAGE: ${{ steps.images.outputs.app }}
+          SLOWSHIELD_CADDY_IMAGE: ${{ steps.images.outputs.caddy }}
+          FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:release
+        run: uv run python observability/smoke.py
+
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-release-${{ matrix.arch }}
+          path: perf/results/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  publish:
+    name: Promote tags & create release
+    needs: [verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: write # create the GitHub Release and upload its assets
+      packages: write # tag the release images on GHCR
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download digests and perf reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
+
+      - name: Create multi-arch manifests and tags
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          minor="${version%.*}"
+          major="${version%%.*}"
+          for name in slowshield caddy; do
+            repo="$IMAGE"; [ "$name" = caddy ] && repo="$CADDY_IMAGE"
+            sources=()
+            for arch in amd64 arm64; do
+              digest=$(jq -r '."containerimage.digest"' "artifacts/digests-${arch}/${name}-${arch}.json")
+              sources+=("${repo}@${digest}")
+            done
+            docker buildx imagetools create \
+              --tag "${repo}:${version}" --tag "${repo}:${minor}" --tag "${repo}:${major}" --tag "${repo}:latest" \
+              "${sources[@]}"
+            docker buildx imagetools inspect "${repo}:${version}"
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Images"
+            echo
+            echo "- \`${IMAGE}:${version}\`"
+            echo "- \`${CADDY_IMAGE}:${version}\`"
+            for arch in amd64 arm64; do
+              if [ -f "artifacts/perf-release-${arch}/release-${arch}/report.md" ]; then
+                echo
+                echo "<details><summary>Performance (${arch})</summary>"
+                echo
+                cat "artifacts/perf-release-${arch}/release-${arch}/report.md"
+                echo "</details>"
+              fi
+            done
+          } >> notes.md
+          assets=()
+          for arch in amd64 arm64; do
+            f="artifacts/perf-release-${arch}/release-${arch}/results.json"
+            if [ -f "$f" ]; then cp "$f" "perf-${arch}.json"; assets+=("perf-${arch}.json"); fi
+          done
+          gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md "${assets[@]}"

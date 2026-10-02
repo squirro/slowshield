@@ -1,0 +1,8 @@
+# Publicly trusted certificates via ACME (HTTP-01 on :80->8080 or TLS-ALPN-01 on :443->8443).
+# ACME_EMAIL is optional (expiry notices); ACME_CA defaults to Let's Encrypt production and can point
+# at any RFC 8555 CA (ZeroSSL, step-ca, an internal ACME server, Let's Encrypt staging, ...).
+tls {$ACME_EMAIL:} {
+	import ../snippets/tls-params.caddy
+	key_type p256
+	ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}

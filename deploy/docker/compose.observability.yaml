@@ -1,0 +1,190 @@
+# Observability overlay for deploy/docker/compose.yaml: Alloy + Prometheus + Loki + Tempo + Grafana.
+#
+#   cd deploy/docker
+#   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')" >> .env
+#   docker compose -f compose.yaml -f compose.observability.yaml up -d
+#   open http://127.0.0.1:3000   (user: admin)
+#
+# Images are the official upstream ones pinned by digest (see observability/images.env; keep in sync,
+# `python3 observability/check.py` verifies). Every container runs non-root with a read-only root
+# filesystem, no capabilities and no-new-privileges; only Grafana publishes a port, on loopback.
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  init: false
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  # ---- wire the SlowShield services into the telemetry network ---------------------------------
+  slowshield:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: slowshield
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=${SLOWSHIELD_ENVIRONMENT:-docker}
+      SLOWSHIELD_TRACE_SAMPLE_RATIO: ${SLOWSHIELD_TRACE_SAMPLE_RATIO:-0.1}
+    networks:
+      telemetry: {}
+
+  caddy:
+    environment:
+      CADDY_METRICS: "on"
+      CADDY_TRACING: "on"
+      CADDY_ACCESS_LOG_FILE: "on"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: caddy
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: ${SLOWSHIELD_TRACE_SAMPLE_RATIO:-0.1}
+    networks:
+      telemetry: {}
+
+  # ---- collector -----------------------------------------------------------------------------------
+  alloy:
+    <<: *hardening
+    image: docker.io/grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+    user: "473:473"
+    # Caddy (UID/GID 65532) writes the access log; membership of its group lets Alloy read it when the
+    # log file mode is 0640 (containers/caddy/logs/on.caddy).
+    group_add: ["65532"]
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --disable-reporting
+    volumes:
+      - ../../observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+      - caddy_logs:/var/log/caddy:ro
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [telemetry]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512m, pids: 512 }
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/12345 && printf 'GET /-/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---- metrics -------------------------------------------------------------------------------------
+  prometheus:
+    <<: *hardening
+    image: docker.io/prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-otlp-receiver
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ../../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [telemetry]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g, pids: 512 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---- logs ------------------------------------------------------------------------------------------
+  loki:
+    <<: *hardening
+    image: docker.io/grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    user: "10001:10001"
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ../../observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [telemetry]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g, pids: 512 }
+
+  # ---- traces ----------------------------------------------------------------------------------------
+  tempo:
+    <<: *hardening
+    image: docker.io/grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    user: "10001:10001"
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ../../observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [telemetry]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g, pids: 512 }
+
+  # ---- dashboards & alerting ----------------------------------------------------------------------------
+  grafana:
+    <<: *hardening
+    image: docker.io/grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    user: "472:472"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # Compose cannot inject secret files into read-only containers, so the password comes from .env.
+      # (The Podman and Helm variants use real secrets.)
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/docker/.env}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/slowshield-overview.json
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://127.0.0.1:3000/}
+      GF_LOG_MODE: console
+      GF_LOG_LEVEL: warn
+      SLOWSHIELD_ALERT_WEBHOOK_URL: ${SLOWSHIELD_ALERT_WEBHOOK_URL:-http://127.0.0.1:9/disabled}
+    volumes:
+      - ../../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    networks: [telemetry, grafana_edge]
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512m, pids: 512 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  # The stack never needs the internet; Grafana gets a second network only so it can publish a port.
+  telemetry:
+    internal: true
+  grafana_edge: {}
+
+volumes:
+  caddy_logs: {}
+  alloy_data: {}
+  prometheus_data: {}
+  loki_data: {}
+  tempo_data: {}
+  grafana_data: {}

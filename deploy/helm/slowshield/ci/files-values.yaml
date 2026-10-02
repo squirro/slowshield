@@ -1,0 +1,4 @@
+hostnames: [slowshield.internal.example.com]
+tls:
+  mode: files
+  existingSecret: slowshield-tls

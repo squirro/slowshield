@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield Caddy data (certificates, ACME account, internal CA)
+
+[Volume]
+VolumeName=slowshield-caddy-data

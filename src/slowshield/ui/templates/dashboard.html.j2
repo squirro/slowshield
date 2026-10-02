@@ -1,0 +1,17 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    <p class="muted">New releases are held back for <strong>{{ cfg.default_delay_days|round(1)|replace(".0", "") }} days</strong>
+      before SlowShield serves them{% if cfg.exceptions %}, with {{ cfg.exceptions|length }} package exception{{ "s" if cfg.exceptions|length != 1 }}{% endif %}.</p>
+  </div>
+  <div class="controls">
+    {{ m.eco_filter(eco, "/", {"range": w.key}) }}
+    {{ m.range_picker(w.key, "/", {"eco": eco}) }}
+  </div>
+</div>
+{% include "partials/dashboard_body.html.j2" %}
+{% endblock %}

@@ -1,0 +1,165 @@
+// Grafana Alloy for SlowShield (Docker Compose / Podman). One collector for every signal:
+//   SlowShield app  --OTLP/HTTP :4318-->  (metrics, logs, traces)
+//   Caddy           --OTLP/gRPC :4317-->  (traces)
+//   Caddy           <--scrape :9180--     (Prometheus metrics)
+//   Caddy access log file (shared volume) -> Loki
+// Backends: Prometheus (OTLP + remote-write), Loki (OTLP + push), Tempo (OTLP gRPC).
+
+logging {
+  level  = "warn"
+  format = "json"
+}
+
+// ---- OTLP in ----------------------------------------------------------------------------------
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.memory_limiter.default.input]
+    logs    = [otelcol.processor.memory_limiter.default.input]
+    traces  = [otelcol.processor.memory_limiter.default.input]
+  }
+}
+
+// Normalise units Prometheus would turn into misleading suffixes (unit "1" on a gauge -> "_ratio").
+otelcol.processor.transform "units" {
+  error_mode = "ignore"
+  metric_statements {
+    context    = "metric"
+    statements = [`set(metric.unit, "") where metric.name == "slowshield.feed.enabled"`]
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.memory_limiter "default" {
+  check_interval   = "1s"
+  limit_percentage = 80
+  spike_limit_percentage = 20
+  output {
+    metrics = [otelcol.processor.transform.units.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  timeout = "2s"
+  output {
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
+    logs    = [otelcol.exporter.otlphttp.loki.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// ---- OTLP out ---------------------------------------------------------------------------------
+
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = coalesce(sys.env("PROMETHEUS_OTLP_URL"), "http://prometheus:9090/api/v1/otlp")
+  }
+}
+
+otelcol.exporter.otlphttp "loki" {
+  client {
+    endpoint = coalesce(sys.env("LOKI_OTLP_URL"), "http://loki:3100/otlp")
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = coalesce(sys.env("TEMPO_OTLP_ENDPOINT"), "tempo:4317")
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// ---- Prometheus scrapes (Caddy, the stack itself) ---------------------------------------------
+
+prometheus.scrape "caddy" {
+  job_name        = "caddy"
+  scrape_interval = "30s"
+  targets         = [{"__address__" = coalesce(sys.env("CADDY_METRICS_TARGET"), "caddy:9180"), "service_name" = "caddy"}]
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.scrape "stack" {
+  job_name        = "observability"
+  scrape_interval = "60s"
+  targets = [
+    {"__address__" = "loki:3100", "component" = "loki"},
+    {"__address__" = "tempo:3200", "component" = "tempo"},
+    {"__address__" = "grafana:3000", "component" = "grafana"},
+  ]
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "alloy" {
+  job_name        = "alloy"
+  scrape_interval = "60s"
+  targets         = prometheus.exporter.self.alloy.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = coalesce(sys.env("PROMETHEUS_REMOTE_WRITE_URL"), "http://prometheus:9090/api/v1/write")
+  }
+}
+
+// ---- Caddy access logs (JSON lines on the shared caddy_logs volume) --------------------------
+
+local.file_match "caddy" {
+  path_targets = [{"__path__" = "/var/log/caddy/*.log", "service_name" = "caddy"}]
+  sync_period  = "15s"
+}
+
+loki.source.file "caddy" {
+  targets       = local.file_match.caddy.targets
+  forward_to    = [loki.process.caddy.receiver]
+  tail_from_end = false
+}
+
+loki.process "caddy" {
+  stage.json {
+    expressions = {
+      level       = "level",
+      status      = "status",
+      proto       = "request.proto",
+      tls_version = "request.tls.version",
+      host        = "request.host",
+      method      = "request.method",
+      remote_ip   = "request.remote_ip",
+      duration    = "duration",
+      size        = "size",
+      trace_id    = "traceID",
+    }
+  }
+  // TLS version numbers -> names (772 = TLS 1.3, 771 = TLS 1.2).
+  stage.template {
+    source   = "tls"
+    template = `{{ if eq .tls_version "772" }}TLS1.3{{ else if eq .tls_version "771" }}TLS1.2{{ else if .tls_version }}other{{ else }}none{{ end }}`
+  }
+  stage.labels {
+    values = {level = ""}
+  }
+  stage.structured_metadata {
+    values = {status = "", proto = "", tls = "", host = "", method = "", remote_ip = "", trace_id = ""}
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = coalesce(sys.env("LOKI_PUSH_URL"), "http://loki:3100/loki/api/v1/push")
+  }
+}

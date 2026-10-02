@@ -1,0 +1,107 @@
+[project]
+name = "slowshield"
+dynamic = []
+version = "0.0.1"
+description = "Supply-chain defence proxy for PyPI and npm: delays new releases, blocks known malware, detects tampering."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.15"
+authors = [{ name = "Squirro AG" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Security",
+  "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+  "granian>=2.8.3",
+  "uvloop>=0.22",
+  "starlette>=1.0",
+  "msgspec>=0.21",
+  "jinja2>=3.1.6",
+  "markdown-it-py>=4.0.0",
+  "packaging>=26.0",
+  "pyreqwest>=0.12",
+  "opentelemetry-api>=1.40",
+  "opentelemetry-sdk>=1.40",
+  "opentelemetry-exporter-otlp-proto-http>=1.40",
+  "python-dotenv>=1.1.0",
+]
+
+[project.scripts]
+slowshield = "slowshield.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.1",
+  "pytest-cov>=7.0",
+  "hypothesis>=6.140",
+  "httpx>=0.28.1",
+  "ruff>=0.16",
+  "ty>=0.0.50",
+  "pytest-asyncio>=1.4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+src = ["src", "tests", "perf", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "C4", "SIM", "RUF", "PERF", "PL", "N", "ASYNC", "PT", "TID", "LOG", "G"]
+ignore = [
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLC0415",  # complexity/magic numbers are reviewed by humans
+  "S608",     # SQL built from fixed fragments only; values are always bound parameters
+  "G004",     # f-strings in log messages are fine (structured fields go in `extra`)
+  "RUF012",
+  "SIM105",
+  "PLW0603",
+  "N818",
+  "N812",     # short module aliases (V, P, Q) read better in dense code
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S310", "PLR2004", "S311", "S104", "PT018", "S108"]
+"perf/**" = ["S101", "S311", "S603", "S607", "S310", "S104", "S108", "PLR0917"]  # S108: container tmpfs mount spec
+"fakeupstream/**" = ["S311", "S104"]
+"scripts/**" = ["T201", "S603", "S607", "E501"]
+# Design/config generators: long SVG/JSON literals; the smoke test drives docker and polls localhost.
+"brand/**" = ["E501", "N802", "N806", "PLR0917", "RUF001", "S318"]
+"observability/**" = ["E501", "S310", "S603", "S607", "T201", "N806", "RUF001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ty.environment]
+python-version = "3.15"
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--import-mode=importlib", "-m", "not e2e and not live"]
+markers = [
+  "e2e: end-to-end tests against built containers (deselected unless -m e2e)",
+  "live: tests that reach the real PyPI/npm registries",
+]
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+
+[tool.coverage.run]
+source = ["slowshield"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 90
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@overload"]

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: slowshield-observability
+description: Grafana stack for SlowShield (Alloy, Prometheus, Loki, Tempo, Grafana) with ready-made dashboards and alert rules.
+type: application
+version: 0.1.0
+# The SlowShield release whose metric names, dashboards and alert rules this chart carries.
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/squirro/slowshield
+sources:
+  - https://github.com/squirro/slowshield
+keywords: [slowshield, observability, grafana, prometheus, loki, tempo, alloy, opentelemetry]
+maintainers:
+  - name: Squirro AG
+icon: https://raw.githubusercontent.com/squirro/slowshield/main/brand/mark.svg
+annotations:
+  artifacthub.io/license: Apache-2.0

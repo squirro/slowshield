@@ -1,0 +1,21 @@
+// PR previews for slowshield.org: a SEPARATE Worker so the preview API token (scoped to this Worker
+// only) cannot touch production. Each PR becomes a Worker Preview:
+//   https://pr-<number>-slowshield-website-preview.<account-subdomain>.workers.dev
+// Cloudflare adds `X-Robots-Tag: noindex` to workers.dev Preview URLs; _headers adds it as well.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "slowshield-website-preview",
+  "compatibility_date": "2026-09-24",
+  "assets": {
+    "directory": "../dist/site",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // No production URL at all; only the Preview URLs on workers.dev.
+  "workers_dev": false,
+  "preview_urls": true,
+  // Required by `wrangler preview` (open beta); everything else is inherited from the top level.
+  "previews": {},
+  "send_metrics": false,
+  "dependencies_instrumentation": { "enabled": false }
+}

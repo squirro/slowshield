@@ -1,0 +1,22 @@
+# SlowShield pod: Caddy (TLS edge) + SlowShield share one network namespace. SlowShield listens on
+# 127.0.0.1:8081 only, so it is reachable exclusively through Caddy.
+#
+# Rootless Podman cannot bind ports below 1024 by default. Either publish 8080/8443 (default here)
+# and point a firewall/LB at them, or allow low ports once (as root):
+#   echo 'net.ipv4.ip_unprivileged_port_start=80' > /etc/sysctl.d/99-unprivileged-ports.conf && sysctl --system
+# and change the PublishPort lines to 80:8080 / 443:8443 (and SLOWSHIELD_PUBLIC_HTTPS_PORT=443).
+[Unit]
+Description=SlowShield pod
+
+[Pod]
+PodName=slowshield
+Network=slowshield.network
+PublishPort=8080:8080/tcp
+PublishPort=8443:8443/tcp
+PublishPort=8443:8443/udp
+# Deterministic ownership: the in-container UID 65532 maps to the deploying (unprivileged) user, so
+# volumes never need a recursive chown (the artifact cache can be many GB) and backups are simple.
+UserNS=keep-id:uid=65532,gid=65532
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,84 @@
+{% import "macros.html.j2" as m with context %}
+<div class="htmx-region" id="dashboard-body"
+     hx-get="/ui/partials/dashboard{{ qs({'range': w.key, 'eco': eco}) }}" hx-trigger="every 30s" hx-swap="outerHTML">
+  <section class="kpis kpis-12" aria-label="Key figures">
+    {# Row 1: usage #}
+    {{ m.kpi("Installs served", kpis.installs.value|num, kpis.installs.delta, spark=installs_spark, href="/ui/packages?range=" ~ w.key) }}
+    {{ m.kpi("Packages in use", kpis.packages.value|num, kpis.packages.delta, href="/ui/packages?range=" ~ w.key) }}
+    {{ m.kpi("New dependencies", kpis.new_deps.value|num, kpis.new_deps.delta, href="/ui/leaderboards?range=" ~ w.key ~ "#new") }}
+    {{ m.kpi("Data served", kpis.bytes.value|bytes, kpis.bytes.delta) }}
+    {# Row 2: traffic kept off the upstream registries #}
+    {{ m.kpi("Upstream traffic saved", kpis.upstream_saved.value|bytes, kpis.upstream_saved.delta, hint="Artifact bytes served from SlowShield's verified cache instead of being downloaded from the registry again.") }}
+    {{ m.kpi("Fetched from upstream", kpis.upstream_fetched.value|bytes, kpis.upstream_fetched.delta, invert=True, hint="Artifact bytes SlowShield had to download from pypi.org, files.pythonhosted.org or registry.npmjs.org.") }}
+    {{ m.kpi("Upstream requests saved", kpis.upstream_requests_saved.value|num, kpis.upstream_requests_saved.delta, hint="Downloads and metadata lookups answered from the cache without contacting the registry.") }}
+    {{ m.kpi("Cache hit ratio", kpis.hit_ratio.value|pct, None if not kpis.hit_ratio.previous else (kpis.hit_ratio.value - kpis.hit_ratio.previous)) }}
+    {# Row 3: protection #}
+    {{ m.kpi("Too new (blocked downloads)", kpis.age_gated.value|num, kpis.age_gated.delta, invert=True, href="/ui/security?type=age_gate&range=" ~ w.key, tone="hold") }}
+    {{ m.kpi("Malware blocked", kpis.blocked.value|num, kpis.blocked.delta, invert=True, href="/ui/security?type=blocked&range=" ~ w.key, tone="danger" if kpis.blocked.value else "") }}
+    {{ m.kpi("Tamper detections", kpis.tampered.value|num, kpis.tampered.delta, invert=True, href="/ui/security?type=tampered&range=" ~ w.key, tone="danger" if kpis.tampered.value else "") }}
+    {{ m.kpi("Fail-open serves", kpis.fail_open.value|num, kpis.fail_open.delta, invert=True, href="/ui/security?type=fail_open&range=" ~ w.key, tone="hold" if kpis.fail_open.value else "") }}
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <header class="card-head"><h2>Downloads</h2>
+        <span class="legend"><i class="s-pypi"></i>PyPI <i class="s-npm"></i>npm</span></header>
+      {{ traffic_chart }}
+    </section>
+    <section class="card">
+      <header class="card-head"><h2>Policy decisions</h2>
+        <span class="legend"><i class="s-served"></i>Served <i class="s-age_gated"></i>Too new <i class="s-blocked"></i>Blocked <i class="s-fail_open"></i>Fail-open</span></header>
+      {{ decisions_chart }}
+    </section>
+  </div>
+
+  <div class="grid-3">
+    <section class="card span-2">
+      <header class="card-head"><h2>Top packages</h2><a href="/ui/leaderboards{{ qs({'range': w.key, 'eco': eco}) }}">All leaderboards →</a></header>
+      {% if top %}
+      <table class="table">
+        <thead><tr><th>Package</th><th class="num">Installs</th><th></th><th class="num">Versions</th><th class="num">Data</th></tr></thead>
+        <tbody>
+        {% for r in top %}
+          <tr><td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.package) }}</td>
+              <td class="num">{{ r.s|num }}</td><td>{{ hbar(r.s, top_peak) }}</td>
+              <td class="num">{{ r.v }}</td><td class="num">{{ r.b|bytes }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="empty">No installs in this period yet. <a href="/ui/setup">Point pip, uv or npm at SlowShield →</a></p>{% endif %}
+    </section>
+    <section class="card">
+      <header class="card-head"><h2>Recent security events</h2><a href="/ui/security">Timeline →</a></header>
+      {% if events %}
+      <ul class="events">
+        {% for e in events %}
+        <li>{{ m.event_badge(e.type) }} {{ m.pkg_link(e.ecosystem, e.package) }}{% if e.version %} <code>{{ e.version }}</code>{% endif %}
+            {% if e["count"] > 1 %}<span class="muted">×{{ e["count"] }}</span>{% endif %}<br><span class="muted small">{{ ago(e.ts) }}{% if e.client_ip %} · {{ e.client_ip }}{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="empty">Nothing suspicious so far.</p>{% endif %}
+      {% if new_deps %}
+      <h3 class="sub">Newly introduced dependencies</h3>
+      <ul class="plain">
+        {% for p in new_deps %}<li>{{ m.eco(p.ecosystem) }} {{ m.pkg_link(p.ecosystem, p.name) }} <span class="muted small">{{ ago(p.first_served) }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="card">
+    <header class="card-head"><h2>Protection status</h2></header>
+    <div class="status-grid">
+      <div><span class="muted">Known-bad packages</span><strong>{{ totals.blocklist|num }}</strong></div>
+      <div><span class="muted">Packages tracked</span><strong>{{ totals.packages|num }}</strong></div>
+      <div><span class="muted">Versions tracked</span><strong>{{ totals.versions|num }}</strong></div>
+      <div><span class="muted">Artifacts fingerprinted</span><strong>{{ totals.artifacts|num }}</strong></div>
+      {% for f in feeds.values() %}
+      <div><span class="muted">{{ f.title }}</span>
+        <strong class="feed-{{ f.reason }}">{{ {"ok": "active", "disabled": "disabled", "missing_token": "needs token", "error": "failing"}.get(f.reason, f.reason) }}</strong>
+        <span class="small muted">{% if f.last_success %}synced {{ ago(f.last_success) }}{% else %}never synced{% endif %}</span></div>
+      {% endfor %}
+    </div>
+  </section>
+</div>

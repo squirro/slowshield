@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield Caddy access logs (only written when CADDY_ACCESS_LOG_FILE=on)
+
+[Volume]
+VolumeName=slowshield-caddy-logs

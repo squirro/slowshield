@@ -1,0 +1,81 @@
+{{- $c := .Values.loki }}
+{{- $name := include "obs.componentName" (list . "loki") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "obs.labels" (list . "loki") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {{- include "obs.selectorLabels" (list . "loki") | nindent 6 }}
+  template:
+    metadata: {{- include "obs.podMetadata" (list . "loki" (include "obs.filesConfig" (list . "loki"))) | nindent 6 }}
+    spec:
+      serviceAccountName: {{ include "obs.fullname" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- include "obs.podCommon" (list . "loki") | nindent 6 }}
+      securityContext: {{- include "obs.podSecurityContext" (list . $c) | nindent 8 }}
+      containers:
+        - name: loki
+          image: {{ include "obs.image" $c.image }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          securityContext: {{- include "obs.securityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 3100
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 30
+            failureThreshold: 6
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+              readOnly: true
+            - name: data
+              mountPath: /loki
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        {{- include "obs.dataVolume" (list . "loki") | nindent 8 }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "obs.labels" (list . "loki") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "obs.selectorLabels" (list . "loki") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+      protocol: TCP

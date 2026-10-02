@@ -1,0 +1,211 @@
+// Grafana Alloy for SlowShield on Kubernetes (deployed by the slowshield-observability chart).
+// Same OTLP pipeline as config.alloy; Caddy metrics/logs are discovered through the Kubernetes API
+// (no hostPath mounts): pods labelled app.kubernetes.io/name=slowshield, container "caddy".
+
+logging {
+  level  = "warn"
+  format = "json"
+}
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.k8sattributes.default.input]
+    logs    = [otelcol.processor.k8sattributes.default.input]
+    traces  = [otelcol.processor.k8sattributes.default.input]
+  }
+}
+
+otelcol.processor.k8sattributes "default" {
+  extract {
+    metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.node.name"]
+  }
+  // Watch only the SlowShield namespace: the chart grants a namespaced Role, no cluster-wide pod reads.
+  filter {
+    namespace = sys.env("SLOWSHIELD_NAMESPACE")
+  }
+  output {
+    metrics = [otelcol.processor.memory_limiter.default.input]
+    logs    = [otelcol.processor.memory_limiter.default.input]
+    traces  = [otelcol.processor.memory_limiter.default.input]
+  }
+}
+
+// Normalise units Prometheus would turn into misleading suffixes (unit "1" on a gauge -> "_ratio").
+otelcol.processor.transform "units" {
+  error_mode = "ignore"
+  metric_statements {
+    context    = "metric"
+    statements = [`set(metric.unit, "") where metric.name == "slowshield.feed.enabled"`]
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.memory_limiter "default" {
+  check_interval         = "1s"
+  limit_percentage       = 80
+  spike_limit_percentage = 20
+  output {
+    metrics = [otelcol.processor.transform.units.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  timeout = "2s"
+  output {
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
+    logs    = [otelcol.exporter.otlphttp.loki.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = sys.env("PROMETHEUS_OTLP_URL")
+  }
+}
+
+otelcol.exporter.otlphttp "loki" {
+  client {
+    endpoint = sys.env("LOKI_OTLP_URL")
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = sys.env("TEMPO_OTLP_ENDPOINT")
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// ---- discover SlowShield pods --------------------------------------------------------------------
+
+discovery.kubernetes "pods" {
+  role = "pod"
+  namespaces {
+    names = [sys.env("SLOWSHIELD_NAMESPACE")]
+  }
+  selectors {
+    role  = "pod"
+    label = "app.kubernetes.io/name=slowshield"
+  }
+}
+
+discovery.relabel "caddy_metrics" {
+  targets = discovery.kubernetes.pods.targets
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name", "__meta_kubernetes_pod_container_port_name"]
+    regex         = "caddy;caddy-metrics"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    target_label = "service_name"
+    replacement  = "caddy"
+  }
+}
+
+prometheus.scrape "caddy" {
+  job_name        = "caddy"
+  scrape_interval = "30s"
+  targets         = discovery.relabel.caddy_metrics.output
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "alloy" {
+  job_name        = "alloy"
+  scrape_interval = "60s"
+  targets         = prometheus.exporter.self.alloy.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+  }
+}
+
+// ---- Caddy access logs via the Kubernetes API (needs pods/log get) --------------------------------
+
+discovery.relabel "caddy_logs" {
+  targets = discovery.kubernetes.pods.targets
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    regex         = "caddy"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    target_label = "service_name"
+    replacement  = "caddy"
+  }
+}
+
+loki.source.kubernetes "caddy" {
+  targets    = discovery.relabel.caddy_logs.output
+  forward_to = [loki.process.caddy.receiver]
+}
+
+loki.process "caddy" {
+  // Only Caddy's JSON access log lines (the container also logs startup messages).
+  stage.match {
+    selector = "{service_name=\"caddy\"} != \"http.log.access\""
+    action   = "drop"
+  }
+  stage.json {
+    expressions = {
+      level       = "level",
+      status      = "status",
+      proto       = "request.proto",
+      tls_version = "request.tls.version",
+      host        = "request.host",
+      method      = "request.method",
+      remote_ip   = "request.remote_ip",
+      trace_id    = "traceID",
+    }
+  }
+  stage.template {
+    source   = "tls"
+    template = `{{ if eq .tls_version "772" }}TLS1.3{{ else if eq .tls_version "771" }}TLS1.2{{ else if .tls_version }}other{{ else }}none{{ end }}`
+  }
+  stage.labels {
+    values = {level = ""}
+  }
+  stage.structured_metadata {
+    values = {status = "", proto = "", tls = "", host = "", method = "", remote_ip = "", trace_id = ""}
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}

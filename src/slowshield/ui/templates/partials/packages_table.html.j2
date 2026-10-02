@@ -1,0 +1,29 @@
+{% import "macros.html.j2" as m with context %}
+<section class="card htmx-region" id="packages-region">
+  <header class="card-head"><h2>{{ total|num }} package{{ "s" if total != 1 }}{% if q %} matching “{{ q }}”{% endif %}</h2>
+    <span class="muted small">installs in the last {{ w.key }}</span></header>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Package</th><th class="num">Installs</th><th>Trend</th><th class="num">Versions</th><th class="num">Data</th>
+      <th>Last installed</th><th>First installed</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ m.eco(r.ecosystem) }} {{ m.pkg_link(r.ecosystem, r.name) }}</td>
+        <td class="num">{{ r.s|num }}</td>
+        <td>{{ spark_svgs.get((r.ecosystem, r.name), "") }}</td>
+        <td class="num">{{ r.v }}</td>
+        <td class="num">{{ r.b|bytes }}</td>
+        <td>{{ ago(r.last_served) }}</td>
+        <td>{{ ago(r.first_served) if r.first_served else "resolved only" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ m.pager(page, has_next, "/ui/packages", {"q": q, "eco": eco, "sort": sort, "range": w.key}, "/ui/partials/packages") }}
+  {% else %}
+  <p class="empty">{% if q %}No packages match “{{ q }}”.{% else %}No packages yet.{% endif %}</p>
+  {% endif %}
+</section>

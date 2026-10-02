@@ -1,0 +1,232 @@
+name: Website
+
+# slowshield.org on Cloudflare Workers static assets.
+#   PR (same repository) -> build -> Worker Preview on workers.dev (separate preview Worker, own token)
+#   PR closed            -> delete that Preview
+#   push to main         -> build -> production deploy -> smoke test against https://slowshield.org
+# Fork PRs only build and validate the site: no secrets, no preview.
+# Environment `preview` holds only the preview Worker's token (no branch restriction, so PR branches can
+# use it); `production` (main and release tags only) holds the production token.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "website/**"
+      - "brand/**"
+      - ".github/workflows/website.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "brand/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # One run per PR (newer pushes cancel older previews); production deploys queue, never cancel.
+  group: website-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.12.19"
+  NODE_VERSION: "24"
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  build:
+    name: Build & validate site
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Lockfile references public npm only
+        run: |
+          if grep -nE '"resolved": "https?://' website/package-lock.json | grep -vF '"https://registry.npmjs.org/'; then
+            echo "website/package-lock.json references a non-public registry; re-lock with --registry https://registry.npmjs.org/"
+            exit 1
+          fi
+
+      - name: Build (CSP, links, anchors and size budget are enforced by build.py)
+        run: |
+          uv run --no-project python website/build.py --out dist/site
+
+      - name: Upload site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site
+          path: dist/site/
+          include-hidden-files: true # .well-known/security.txt
+          if-no-files-found: error
+          retention-days: 3
+
+  preview:
+    name: Preview (Cloudflare)
+    needs: [build]
+    # Same-repository PRs only: fork PRs get no secrets, and their content must not be published
+    # under our account. Dependabot runs get no environment secrets either.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the Wrangler config and lockfile
+    environment:
+      name: preview
+      url: ${{ steps.preview.outputs.url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install pinned Wrangler
+        working-directory: website
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Download site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site
+          path: dist/site
+
+      - name: Create or update the Preview
+        id: preview
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # --json still prints upload progress first: keep the JSON document only.
+          out="$(npx --no-install wrangler preview -c wrangler.preview.jsonc --name "pr-${PR_NUMBER}" --json | sed -n '/^{/,$p')"
+          url="$(jq -er '.preview.urls[0]' <<<"$out")"
+          deployment="$(jq -er '.deployment.urls[0]' <<<"$out")"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Website preview"
+            echo
+            echo "- Latest for this PR: ${url}"
+            echo "- This commit: ${deployment}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  preview-cleanup:
+    name: Delete preview
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the Wrangler config and lockfile
+    environment:
+      name: preview
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install pinned Wrangler
+        working-directory: website
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Delete the Preview
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: npx --no-install wrangler preview delete -c wrangler.preview.jsonc --name "pr-${PR_NUMBER}" --skip-confirmation
+
+  deploy:
+    name: Deploy slowshield.org
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the Wrangler config and lockfile
+    # Environment secrets are restricted to the main branch (deployment branch policy).
+    environment:
+      name: production
+      url: https://slowshield.org/
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install pinned Wrangler
+        working-directory: website
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Download site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site
+          path: dist/site
+
+      - name: Deploy
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          GIT_SHA: ${{ github.sha }}
+        run: npx --no-install wrangler deploy -c wrangler.jsonc --message "main ${GIT_SHA}"
+
+      - name: Smoke test (new version live, headers present)
+        run: |
+          set -euo pipefail
+          css="$(grep -oE '/assets/site\.[0-9a-f]{10}\.css' dist/site/index.html | head -n1)"
+          for _ in $(seq 1 30); do
+            curl -fsS https://slowshield.org/ | grep -qF "$css" && break
+            sleep 2
+          done
+          curl -fsS https://slowshield.org/ | grep -qF "$css"
+          headers="$(curl -fsS -o /dev/null -D - https://slowshield.org/)"
+          for h in content-security-policy strict-transport-security x-content-type-options \
+                   referrer-policy permissions-policy cross-origin-opener-policy \
+                   cross-origin-resource-policy x-frame-options; do
+            grep -qi "^${h}:" <<<"$headers" || { echo "missing header: ${h}"; exit 1; }
+          done
+          curl -fsS -o /dev/null -D - "https://slowshield.org${css}" | grep -qi '^cache-control: public, max-age=31536000, immutable'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://slowshield.org/does-not-exist)" = 404

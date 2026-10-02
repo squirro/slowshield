@@ -1,0 +1,5 @@
+# SLOWSHIELD_LOCAL_HTTP=on: loopback hostnames are also served over plain HTTP, so pip, uv and npm on this
+# machine work without trusting Caddy's internal CA. Any other hostname still gets the HTTPS redirect.
+http://localhost, http://127.0.0.1, http://[::1] {
+	import slowshield_proxy
+}

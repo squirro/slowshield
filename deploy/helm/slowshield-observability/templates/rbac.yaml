@@ -1,0 +1,45 @@
+{{- $alloy := include "obs.componentName" (list . "alloy") }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $alloy }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+---
+# Every other component: no Kubernetes API access at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "obs.fullname" . }}
+  labels: {{- include "obs.labels" (list . "") | nindent 4 }}
+automountServiceAccountToken: false
+---
+# Alloy discovers the SlowShield pods, tails Caddy's logs and enriches OTLP with pod metadata, all in
+# the SlowShield namespace only (its k8sattributes processor is filtered to that namespace).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $alloy }}
+  namespace: {{ include "obs.slowshieldNamespace" . }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $alloy }}
+  namespace: {{ include "obs.slowshieldNamespace" . }}
+  labels: {{- include "obs.labels" (list . "alloy") | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $alloy }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $alloy }}
+    namespace: {{ .Release.Namespace }}

@@ -1,0 +1,5 @@
+[Unit]
+Description=SlowShield observability: alloy data
+
+[Volume]
+VolumeName=slowshield-alloy-data

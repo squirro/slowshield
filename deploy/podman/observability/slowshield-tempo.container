@@ -1,0 +1,31 @@
+# Tempo 3 monolithic (local storage); remote-writes span-metrics and the service graph to Prometheus.
+[Unit]
+Description=SlowShield observability: Tempo
+
+[Container]
+# Pinned by digest (observability/images.env); bump in the repo instead of podman auto-update.
+ContainerName=slowshield-tempo
+Image=docker.io/grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m
+UserNS=keep-id:uid=10001,gid=10001
+User=10001
+Group=10001
+Network=slowshield-telemetry.network
+NetworkAlias=tempo
+PidsLimit=512
+Ulimit=nofile=65536:65536
+Volume=slowshield-tempo-data.volume:/var/tempo
+Volume=%h/.config/slowshield/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro,Z
+Exec=-config.file=/etc/tempo/tempo.yaml
+PodmanArgs=--memory=1g --cpus=1
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

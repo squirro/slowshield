@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "obs.componentName" (list . "test") }}
+  labels: {{- include "obs.labels" (list . "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {{- include "obs.podSecurityContext" (list . .Values.grafana) | nindent 4 }}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: check
+      # Reuses the Grafana image (busybox wget): asks Grafana to health-check each provisioned
+      # datasource, which also proves the NetworkPolicies let Grafana reach Prometheus, Loki and Tempo.
+      image: {{ include "obs.image" .Values.grafana.image }}
+      securityContext: {{- include "obs.securityContext" . | nindent 8 }}
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          auth="$(printf '%s:%s' "$GRAFANA_USER" "$(cat /run/secrets/grafana-admin/password)" | base64 | tr -d '\n')"
+          base="http://{{ include "obs.componentName" (list . "grafana") }}:{{ .Values.grafana.service.port }}"
+          wget -qO- "$base/api/health"
+          for uid in slowshield-prometheus slowshield-loki slowshield-tempo; do
+            echo "datasource $uid:"
+            wget -qO- --header "Authorization: Basic $auth" "$base/api/datasources/uid/$uid/health"
+            echo
+          done
+      env:
+        - name: GRAFANA_USER
+          value: {{ .Values.grafana.admin.user | quote }}
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 64Mi }
+      volumeMounts:
+        - name: admin
+          mountPath: /run/secrets/grafana-admin
+          readOnly: true
+  volumes:
+    - name: admin
+      secret:
+        secretName: {{ include "obs.grafanaAdminSecret" . }}
+        defaultMode: 0400
+        items:
+          - key: {{ .Values.grafana.admin.passwordKey }}
+            path: password

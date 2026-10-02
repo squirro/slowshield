@@ -1,0 +1,34 @@
+# End-to-end test overlay: points SlowShield at the deterministic fake registry instead of the real
+# PyPI/npm/OSV/GitHub. Used by tests/e2e (E2E=1 uv run pytest -m e2e tests/e2e):
+#
+#   docker compose -f compose.yaml -f compose.e2e.yaml -p ss-e2e up -d --no-build
+services:
+  fakeupstream:
+    image: ${FAKEUPSTREAM_IMAGE:-slowshield-fakeupstream:ci}
+    command: ["--host", "0.0.0.0", "--port", "9000"]
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      backend:
+        aliases: [fakeupstream]
+    ports:
+      # Control API for the tests (tamper, publish, ...); loopback only.
+      - "127.0.0.1:${FAKEUPSTREAM_PORT:-19000}:9000"
+
+  slowshield:
+    image: ${SLOWSHIELD_IMAGE:-slowshield:ci}
+    depends_on:
+      fakeupstream:
+        condition: service_started
+    environment:
+      SLOWSHIELD_PUBLIC_URL: https://localhost:${HTTPS_PORT:-443}
+      SLOWSHIELD_WORKERS: "2"
+      SLOWSHIELD_LOG_LEVEL: debug
+
+  caddy:
+    image: ${SLOWSHIELD_CADDY_IMAGE:-slowshield-caddy:ci}
+    environment:
+      SLOWSHIELD_HOSTNAMES: localhost
+      SLOWSHIELD_TLS_MODE: internal

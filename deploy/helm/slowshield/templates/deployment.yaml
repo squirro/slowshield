@@ -1,0 +1,267 @@
+{{- $fullname := include "slowshield.fullname" . -}}
+{{- $github := include "slowshield.githubSecretName" . -}}
+{{- if not (has .Values.tls.mode (list "internal" "acme" "files")) }}
+{{- fail "tls.mode must be one of: internal, acme, files" }}
+{{- end }}
+{{- if and .Values.caddy.enabled (eq .Values.tls.mode "files") (not .Values.tls.existingSecret) }}
+{{- fail "tls.mode=files requires tls.existingSecret (a kubernetes.io/tls Secret)" }}
+{{- end }}
+{{- if not .Values.hostnames }}
+{{- fail "hostnames must contain at least one entry" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "slowshield.labels" . | nindent 4 }}
+spec:
+  # Single writer on a ReadWriteOnce volume: exactly one replica, stopped before the next starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: {{- include "slowshield.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "slowshield.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{ toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/config: {{ .Values.config | sha256sum }}
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "slowshield.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: slowshield
+          image: {{ include "slowshield.image" (list .Values.image .) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: SLOWSHIELD_CONFIG
+              value: /etc/slowshield/config.toml
+            - name: SLOWSHIELD_BIND
+              value: {{ include "slowshield.appBind" . | quote }}
+            - name: SLOWSHIELD_DATA_DIR
+              value: /data
+            - name: SLOWSHIELD_WORKERS
+              value: {{ .Values.workers | quote }}
+            - name: SLOWSHIELD_PUBLIC_URL
+              value: {{ include "slowshield.publicUrl" . | quote }}
+            - name: SLOWSHIELD_PYPI_ENABLED
+              value: {{ .Values.ecosystems.pypi.enabled | quote }}
+            - name: SLOWSHIELD_NPM_ENABLED
+              value: {{ .Values.ecosystems.npm.enabled | quote }}
+            {{- with .Values.ecosystems.pypi.hostnames }}
+            - name: SLOWSHIELD_PYPI_HOSTNAMES
+              value: {{ join " " . | quote }}
+            {{- end }}
+            {{- with .Values.ecosystems.npm.hostnames }}
+            - name: SLOWSHIELD_NPM_HOSTNAMES
+              value: {{ join " " . | quote }}
+            {{- end }}
+            {{- if $github }}
+            - name: GITHUB_TOKEN_FILE
+              value: /run/secrets/github/{{ .Values.feeds.github.existingSecretKey }}
+            {{- end }}
+            {{- if .Values.telemetry.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.otlpEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_SERVICE_NAME
+              value: slowshield
+            - name: SLOWSHIELD_TRACE_SAMPLE_RATIO
+              value: {{ .Values.telemetry.traceSampleRatio | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: {{ printf "k8s.namespace.name=%s,deployment.environment.name=%s%s" .Release.Namespace .Release.Name (ternary (printf ",%s" .Values.telemetry.resourceAttributes) "" (ne .Values.telemetry.resourceAttributes "")) | quote }}
+            {{- end }}
+          {{- if not .Values.caddy.enabled }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          {{- end }}
+          # The image has no shell: probes use the exec form of `slowshield healthcheck`, which
+          # reaches the loopback-only listener inside the pod.
+          startupProbe:
+            exec:
+              command: ["slowshield", "healthcheck"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["slowshield", "healthcheck"]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["slowshield", "healthcheck", "--url", "http://{{ include "slowshield.appBind" . | replace "0.0.0.0" "127.0.0.1" }}/healthz"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/slowshield
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if $github }}
+            - name: github-token
+              mountPath: /run/secrets/github
+              readOnly: true
+            {{- end }}
+        {{- if .Values.caddy.enabled }}
+        - name: caddy
+          image: {{ include "slowshield.image" (list .Values.caddy.image .) }}
+          imagePullPolicy: {{ .Values.caddy.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: SLOWSHIELD_HOSTNAMES
+              value: {{ join " " .Values.hostnames | quote }}
+            - name: SLOWSHIELD_UPSTREAM
+              value: 127.0.0.1:8081
+            - name: SLOWSHIELD_TLS_MODE
+              value: {{ .Values.tls.mode | quote }}
+            - name: SLOWSHIELD_PUBLIC_HTTPS_PORT
+              value: {{ .Values.service.httpsPort | quote }}
+            - name: TLS_MIN_VERSION
+              value: {{ .Values.tls.minVersion | quote }}
+            - name: SLOWSHIELD_HSTS
+              value: {{ .Values.tls.hsts | quote }}
+            {{- if eq .Values.tls.mode "acme" }}
+            - name: ACME_EMAIL
+              value: {{ .Values.tls.acme.email | quote }}
+            - name: ACME_CA
+              value: {{ .Values.tls.acme.ca | quote }}
+            {{- end }}
+            {{- if eq .Values.tls.mode "files" }}
+            - name: TLS_CERT_FILE
+              value: /certs/tls.crt
+            - name: TLS_KEY_FILE
+              value: /certs/tls.key
+            {{- end }}
+            - name: CADDY_METRICS
+              value: {{ ternary "on" "off" .Values.caddy.metrics | quote }}
+            - name: CADDY_ACCESS_LOG_FILE
+              value: {{ ternary "on" "off" .Values.caddy.accessLogFile | quote }}
+            - name: CADDY_TRACING
+              value: {{ ternary "on" "off" (ne .Values.telemetry.otlpEndpoint "") | quote }}
+            {{- if .Values.telemetry.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.telemetry.otlpEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            # "caddy" in every deployment variant: the Traces and Caddy dashboards select on it.
+            - name: OTEL_SERVICE_NAME
+              value: caddy
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.telemetry.traceSampleRatio | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            {{- if .Values.service.http3 }}
+            - name: https-quic
+              containerPort: 8443
+              protocol: UDP
+            {{- end }}
+            {{- if .Values.caddy.metrics }}
+            - name: caddy-metrics
+              containerPort: 9180
+              protocol: TCP
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 30
+            failureThreshold: 4
+          resources: {{- toYaml .Values.caddy.resources | nindent 12 }}
+          volumeMounts:
+            - name: caddy-data
+              mountPath: /data
+            - name: caddy-config
+              mountPath: /config
+            - name: caddy-logs
+              mountPath: /var/log/caddy
+            - name: caddy-tmp
+              mountPath: /tmp
+            {{- if eq .Values.tls.mode "files" }}
+            - name: tls
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+        {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" $fullname) .Values.persistence.data.existingClaim }}
+        - name: config
+          configMap:
+            name: {{ $fullname }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        {{- if $github }}
+        - name: github-token
+          secret:
+            secretName: {{ $github }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.caddy.enabled }}
+        - name: caddy-data
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-caddy" $fullname) .Values.persistence.caddy.existingClaim }}
+        - name: caddy-config
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: caddy-logs
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: caddy-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        {{- if eq .Values.tls.mode "files" }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}

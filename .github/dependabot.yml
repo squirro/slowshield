@@ -1,0 +1,75 @@
+# Dependency updates with a cooldown: SlowShield's own rule (don't consume releases younger than a
+# week) applied to SlowShield itself. Security updates bypass the cooldown.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      opentelemetry:
+        patterns: ["opentelemetry-*"]
+      dev:
+        dependency-type: development
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Wrangler, which deploys slowshield.org (website/package-lock.json, locked against registry.npmjs.org).
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      wrangler:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /containers/slowshield
+      - /containers/caddy
+      - /containers/fakeupstream
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directory: /containers/slowshield
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # The observability images are bumped here only. `uv run python observability/sync.py --from-compose`
+  # then carries the new pins to images.env, the Quadlet units and the Helm chart (CI fails until it ran).
+  - package-ecosystem: docker-compose
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      observability:
+        patterns: ["*"]
+
+  - package-ecosystem: helm
+    # Not slowshield-observability: its image pins are synced from observability/images.env.
+    directories:
+      - /deploy/helm/slowshield
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

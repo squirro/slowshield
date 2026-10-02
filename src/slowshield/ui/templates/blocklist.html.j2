@@ -1,0 +1,29 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Blocklist{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Blocklist</h1><p class="muted">Known-malicious packages from the threat feeds. Matching installs fail with HTTP 451, even when failing open.</p></div>
+</div>
+<section class="card">
+  <header class="card-head"><h2>By source</h2><a href="/ui/feeds">Feed status →</a></header>
+  {% if counts %}
+  <table class="table compact">
+    <thead><tr><th>Source</th><th>Ecosystem</th><th class="num">Entries</th><th class="num">Whole package</th><th>Newest</th></tr></thead>
+    <tbody>{% for c in counts %}<tr><td>{{ c.source }}</td><td>{{ m.eco(c.ecosystem) }}</td><td class="num">{{ c.n|num }}</td><td class="num">{{ c.pkg|num }}</td><td>{{ ago(c.newest) }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p class="empty">The blocklist is empty — the feeds have not synced yet.</p>{% endif %}
+</section>
+<form class="filters" action="/ui/blocklist" method="get" role="search"
+      hx-get="/ui/partials/blocklist" hx-target="#blocklist-region" hx-swap="outerHTML" hx-trigger="input changed delay:250ms, change">
+  <label class="search"><span class="sr-only">Package</span><input type="search" name="q" value="{{ q }}" placeholder="Search known-bad packages…" autocomplete="off" spellcheck="false"></label>
+  <label><span class="sr-only">Ecosystem</span><select name="eco"><option value="">All ecosystems</option>
+    <option value="pypi"{% if eco == "pypi" %} selected{% endif %}>PyPI</option><option value="npm"{% if eco == "npm" %} selected{% endif %}>npm</option></select></label>
+  <label><span class="sr-only">Source</span><select name="source"><option value="">All sources</option>
+    <option value="osv"{% if source == "osv" %} selected{% endif %}>OSV</option><option value="github"{% if source == "github" %} selected{% endif %}>GitHub</option></select></label>
+  <label><span class="sr-only">Scope</span><select name="scope"><option value="">Any scope</option>
+    <option value="package"{% if scope == "package" %} selected{% endif %}>Whole package</option><option value="version"{% if scope == "version" %} selected{% endif %}>Specific versions</option></select></label>
+  <noscript><button type="submit">Apply</button></noscript>
+</form>
+{% include "partials/blocklist_table.html.j2" %}
+{% endblock %}

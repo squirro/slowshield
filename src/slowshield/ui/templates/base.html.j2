@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content="includeIndicatorCSS:false history:false">
+<meta name="color-scheme" content="light dark">
+<title>{% block title %}{{ title|default("Overview") }}{% endblock %} · SlowShield</title>
+<link rel="icon" href="/static/brand/favicon.ico" sizes="any">
+<link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<script src="/static/vendor/htmx.min.js?v={{ htmx_version }}" defer></script>
+<script src="/static/app.js?v={{ version }}" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="SlowShield home">
+    <img class="logo logo-light" src="/static/brand/mark.svg" alt="" width="28" height="28">
+    <img class="logo logo-dark" src="/static/brand/mark-dark.svg" alt="" width="28" height="28">
+    <img class="wordmark-img logo-light" src="/static/brand/wordmark.svg" alt="SlowShield" width="101" height="20">
+    <img class="wordmark-img logo-dark" src="/static/brand/wordmark-dark.svg" alt="SlowShield" width="101" height="20">
+  </a>
+  <nav aria-label="Main">
+    {% set nav = [
+      ("/", "Overview"), ("/ui/packages", "Packages"), ("/ui/leaderboards", "Leaderboards"),
+      ("/ui/security", "Security"), ("/ui/blocklist", "Blocklist"), ("/ui/feeds", "Feeds"), ("/ui/setup", "Setup")] %}
+    {% for href, label in nav %}
+      <a href="{{ href }}"{% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle dark mode">◐</button>
+</header>
+
+{% if feed_warnings %}
+<div class="banners">
+  {% for f in feed_warnings %}
+  <div class="banner {{ 'warn' if f.reason == 'missing_token' else 'error' }}" role="status">
+    <strong>{{ f.title }}:</strong>
+    {% if f.reason == "missing_token" %}disabled — no API token configured. Malware advisories from this source are not being applied.
+    {% else %}last sync failed{% if f.last_error %} ({{ f.last_error }}){% endif %}.{% endif %}
+    <a href="/ui/feeds">How to fix →</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<main id="main" class="container">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <span>SlowShield <code>{{ build.version }}</code>{% if build.git_sha != "unknown" %} · <code>{{ build.git_sha[:8] }}</code>{% endif %}
+    · Python {{ build.python }}{% if build.gil == "disabled" %} (free-threaded){% endif %}</span>
+  <span><a href="/ui/about">About &amp; changelog</a> · <em>Safety through patience.</em></span>
+</footer>
+</body>
+</html>

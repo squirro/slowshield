@@ -44,3 +44,9 @@ Edit `brand/build.py`, never the generated files. The product UI (`src/slowshiel
 * Clear space: a quarter of the mark's height on every side.
 * Brand blue is the only accent; status colours (available, held, blocked, tampered) mean exactly that.
 * Never retype the wordmark: *Slow* is Schibsted Grotesk 500 in ink, *Shield* 750 in brand blue, outlined in the files.
+
+## Name and logo
+
+The Apache License covers the code, not the SlowShield name, mark or other files in this folder. Use the
+name to refer to the project truthfully ("a fork of SlowShield", "works with SlowShield"). If you distribute a
+modified version, give it a different name and logo.

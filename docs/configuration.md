@@ -6,10 +6,7 @@ SlowShield reads, in increasing order of precedence:
 2. a TOML file — `$SLOWSHIELD_CONFIG`, else `/etc/slowshield/config.toml`, else `./config.toml`,
 3. environment variables (and `*_FILE` variants for secrets).
 
-The annotated reference is [`config.example.toml`](../config.example.toml). The file format is compatible
-with the Rust implementation's `config.toml`; keys for features that were not ported (`mode`,
-`mirror_probe_interval_minutes`, `[upstreams.yum]`, `[upstreams.homebrew]`, `[feeds.phylum]`) are
-accepted and ignored with a warning, and `database_url = "sqlite:/path"` is still understood.
+The annotated reference is [`config.example.toml`](../config.example.toml).
 
 ## Environment variables
 

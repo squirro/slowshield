@@ -145,5 +145,5 @@ More in [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/development.md](docs/develo
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The SlowShield name and logo are
-trademarks of Squirro AG, see [TRADEMARKS.md](TRADEMARKS.md).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). If you distribute a modified version,
+please give it a different name and logo ([brand/README.md](brand/README.md#name-and-logo)).

@@ -24,7 +24,7 @@ taken from the registry: PyPI's per-file `upload-time` (PEP 700) and npm's `time
    "days_old":1.35,"delay_days_required":7.0,"retry_after_secs":488422}
   ```
 
-  Set `enforce_age_on_download = false` to only filter metadata (the behaviour of the Rust version).
+  Set `enforce_age_on_download = false` to only filter metadata.
 
 ## Fail-open
 

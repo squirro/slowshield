@@ -26,26 +26,7 @@ files.
 
 Schema migrations run automatically at start (`PRAGMA user_version`). Releases follow SemVer; read the
 changelog before a major upgrade. Podman deployments with `AutoUpdate=registry` pick up new `latest`
-images like the current AWX role does.
-
-## Migrating from the Rust version
-
-1. Stop the old container and copy its database (default `/opt/slowshield/data/mirror.db`).
-2. Run the import once against the new data volume:
-
-   ```bash
-   docker run --rm -v slowshield_data:/data -v /opt/slowshield/data:/old:ro \
-     ghcr.io/squirro/slowshield:latest import-legacy /old/mirror.db
-   ```
-
-   Use `--dry-run` first to see the counts. Imported: artifact fingerprints (same keys), blocklist,
-   security events (aggregated per day), per-package/version serve totals, release times.
-3. Start the new deployment. Imported fingerprints are marked `legacy-import`: if one disagrees with
-   bytes that match the registry's own digest, it is corrected instead of being reported as tampering
-   (the Rust version could store an upstream error page's hash before v8).
-
-The old `config.toml` keeps working (unsupported keys are ignored with a warning). Environment variables
-`DATABASE_URL` and `GITHUB_TOKEN` are still honoured.
+images automatically.
 
 ## Capacity planning
 

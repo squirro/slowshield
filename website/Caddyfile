@@ -44,6 +44,12 @@
 	@pages path / /*.html
 	header @pages Cache-Control "public, max-age=300, must-revalidate"
 
+	# Go's built-in MIME table (the image has no /etc/mime.types) does not know fonts.
+	@woff2 path *.woff2
+	header @woff2 Content-Type font/woff2
+	@ttf path *.ttf
+	header @ttf Content-Type font/ttf
+
 	file_server {
 		precompressed zstd br gzip
 		hide .*.gz .*.br .*.zst

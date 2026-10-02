@@ -23,13 +23,23 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
 BRAND = HERE.parent / "brand"
 BRAND_FILES = {
-    "mark.svg": "mark.svg",
-    "mark-dark.svg": "mark-dark.svg",
     "favicon.svg": "favicon.svg",
     "png/favicon.ico": "favicon.ico",
     "png/icon-180.png": "apple-touch-icon.png",
     "png/social-preview.png": "social-preview.png",
+    "fonts/SchibstedGrotesk-latin.woff2": "fonts/SchibstedGrotesk-latin.woff2",
 }
+# Everything the style guide offers for download, served under /assets/brand/.
+BRAND_DOWNLOADS = (
+    "mark.svg", "mark-dark.svg", "mark-mono.svg", "mark-white.svg", "favicon.svg", "favicon-32.svg", "app-icon.svg",
+    "lockup-horizontal.svg", "lockup-horizontal-dark.svg", "lockup-stacked.svg", "lockup-stacked-dark.svg",
+    "wordmark.svg", "wordmark-dark.svg", "social-preview.svg", "readme-banner.svg", "readme-banner-dark.svg",
+    "tokens.css", "png/favicon.ico", "png/icon-32.png", "png/icon-180.png", "png/icon-192.png", "png/icon-512.png",
+    "png/social-preview.png", "fonts/SchibstedGrotesk-VF.ttf", "fonts/OFL.txt",
+)  # fmt: skip
+TOKENS_MARKER = "/* @tokens */"
+PALETTE_MARKER = "<!-- @palette -->"
+SPRITE_MARKER = "<!-- @sprite -->"
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # html + css + js, uncompressed
 
@@ -59,10 +69,28 @@ def build(out: Path) -> None:
         shutil.rmtree(out)
     shutil.copytree(SRC, out)
     assets = out / "assets"
-    for src, dest in BRAND_FILES.items():
+    for src, dest in [*BRAND_FILES.items(), *((f, f"brand/{Path(f).name}") for f in BRAND_DOWNLOADS)]:
         path = BRAND / src
         if path.is_file():
+            (assets / dest).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, assets / dest)
+    # Design tokens are inlined at the top of the stylesheet; the style guide includes the generated palette.
+    css = assets / "site.css"
+    css.write_text(
+        css.read_text(encoding="utf-8").replace(TOKENS_MARKER, (BRAND / "tokens.css").read_text(encoding="utf-8"))
+    )
+    sprite = (BRAND / "sprite.html").read_text(encoding="utf-8")
+    for page in out.rglob("*.html"):
+        text = page.read_text(encoding="utf-8")
+        if SPRITE_MARKER in text:
+            page.write_text(text.replace(SPRITE_MARKER, sprite), encoding="utf-8")
+    guide = out / "brand" / "index.html"
+    if guide.is_file():
+        guide.write_text(
+            guide.read_text(encoding="utf-8").replace(
+                PALETTE_MARKER, (BRAND / "palette.html").read_text(encoding="utf-8")
+            )
+        )
 
     renames: dict[str, str] = {}
     for rel in FINGERPRINT:

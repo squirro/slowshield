@@ -13,6 +13,8 @@ All notable changes to this project are documented here. The format is based on
   Setup page and npm tarball URLs follow it.
 
 ### Changed
+- Release images are published to `ghcr.io/squirro/slowshield` and `ghcr.io/squirro/slowshield-caddy`;
+  every push to `main` publishes dev images to the internal registry (`docs/releasing.md`).
 - Metadata caching uses far less memory. Upstream documents and rendered responses live in one SQLite
   file shared by all workers (`data_dir/metadata-cache.db`, `cache.metadata_max_mb`, default 1 GB), so a
   document fetched by one worker is served by all of them and survives restarts. Workers keep only parsed

@@ -6,8 +6,8 @@ as UID 65532 on a read-only root filesystem:
 
 | Image | Role |
 |---|---|
-| `registry.squirro.com/slowshield/slowshield` | The proxy (Python 3.15, Granian). Listens on 8080, state in `/data`. |
-| `registry.squirro.com/slowshield/slowshield-caddy` | TLS edge (Caddy). 8080 HTTP → HTTPS redirect + ACME, 8443 HTTPS (TCP) and HTTP/3 (UDP). |
+| `ghcr.io/squirro/slowshield` | The proxy (Python 3.15, Granian). Listens on 8080, state in `/data`. |
+| `ghcr.io/squirro/slowshield-caddy` | TLS edge (Caddy). 8080 HTTP → HTTPS redirect + ACME, 8443 HTTPS (TCP) and HTTP/3 (UDP). |
 
 | Runtime | Directory | Start |
 |---|---|---|

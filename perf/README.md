@@ -4,7 +4,7 @@ Two layers, both runnable locally and in CI:
 
 | Layer | What | Command |
 |---|---|---|
-| **Macro** (gate) | Container image under load: k6 against the hardened proxy container, upstream = deterministic `fakeupstream` | `uv run python -m perf run --candidate slowshield:dev --baseline registry.squirro.com/slowshield/slowshield:latest --gate` |
+| **Macro** (gate) | Container image under load: k6 against the hardened proxy container, upstream = deterministic `fakeupstream` | `uv run python -m perf run --candidate slowshield:dev --baseline ghcr.io/squirro/slowshield:latest --gate` |
 | **Micro** (signal) | Hot code paths in-process (packument filtering, PEP 691 parse/render, blocklist, negotiation) | `uv run python -m perf micro --out perf/results/micro.json [--compare old.json]` |
 
 ## Why A/B instead of absolute numbers

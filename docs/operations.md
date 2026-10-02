@@ -35,7 +35,7 @@ images like the current AWX role does.
 
    ```bash
    docker run --rm -v slowshield_data:/data -v /opt/slowshield/data:/old:ro \
-     registry.squirro.com/slowshield/slowshield:latest import-legacy /old/mirror.db
+     ghcr.io/squirro/slowshield:latest import-legacy /old/mirror.db
    ```
 
    Use `--dry-run` first to see the counts. Imported: artifact fingerprints (same keys), blocklist,

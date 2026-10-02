@@ -6,7 +6,7 @@ After=slowshield.service
 
 [Container]
 ContainerName=slowshield-caddy
-Image=registry.squirro.com/slowshield/slowshield-caddy:latest
+Image=ghcr.io/squirro/slowshield-caddy:latest
 AutoUpdate=registry
 Pod=slowshield.pod
 User=65532

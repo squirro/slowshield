@@ -3,6 +3,8 @@ name: Release
 # Tag vX.Y.Z -> build both architectures natively (no caches: release artifacts must not depend on
 # shared CI caches) -> push by digest -> e2e + performance gate against the previous release ->
 # promote tags (X.Y.Z, X.Y, X, latest) -> GitHub Release with notes and perf reports.
+# Registry: environment `production`, variable IMAGE_PREFIX (ghcr.io/squirro). For GHCR the job's own
+# GITHUB_TOKEN pushes; REGISTRY_USERNAME / REGISTRY_PASSWORD are only needed for another registry.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
@@ -14,9 +16,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY: registry.squirro.com
-  IMAGE: registry.squirro.com/slowshield/slowshield
-  CADDY_IMAGE: registry.squirro.com/slowshield/slowshield-caddy
   UV_VERSION: "0.12.19"
 
 jobs:
@@ -24,9 +23,10 @@ jobs:
     name: Build & push by digest (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
-    environment: harbor
+    environment: production
     permissions:
       contents: read # check out the tagged commit
+      packages: write # push to GHCR with the job token
     strategy:
       fail-fast: true
       matrix:
@@ -46,18 +46,33 @@ jobs:
         with:
           cache-binary: false
 
-      - name: Log in to Harbor
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ vars.HARBOR_USERNAME }}
-          password: ${{ secrets.HARBOR_REGISTRY_TOKEN }}
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
 
       - name: Build and push (by digest, with SBOM and provenance)
         env:
           ARCH: ${{ matrix.arch }}
           REF_NAME: ${{ github.ref_name }}
           GIT_SHA: ${{ github.sha }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
         run: |
           set -euo pipefail
           version="${REF_NAME#v}"
@@ -92,9 +107,10 @@ jobs:
     needs: [build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
-    environment: harbor
+    environment: production
     permissions:
       contents: read # check out tests and the perf harness
+      packages: read # pull the candidate and the previous release from GHCR
     strategy:
       fail-fast: true
       matrix:
@@ -124,17 +140,32 @@ jobs:
           name: digests-${{ matrix.arch }}
           path: digests
 
-      - name: Log in to Harbor
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ vars.HARBOR_USERNAME }}
-          password: ${{ secrets.HARBOR_REGISTRY_TOKEN }}
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
 
       - name: Pull candidate and previous release
         id: images
         env:
           ARCH: ${{ matrix.arch }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
         run: |
           set -euo pipefail
           app_digest=$(jq -r '."containerimage.digest"' "digests/slowshield-${ARCH}.json")
@@ -192,9 +223,10 @@ jobs:
     needs: [verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    environment: harbor
+    environment: production
     permissions:
       contents: write # create the GitHub Release and upload its assets
+      packages: write # tag the release images on GHCR
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,16 +243,31 @@ jobs:
         with:
           cache-binary: false
 
-      - name: Log in to Harbor
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the production environment."; exit 1; fi
+          {
+            echo "registry=${IMAGE_PREFIX%%/*}"
+            echo "image=${IMAGE_PREFIX}/slowshield"
+            echo "caddy=${IMAGE_PREFIX}/slowshield-caddy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the release registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ vars.HARBOR_USERNAME }}
-          password: ${{ secrets.HARBOR_REGISTRY_TOKEN }}
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
 
       - name: Create multi-arch manifests and tags
         env:
           REF_NAME: ${{ github.ref_name }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
         run: |
           set -euo pipefail
           version="${REF_NAME#v}"
@@ -243,6 +290,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REF_NAME: ${{ github.ref_name }}
+          IMAGE: ${{ steps.reg.outputs.image }}
+          CADDY_IMAGE: ${{ steps.reg.outputs.caddy }}
         run: |
           set -euo pipefail
           version="${REF_NAME#v}"

@@ -95,7 +95,7 @@
     <ol class="quick-steps">
       <li class="qbox">
         <h3><span>1</span> Start it</h3>
-        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 registry.squirro.com/slowshield/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       </li>
       <li class="qbox">
         <h3><span>2</span> Install something through it</h3>
@@ -373,7 +373,7 @@ set -Ux npm_config_registry http://localhost:8080/npm/</code></pre><button class
       <div class="code"><pre><code>docker run -d --restart unless-stopped -p 127.0.0.1:8080:8080 \
   -v slowshield:/data \
   -e SLOWSHIELD_PUBLIC_URL=https://slowshield.your-tailnet.ts.net \
-  registry.squirro.com/slowshield/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+  ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache; they
         never need to talk to each other.</p>
     </li>

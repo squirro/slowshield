@@ -1,0 +1,151 @@
+name: Dev images
+
+# Push to main -> build both architectures natively (no caches, as for releases) -> push by digest to the
+# development registry (environment `development`: IMAGE_PREFIX, REGISTRY_USERNAME, REGISTRY_PASSWORD) ->
+# multi-arch tags `main` (or the branch name) and `sha-<commit>`. Release images go to the public registry
+# from release.yml; nothing here is ever tagged `latest` or with a version.
+on:
+  push:
+    # feat/python-port: one-off, to publish dev images before PR 1 is merged. Remove after the merge.
+    branches: [main, feat/python-port]
+    paths:
+      - "src/**"
+      - "containers/slowshield/**"
+      - "containers/caddy/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/dev-images.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: dev-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & push by digest (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    environment: development
+    permissions:
+      contents: read # check out the commit
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [ -z "$IMAGE_PREFIX" ]; then echo "Set IMAGE_PREFIX in the development environment."; exit 1; fi
+          echo "registry=${IMAGE_PREFIX%%/*}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the development registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push (by digest, with SBOM and provenance)
+        env:
+          ARCH: ${{ matrix.arch }}
+          GIT_SHA: ${{ github.sha }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          mkdir -p digests
+          for name in slowshield caddy; do
+            repo="${IMAGE_PREFIX}/slowshield"; [ "$name" = caddy ] && repo="${IMAGE_PREFIX}/slowshield-caddy"
+            docker buildx build \
+              --platform "linux/${ARCH}" \
+              --file "containers/${name}/Dockerfile" \
+              --build-arg "SLOWSHIELD_VERSION=0.0.0-dev+${GIT_SHA::7}" \
+              --build-arg "SLOWSHIELD_GIT_SHA=${GIT_SHA}" \
+              --build-arg "BUILD_CACHE=off" \
+              --label "org.opencontainers.image.revision=${GIT_SHA}" \
+              --sbom=true --provenance=mode=max \
+              --output "type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file "digests/${name}-${ARCH}.json" .
+          done
+
+      - name: Upload digests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dev-digests-${{ matrix.arch }}
+          path: digests/
+          retention-days: 3
+
+  tag:
+    name: Tag multi-arch images
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: development
+    permissions: {}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dev-digests-*
+          merge-multiple: true
+          path: digests
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+
+      - name: Registry
+        id: reg
+        env:
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: echo "registry=${IMAGE_PREFIX%%/*}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to the development registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ steps.reg.outputs.registry }}
+          username: ${{ vars.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Create multi-arch manifests and tags
+        env:
+          GIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE_PREFIX: ${{ vars.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          branch_tag="$(printf '%s' "$REF_NAME" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-100)"
+          for name in slowshield caddy; do
+            repo="${IMAGE_PREFIX}/slowshield"; [ "$name" = caddy ] && repo="${IMAGE_PREFIX}/slowshield-caddy"
+            sources=()
+            for arch in amd64 arm64; do
+              sources+=("${repo}@$(jq -r '."containerimage.digest"' "digests/${name}-${arch}.json")")
+            done
+            docker buildx imagetools create --tag "${repo}:${branch_tag}" --tag "${repo}:sha-${GIT_SHA::7}" "${sources[@]}"
+            docker buildx imagetools inspect "${repo}:sha-${GIT_SHA::7}"
+            {
+              echo "- \`${repo}:${branch_tag}\`"
+              echo "- \`${repo}:sha-${GIT_SHA::7}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done

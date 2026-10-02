@@ -29,7 +29,7 @@ x-hardened: &hardened
 services:
   slowshield:
     <<: *hardened
-    image: ${SLOWSHIELD_IMAGE:-registry.squirro.com/slowshield/slowshield:latest}
+    image: ${SLOWSHIELD_IMAGE:-ghcr.io/squirro/slowshield:latest}
     build:
       context: ../..
       dockerfile: containers/slowshield/Dockerfile
@@ -72,7 +72,7 @@ services:
 
   caddy:
     <<: *hardened
-    image: ${SLOWSHIELD_CADDY_IMAGE:-registry.squirro.com/slowshield/slowshield-caddy:latest}
+    image: ${SLOWSHIELD_CADDY_IMAGE:-ghcr.io/squirro/slowshield-caddy:latest}
     build:
       context: ../..
       dockerfile: containers/caddy/Dockerfile

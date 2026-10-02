@@ -6,7 +6,7 @@ After=network-online.target
 
 [Container]
 ContainerName=slowshield-app
-Image=registry.squirro.com/slowshield/slowshield:latest
+Image=ghcr.io/squirro/slowshield:latest
 AutoUpdate=registry
 Pod=slowshield.pod
 User=65532

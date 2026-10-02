@@ -36,7 +36,6 @@ cp -r quadlet/. ~/.config/containers/systemd/
 cp examples/config.toml examples/slowshield.env ~/.config/slowshield/
 $EDITOR ~/.config/slowshield/slowshield.env  # hostnames, TLS mode, public URL
 
-podman login registry.squirro.com            # while images are published to Harbor only
 systemctl --user daemon-reload
 systemctl --user start slowshield-pod.service
 systemctl --user status slowshield.service slowshield-caddy.service

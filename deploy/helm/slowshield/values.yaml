@@ -6,7 +6,7 @@
 # node drains). Scale vertically (workers/resources) instead.
 
 image:
-  repository: registry.squirro.com/slowshield/slowshield
+  repository: ghcr.io/squirro/slowshield
   # Defaults to the chart's appVersion.
   tag: ""
   # Optional immutable digest (sha256:...); takes precedence over the tag.
@@ -98,7 +98,7 @@ tls:
 caddy:
   enabled: true
   image:
-    repository: registry.squirro.com/slowshield/slowshield-caddy
+    repository: ghcr.io/squirro/slowshield-caddy
     tag: ""
     digest: ""
     pullPolicy: IfNotPresent

@@ -2,8 +2,9 @@ name: Dev images
 
 # Push to main -> build both architectures natively (no caches, as for releases) -> push by digest to the
 # development registry (environment `development`: IMAGE_PREFIX, REGISTRY_USERNAME, REGISTRY_PASSWORD) ->
-# multi-arch tags `main` (or the branch name) and `sha-<commit>`. Release images go to the public registry
-# from release.yml; nothing here is ever tagged `latest` or with a version.
+# multi-arch tags `main` (or the branch name) and `sha-<commit>`, plus `latest` for builds of the main line
+# so a scanner can follow one fixed tag. Release images go to the public registry from release.yml; nothing here
+# is ever tagged with a version.
 on:
   push:
     # feat/python-port: one-off, to publish dev images before PR 1 is merged. Remove after the merge.
@@ -142,10 +143,13 @@ jobs:
             for arch in amd64 arm64; do
               sources+=("${repo}@$(jq -r '."containerimage.digest"' "digests/${name}-${arch}.json")")
             done
-            docker buildx imagetools create --tag "${repo}:${branch_tag}" --tag "${repo}:sha-${GIT_SHA::7}" "${sources[@]}"
+            tags=("${repo}:${branch_tag}" "${repo}:sha-${GIT_SHA::7}")
+            # `latest` follows the main line only; a feature-branch build must not move it.
+            # feat/python-port is the main line until PR 1 is merged: drop it here with the trigger entry.
+            case "$REF_NAME" in main | feat/python-port) tags+=("${repo}:latest") ;; esac
+            tag_args=()
+            for tag in "${tags[@]}"; do tag_args+=(--tag "$tag"); done
+            docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
             docker buildx imagetools inspect "${repo}:sha-${GIT_SHA::7}"
-            {
-              echo "- \`${repo}:${branch_tag}\`"
-              echo "- \`${repo}:sha-${GIT_SHA::7}\`"
-            } >> "$GITHUB_STEP_SUMMARY"
+            for tag in "${tags[@]}"; do echo "- \`${tag}\`"; done >> "$GITHUB_STEP_SUMMARY"
           done

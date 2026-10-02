@@ -5,7 +5,7 @@ registry settings:
 
 | Workflow | Trigger | Environment | Registry (`IMAGE_PREFIX`) | Tags |
 |---|---|---|---|---|
-| `dev-images.yml` | push to `main` | `development` | `registry.squirro.com/slowshield-dev` (Harbor, private) | `main`, `sha-<commit>` |
+| `dev-images.yml` | push to `main` | `development` | `registry.squirro.com/slowshield-dev` (Harbor, private) | `main`, `sha-<commit>`, `latest` |
 | `release.yml` | tag `vX.Y.Z` | `production` | `ghcr.io/squirro` (GHCR, public) | `X.Y.Z`, `X.Y`, `X`, `latest` |
 
 Both build amd64 and arm64 on native GitHub-hosted runners without build caches, push by digest with an SBOM
@@ -24,7 +24,8 @@ performance reports.
 `development` is restricted to the `main` branch, so only builds of `main` can use the Harbor credentials.
 
 1. In Harbor, the private project `slowshield-dev`, with a tag retention policy (for example: keep the 30 most
-   recent `sha-*`, always keep `main`).
+   recent `sha-*`, always keep `main` and `latest`). `latest` always points at the newest build of `main`,
+   which is the tag to point an image scanner (Aikido) at.
 2. A robot account with push and pull on that project.
 3. GitHub → Settings → Environments → `development`:
 

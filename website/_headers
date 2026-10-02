@@ -1,0 +1,44 @@
+# slowshield.net response headers (Cloudflare Workers static assets). build.py copies this file into the
+# site and checks it: the security headers below are required, and every page needs a Cache-Control rule.
+#
+# Matching rules apply in file order. A later rule that sets a header already set by an earlier
+# rule APPENDS (comma-joined), so a rule that must replace a value first detaches it ("! Name").
+# Limits: 100 rules, 2,000 characters per line. This file is not served itself.
+
+# Security headers on every response: pages, assets, 404s and html_handling redirects.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  X-Frame-Options: DENY
+
+# HTML pages: five minutes, then revalidate.
+/
+  Cache-Control: public, max-age=300, must-revalidate
+/brand/
+  Cache-Control: public, max-age=300, must-revalidate
+
+# Static files: one day.
+/assets/*
+  Cache-Control: public, max-age=86400
+/robots.txt
+  Cache-Control: public, max-age=86400
+/sitemap.xml
+  Cache-Control: public, max-age=86400
+/.well-known/*
+  Cache-Control: public, max-age=86400
+
+# Fingerprinted CSS/JS (site.<hash>.css|js): one year, immutable.
+# Must stay below /assets/* so the one-day value is detached before this one is set.
+/assets/site.*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
+# Preview and version URLs live on workers.dev: never index them (Cloudflare also adds this to
+# Preview URLs itself; this covers Version URLs and a workers.dev route if one is ever enabled).
+https://:name.:account.workers.dev/*
+  X-Robots-Tag: noindex

@@ -2,12 +2,14 @@
 
     python3 website/build.py --out dist/site
 
-Stdlib only and Python 3.9-compatible (runs in the Amazon Linux 2023 builder with the system python3).
+Stdlib only, Python 3.9 or later.
 * copies website/src and the brand assets it needs,
 * fingerprints CSS/JS (immutable caching) and rewrites references,
 * fails on CSP violations (inline script/style, event-handler attributes, javascript: URLs),
-  broken in-page anchors, missing local assets, external sub-resources, or an exceeded size budget.
-Precompression (gzip/brotli/zstd) is done by the Dockerfile with the AL2023 CLIs.
+  broken in-page anchors, missing local assets, external sub-resources, or an exceeded size budget,
+* adds website/_headers (the response headers on Cloudflare Workers static assets, which hosts the site)
+  and fails if a required security header is missing, the CSP is weakened, a page has no Cache-Control
+  rule, or a Cloudflare limit is exceeded. Cloudflare compresses at the edge, so nothing is precompressed.
 """
 
 from __future__ import annotations
@@ -42,6 +44,13 @@ PALETTE_MARKER = "<!-- @palette -->"
 SPRITE_MARKER = "<!-- @sprite -->"
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # html + css + js, uncompressed
+HEADERS = HERE / "_headers"
+REQUIRED_HEADERS = (
+    "content-security-policy", "strict-transport-security", "x-content-type-options", "referrer-policy",
+    "permissions-policy", "cross-origin-opener-policy", "cross-origin-resource-policy", "x-frame-options",
+)  # fmt: skip
+CF_MAX_RULES, CF_MAX_LINE = 100, 2000  # _headers limits
+CF_MAX_FILES, CF_MAX_FILE_BYTES = 20_000, 25 * 1024 * 1024  # per Worker version (Free plan), per file
 
 _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>", re.I)
 _STYLE_TAG = re.compile(r"<style\b", re.I)
@@ -62,6 +71,42 @@ def fail(errors: list[str]) -> None:
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
     sys.exit(1)
+
+
+def check_headers(out: Path, html_files: list[Path]) -> list[str]:
+    """Copy website/_headers into the site and check it (the site's only source of response headers)."""
+    errors: list[str] = []
+    rules: dict[str, dict[str, str]] = {}
+    current: dict[str, str] | None = None
+    for n, line in enumerate(HEADERS.read_text(encoding="utf-8").splitlines(), 1):
+        if len(line) > CF_MAX_LINE:
+            errors.append(f"_headers:{n}: longer than {CF_MAX_LINE} characters")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            current = rules.setdefault(line.strip(), {})
+        elif current is not None and ":" in line and not line.strip().startswith("!"):
+            name, value = line.strip().split(":", 1)
+            current[name.strip().lower()] = value.strip()
+    if len(rules) > CF_MAX_RULES:
+        errors.append(f"_headers: {len(rules)} rules > {CF_MAX_RULES}")
+    site_wide = rules.get("/*", {})
+    errors.extend(f"_headers: /* must set {name}" for name in REQUIRED_HEADERS if name not in site_wide)
+    csp = site_wide.get("content-security-policy", "")
+    if "'unsafe-" in csp or "script-src 'self'" not in csp or "default-src 'none'" not in csp:
+        errors.append("_headers: the CSP must keep default-src 'none' and script-src 'self', without 'unsafe-*'")
+    # Every page needs its own Cache-Control rule, or it silently falls back to max-age=0.
+    for page in html_files:
+        rel = page.relative_to(out).as_posix()
+        url = "/" + rel[: -len("index.html")] if rel.endswith("index.html") else "/" + rel
+        if rel != "404.html" and "cache-control" not in rules.get(url, {}):
+            errors.append(f"_headers: no Cache-Control rule for page {url}")
+    files = [p for p in out.rglob("*") if p.is_file()]
+    if len(files) >= CF_MAX_FILES:
+        errors.append(f"{len(files)} files, Cloudflare allows {CF_MAX_FILES} per version")
+    errors.extend(f"{p.relative_to(out)}: larger than 25 MiB" for p in files if p.stat().st_size > CF_MAX_FILE_BYTES)
+    shutil.copyfile(HEADERS, out / "_headers")
+    return errors
 
 
 def build(out: Path) -> None:
@@ -135,6 +180,7 @@ def build(out: Path) -> None:
     total = sum(p.stat().st_size for p in [*html_files, *css_files, *assets.glob("site.*.js")])
     if total > BUDGET_BYTES:
         errors.append(f"size budget exceeded: {total} > {BUDGET_BYTES} bytes")
+    errors.extend(check_headers(out, html_files))
     if errors:
         fail(errors)
     print(f"built {out} ({total} bytes html+css+js, {len(html_files)} pages)")

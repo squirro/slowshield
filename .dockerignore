@@ -14,7 +14,8 @@ data
 *.db
 *.db-*
 .env
-node_modules
+**/node_modules
+**/.wrangler
 perf/results
 deploy/helm/*/charts
 **/.DS_Store

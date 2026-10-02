@@ -19,3 +19,4 @@ perf/results/
 node_modules/
 deploy/helm/*/charts/
 *.tgz
+.wrangler/

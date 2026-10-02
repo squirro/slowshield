@@ -25,6 +25,17 @@ updates:
       actions:
         patterns: ["*"]
 
+  # Wrangler, which deploys slowshield.net (website/package-lock.json, locked against registry.npmjs.org).
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      wrangler:
+        patterns: ["*"]
+
   - package-ecosystem: docker
     directories:
       - /containers/slowshield

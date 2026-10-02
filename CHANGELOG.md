@@ -24,6 +24,12 @@ All notable changes to this project are documented here. The format is based on
 - New brand: the Inbound mark, Night Field palette and an outlined Schibsted Grotesk wordmark across the UI,
   Grafana dashboards and README.
 
+### Security
+- Caddy 2.11.6 (built with Go 1.26.8) in `slowshield-caddy`: fixes 32 known vulnerabilities in Caddy 2.11.4's Go
+  standard library (1.26.3) and bundled modules (x/crypto, x/net, x/text, grpc, OpenTelemetry, cel-go),
+  including CVE-2026-39821 (critical). Taken inside the 7-day cooldown as a security exception, after
+  verifying the release's cosign signature and checksums.
+
 ### Fixed
 - Workers were killed for running out of memory under load (2 workers in 1 GiB): each kept its own
   in-memory metadata cache, which counted neither parsed objects nor rendered responses, and tarball requests

@@ -18,9 +18,9 @@ RUN /usr/local/bin/build-rootfs.sh
 FROM ${AL2023} AS fetch
 ARG TARGETARCH
 # Newest release that has passed SlowShield's own 7-day delay; see bump_caddy.py --min-age-days.
-ARG CADDY_VERSION=2.11.4
-ARG CADDY_SHA512_AMD64=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff9777ccc8fd0b6e6f2486ce3a33fe389fbb7db12d05baa474f4587509fb4f5ebf1c9
-ARG CADDY_SHA512_ARM64=d5a7c423853c24a799765e0e8210d5c7c22a8f56ed37a3cae2fb9f58be138853c02b4efd6b59d576e6d8c7c0d30b9c1592deeaa6a536ff69bcca23b8c1ea709c
+ARG CADDY_VERSION=2.11.6
+ARG CADDY_SHA512_AMD64=422771007d505ea97efd1177a4905b2c1a471cd426668f2ace3bcda3d8e30b11f9b1610bfb02c6ad60f2a795f56124f2f5eec6409c17d5a0dd4c21a11375fb94
+ARG CADDY_SHA512_ARM64=bd228ea44b6b95720a0c2d7b62886e99cb4a0b05356fe6e058c4a155618c913377b18e686839ae7fcc6c2c05aea2d549fa91f25aa3ef8d43cdead117259577ed
 RUN dnf -y -q install --setopt=install_weak_deps=False tar gzip && dnf -q clean all
 RUN set -eu; \
     case "${TARGETARCH}" in \
@@ -52,7 +52,7 @@ RUN chown -R 65532:65532 /out/config /out/var/log/caddy \
     done
 
 FROM scratch
-ARG CADDY_VERSION=2.11.4
+ARG CADDY_VERSION=2.11.6
 ARG SLOWSHIELD_VERSION=dev
 ARG SLOWSHIELD_GIT_SHA=unknown
 COPY --from=rootfs /rootfs/ /

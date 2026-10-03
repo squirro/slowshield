@@ -51,8 +51,10 @@ records of each zone are in [`dns/`](dns/), in the format Cloudflare's own expor
    `TXT "v=spf1 include:_mailcust.gandi.net ?all"`). A record left on the `slowshield.org` apex blocks the
    Worker custom domain.
 3. DNS > Records > Import and Export: import `dns/<zone>.zone` into each zone with **Proxy imported DNS
-   records** on. The files publish "no mail" (`MX 0 .`, `v=spf1 -all`, DMARC `p=reject`); if Gandi mailboxes
-   are wanted after all, use Gandi's `MX` and `SPF` instead.
+   records** on. None of the domains sends or receives mail, and the files make receivers reject anything
+   that claims otherwise, on every name: null `MX 0 .` and `v=spf1 -all` on the apex, `www` and a wildcard,
+   every DKIM key revoked (`*._domainkey` with an empty `p=`), and DMARC `p=reject; sp=reject` with strict
+   alignment. Do not add mail records to these zones.
 4. At Gandi, switch each domain to the two Cloudflare nameservers and wait until the zone is **Active**.
 5. SSL/TLS > Edge Certificates, per zone: **Always Use HTTPS** on, minimum TLS 1.2. Leave the zone HSTS
    setting off; HSTS comes from `_headers`.

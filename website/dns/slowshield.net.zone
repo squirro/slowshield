@@ -1,10 +1,19 @@
 ;; slowshield.net: redirect-only; a Redirect Rule sends every request to https://slowshield.org.
 ;; Import: Cloudflare > slowshield.net > DNS > Records > Import and Export, "Proxy imported DNS records" on.
 ;; Both names only have to resolve to Cloudflare (192.0.2.1 is the documentation range, never reached).
-;; No mail is sent or received on this domain.
+;;
+;; No mail is sent or received on any name in this domain, and receivers are told to reject mail that claims
+;; otherwise: null MX (RFC 7505) and SPF "-all" on the apex, on www (which has its own records, so the wildcard
+;; does not cover it) and on every other name (wildcard); every DKIM key revoked; DMARC reject for the domain
+;; and all subdomains, with strict alignment.
 
 slowshield.net.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
 www.slowshield.net.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
 slowshield.net.	1	IN	MX	0 .
+www.slowshield.net.	1	IN	MX	0 .
+*.slowshield.net.	1	IN	MX	0 .
 slowshield.net.	1	IN	TXT	"v=spf1 -all"
-_dmarc.slowshield.net.	1	IN	TXT	"v=DMARC1; p=reject"
+www.slowshield.net.	1	IN	TXT	"v=spf1 -all"
+*.slowshield.net.	1	IN	TXT	"v=spf1 -all"
+*._domainkey.slowshield.net.	1	IN	TXT	"v=DKIM1; p="
+_dmarc.slowshield.net.	1	IN	TXT	"v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s"

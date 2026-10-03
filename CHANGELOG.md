@@ -6,11 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-04
+
 ### Fixed
 - pip 22.3 to 23.1, including Debian 12's pip 23.0.1, crashed (`TypeError: unhashable type: 'dict'`) on every
   install through the JSON simple index: it carried the metadata hashes under the `dist-info-metadata` key that
   PEP 714 retired. The index now uses `core-metadata` and `data-dist-info-metadata`, as PyPI does, and its ETag
   changes with the rendering, so clients holding the old index fetch the new one.
+- Quick start (README and website): the install example runs pip in a throwaway virtualenv, since Homebrew and
+  current Linux Pythons refuse pip installs outside one, and bash on macOS gets its own shell setup
+  (`~/.bash_profile`, which Terminal's login shells read).
 
 ## [0.0.1] - 2026-10-02
 

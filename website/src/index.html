@@ -99,19 +99,27 @@
       </li>
       <li class="qbox">
         <h3><span>2</span> Install something through it</h3>
-        <div class="code"><pre><code>pip install --index-url http://localhost:8080/pypi/simple/ requests</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-        <p class="muted small">Releases younger than a week are held back; known malware is refused with HTTP 451.</p>
+        <div class="code"><pre><code>python3 -m venv /tmp/slowshield-try
+/tmp/slowshield-try/bin/pip install --index-url http://localhost:8080/pypi/simple/ requests</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <p class="muted small">A throwaway virtualenv, because Homebrew and current Linux Pythons refuse pip installs outside one.
+          Releases younger than a week are held back; known malware is refused with HTTP 451.</p>
       </li>
       <li class="qbox qbox-wide">
         <h3><span>3</span> Use it for everything</h3>
         <div class="tabs" data-tabs="shell">
-          <div class="tablist" role="tablist" aria-label="Shell"><button type="button" role="tab" aria-selected="true" aria-controls="sh-bash" id="t-sh-bash" data-shell="bash">bash</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-zsh" id="t-sh-zsh" data-shell="zsh" tabindex="-1">zsh</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-fish" id="t-sh-fish" data-shell="fish" tabindex="-1">fish</button></div>
+          <div class="tablist" role="tablist" aria-label="Shell"><button type="button" role="tab" aria-selected="true" aria-controls="sh-bash" id="t-sh-bash" data-shell="bash">bash (Linux)</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-bash-macos" id="t-sh-bash-macos" data-shell="bash-macos" tabindex="-1">bash (macOS)</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-zsh" id="t-sh-zsh" data-shell="zsh" tabindex="-1">zsh</button><button type="button" role="tab" aria-selected="false" aria-controls="sh-fish" id="t-sh-fish" data-shell="fish" tabindex="-1">fish</button></div>
 <div class="code" role="tabpanel" id="sh-bash" aria-labelledby="t-sh-bash"><pre><code>cat &gt;&gt; ~/.bashrc &lt;&lt;'EOF'
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
 export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
 export npm_config_registry=http://localhost:8080/npm/
 EOF
 source ~/.bashrc</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<div class="code" role="tabpanel" id="sh-bash-macos" aria-labelledby="t-sh-bash-macos" hidden><pre><code>cat &gt;&gt; ~/.bash_profile &lt;&lt;'EOF'
+export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
+export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
+export npm_config_registry=http://localhost:8080/npm/
+EOF
+source ~/.bash_profile</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
 <div class="code" role="tabpanel" id="sh-zsh" aria-labelledby="t-sh-zsh" hidden><pre><code>cat &gt;&gt; ~/.zshrc &lt;&lt;'EOF'
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
 export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/

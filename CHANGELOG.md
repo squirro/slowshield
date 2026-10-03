@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- pip 22.3 to 23.1, including Debian 12's pip 23.0.1, crashed (`TypeError: unhashable type: 'dict'`) on every
+  install through the JSON simple index: it carried the metadata hashes under the `dist-info-metadata` key that
+  PEP 714 retired. The index now uses `core-metadata` and `data-dist-info-metadata`, as PyPI does, and its ETag
+  changes with the rendering, so clients holding the old index fetch the new one.
+
 ## [0.0.1] - 2026-10-02
 
 First open-source release, in Python 3.15.

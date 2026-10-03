@@ -21,7 +21,7 @@ from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import ArtifactRequest, AsgiResponse
 from slowshield.ecosystems.pypi import filenames
 from slowshield.ecosystems.pypi.project import HTML_V1, JSON_V1, Project, PyFile, parse_project
-from slowshield.ecosystems.pypi.render import render_html, render_json, render_root
+from slowshield.ecosystems.pypi.render import RENDER_REVISION, render_html, render_json, render_root
 from slowshield.integrity import Expected
 from slowshield.policy import DAY, Candidate, evaluate, retry_after
 from slowshield.telemetry import instruments
@@ -235,7 +235,8 @@ class PypiService:
         v.fail_open = ev.fail_open
         v.next_change = ev.next_change
         v.digest = hashlib.blake2b(
-            "\n".join(sorted(v.allowed)).encode() + repr(ctx.policy_key()).encode(), digest_size=12
+            "\n".join(sorted(v.allowed)).encode() + repr(ctx.policy_key()).encode() + RENDER_REVISION.encode(),
+            digest_size=12,
         ).hexdigest()
         ctx.metadata_cache.put(key, v, 512 + 96 * len(project.files), min(ev.next_change, now + 3600))
         return v

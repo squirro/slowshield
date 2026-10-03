@@ -40,12 +40,19 @@ Try it on your laptop: one container, plain HTTP on localhost, nothing kept afte
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
-pip install --index-url http://localhost:8080/pypi/simple/ requests
 ```
 
-The dashboard is at `http://localhost:8080`. Releases younger than a week are held back; known malware is
-refused with HTTP 451. To send pip, uv and npm through it in every new terminal (bash shown; use `~/.zshrc`
-for zsh, or `set -Ux NAME value` in fish):
+The dashboard is at `http://localhost:8080`. In a second terminal, install something through it (in a throwaway
+virtualenv, because Homebrew and current Linux Pythons refuse pip installs outside one):
+
+```bash
+python3 -m venv /tmp/slowshield-try
+/tmp/slowshield-try/bin/pip install --index-url http://localhost:8080/pypi/simple/ requests
+```
+
+Releases younger than a week are held back; known malware is refused with HTTP 451. To send pip, uv and npm
+through it in every new terminal (bash on Linux shown; on macOS bash reads `~/.bash_profile` and zsh
+`~/.zshrc`; in fish use `set -Ux NAME value`):
 
 ```bash
 cat >> ~/.bashrc <<'EOF'

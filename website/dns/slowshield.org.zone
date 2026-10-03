@@ -1,10 +1,19 @@
 ;; slowshield.org: canonical host of the website (Worker `slowshield-website`).
 ;; Import: Cloudflare > slowshield.org > DNS > Records > Import and Export, "Proxy imported DNS records" on.
-;; The apex has no record here on purpose: attaching the Worker custom domain creates it, and an apex
+;; The apex has no address record here on purpose: attaching the Worker custom domain creates it, and an apex
 ;; record left in the zone blocks that. www only has to resolve to Cloudflare; a Redirect Rule answers it.
-;; No mail is sent or received on this domain.
+;;
+;; No mail is sent or received on any name in this domain, and receivers are told to reject mail that claims
+;; otherwise: null MX (RFC 7505) and SPF "-all" on the apex, on www (which has its own records, so the wildcard
+;; does not cover it) and on every other name (wildcard); every DKIM key revoked; DMARC reject for the domain
+;; and all subdomains, with strict alignment.
 
 www.slowshield.org.	1	IN	A	192.0.2.1 ; cf_tags=cf-proxied:true
 slowshield.org.	1	IN	MX	0 .
+www.slowshield.org.	1	IN	MX	0 .
+*.slowshield.org.	1	IN	MX	0 .
 slowshield.org.	1	IN	TXT	"v=spf1 -all"
-_dmarc.slowshield.org.	1	IN	TXT	"v=DMARC1; p=reject"
+www.slowshield.org.	1	IN	TXT	"v=spf1 -all"
+*.slowshield.org.	1	IN	TXT	"v=spf1 -all"
+*._domainkey.slowshield.org.	1	IN	TXT	"v=DKIM1; p="
+_dmarc.slowshield.org.	1	IN	TXT	"v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s"

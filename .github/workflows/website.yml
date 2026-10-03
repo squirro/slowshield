@@ -216,17 +216,23 @@ jobs:
       - name: Smoke test (new version live, headers present)
         run: |
           set -euo pipefail
-          css="$(grep -oE '/assets/site\.[0-9a-f]{10}\.css' dist/site/index.html | head -n1)"
+          # Responses are captured before grepping: under pipefail `curl | grep -q` fails as soon as grep
+          # stops reading at a match and curl cannot write the rest (curl: (23)).
+          css="$(grep -m1 -oE '/assets/site\.[0-9a-f]{10}\.css' dist/site/index.html)"
+          page=""
           for _ in $(seq 1 30); do
-            curl -fsS https://slowshield.org/ | grep -qF "$css" && break
+            page="$(curl -fsS https://slowshield.org/ || true)"
+            grep -qF "$css" <<<"$page" && break
             sleep 2
           done
-          curl -fsS https://slowshield.org/ | grep -qF "$css"
+          grep -qF "$css" <<<"$page" || { echo "new version not live: ${css} missing from the page"; exit 1; }
           headers="$(curl -fsS -o /dev/null -D - https://slowshield.org/)"
           for h in content-security-policy strict-transport-security x-content-type-options \
                    referrer-policy permissions-policy cross-origin-opener-policy \
                    cross-origin-resource-policy x-frame-options; do
             grep -qi "^${h}:" <<<"$headers" || { echo "missing header: ${h}"; exit 1; }
           done
-          curl -fsS -o /dev/null -D - "https://slowshield.org${css}" | grep -qi '^cache-control: public, max-age=31536000, immutable'
+          asset="$(curl -fsS -o /dev/null -D - "https://slowshield.org${css}")"
+          grep -qi '^cache-control: public, max-age=31536000, immutable' <<<"$asset" \
+            || { echo "${css} is not served as immutable"; exit 1; }
           test "$(curl -s -o /dev/null -w '%{http_code}' https://slowshield.org/does-not-exist)" = 404

@@ -16,6 +16,10 @@ from slowshield.ecosystems.pypi.project import SUPPORTED_API, Project, PyFile
 
 _enc = msgspec.json.Encoder()
 
+# Bump when the rendered index changes for the same input. It is part of the view digest, which keys stored
+# bodies and makes the ETag, so servers re-render and clients holding an older copy are not sent a 304 for it.
+RENDER_REVISION = "2"
+
 
 def _api(project: Project) -> str:
     major, minor = min(project.api_version, SUPPORTED_API)
@@ -37,7 +41,9 @@ def _json_item(f: PyFile) -> bytes:
             item["requires-python"] = f.requires_python
         if f.core_metadata:
             item["core-metadata"] = f.core_metadata
-            item["dist-info-metadata"] = f.core_metadata
+            # PEP 714: never the old "dist-info-metadata" key. pip 22.3-23.1 (Debian 12's pip 23.0.1 among them)
+            # crash on its dict value; like PyPI, repeat it only under the key those versions ignore.
+            item["data-dist-info-metadata"] = f.core_metadata
         item["yanked"] = f.yanked or False
         if f.size is not None:
             item["size"] = f.size

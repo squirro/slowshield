@@ -35,7 +35,9 @@ async def test_relative_urls_and_metadata_fields(running: Running) -> None:
     assert wheel["url"].startswith("../../packages/")
     assert wheel["hashes"]["sha256"]
     assert wheel["core-metadata"]["sha256"]
-    assert wheel["dist-info-metadata"] == wheel["core-metadata"]
+    # PEP 714, as PyPI: pip 22.3-23.1 crash on a dict under the old "dist-info-metadata" key.
+    assert "dist-info-metadata" not in wheel
+    assert wheel["data-dist-info-metadata"] == wheel["core-metadata"]
     assert wheel["upload-time"].endswith("Z")
     assert isinstance(wheel["size"], int)
     yanked = _file(doc, "alpha-1.0.1-py3")
@@ -51,6 +53,19 @@ async def test_held_versions_header_and_caching_headers(running: Running) -> Non
     etag = r.headers["etag"]
     r2 = await running.client.get("/pypi/simple/alpha/", headers={**ACCEPT_JSON, "If-None-Match": etag})
     assert r2.status_code == 304
+
+
+async def test_render_revision_changes_the_etag(start_app, monkeypatch) -> None:
+    from slowshield.ecosystems.pypi import service
+
+    old = await start_app()
+    r = await old.client.get("/pypi/simple/alpha/", headers=ACCEPT_JSON)
+    monkeypatch.setattr(service, "RENDER_REVISION", "next")
+    new = await start_app()
+    r2 = await new.client.get("/pypi/simple/alpha/", headers={**ACCEPT_JSON, "If-None-Match": r.headers["etag"]})
+    # A client holding the old rendering must get the new one, not a 304 for the old bytes.
+    assert r2.status_code == 200
+    assert r2.headers["etag"] != r.headers["etag"]
 
 
 async def test_html_is_default_and_escaped(running: Running) -> None:

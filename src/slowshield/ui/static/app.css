@@ -51,6 +51,7 @@ h2 { font-size: 1rem; margin: 0; }
 h3 { font-size: 0.95rem; }
 .muted { color: var(--muted); }
 .small { font-size: 0.82rem; }
+[hidden] { display: none !important; } /* components set display; hidden must still win */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: 16px; top: 8px; background: var(--surface); padding: 6px 10px; z-index: 10; }
@@ -177,7 +178,7 @@ tr.withdrawn { opacity: 0.55; }
   color: var(--text); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
 .copy.done { color: var(--ok); }
 
-/* Setup page: numbered steps, shell tabs, collapsed per-tool snippets */
+/* Setup page: numbered steps, shell tabs, tool finder */
 .setup-steps { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
 .setup-steps > .card { margin-bottom: 0; }
 .step { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 999px;
@@ -188,7 +189,18 @@ tr.withdrawn { opacity: 0.55; }
   padding: 4px 12px; border-radius: 999px; cursor: pointer; }
 .tablist [role="tab"][aria-selected="true"] { background: var(--primary); color: var(--surface); }
 .tablist [role="tab"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-details > summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.tool-search { display: flex; flex-direction: column; gap: 4px; max-width: 420px; margin: 4px 0 10px; }
+.tool-search span { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.tool-search input { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); }
+.tool-search input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.tool-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.tool-pick { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit;
+  font-size: 0.82rem; padding: 3px 10px; border-radius: 999px; cursor: pointer; }
+.tool-pick:hover, .tool-pick:focus-visible { border-color: var(--primary); color: var(--primary); }
+/* auto-fit: a single match spans the card, several share it */
+.tool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; }
+.tool h3 { font-size: 0.95rem; margin: 8px 0 6px; }
 .snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
 .grid-2 > .snippet { align-self: start; }
 .card p code { overflow-wrap: anywhere; }

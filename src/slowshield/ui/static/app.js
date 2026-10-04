@@ -44,6 +44,38 @@
     }
   });
 
+  // Tool finder (Setup page): typing shows the tools whose name or keywords contain the text. Without JS every
+  // tool stays visible.
+  document.querySelectorAll("[data-tool-finder]").forEach((finder) => {
+    const input = finder.querySelector("[data-tool-input]");
+    const tools = [...finder.querySelectorAll("[data-tool]")];
+    const picks = finder.querySelector("[data-tool-hint]");
+    const empty = finder.querySelector("[data-tool-empty]");
+    const apply = () => {
+      const q = input.value.trim().toLowerCase();
+      let shown = 0;
+      for (const tool of tools) {
+        const hit = q !== "" && tool.dataset.tool.includes(q);
+        tool.hidden = !hit;
+        if (hit) shown += 1;
+      }
+      picks.hidden = q !== "";
+      empty.hidden = q === "" || shown > 0;
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { input.value = ""; apply(); }
+    });
+    finder.addEventListener("click", (event) => {
+      const pick = event.target.closest("[data-tool-pick]");
+      if (!pick) return;
+      input.value = pick.dataset.toolPick;
+      apply();
+      input.focus();
+    });
+    apply();
+  });
+
   document.addEventListener("click", (event) => {
     const toggle = event.target.closest("[data-theme-toggle]");
     if (toggle) {

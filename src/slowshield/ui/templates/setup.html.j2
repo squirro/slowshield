@@ -51,27 +51,27 @@
       one. Releases younger than {{ days }} days are held back; known malware is refused with HTTP 451.</p>
   </li>
 </ol>
-<section class="card">
+<section class="card tool-finder" data-tool-finder>
   <header class="card-head"><h2>Per tool</h2></header>
   <p class="muted">For a single tool or project instead. Index URL <code>{{ pypi_index }}</code>, registry URL
     <code>{{ npm_registry }}</code>.</p>
-  <div class="grid-2">
-    <details>
-      <summary>Python: pip, uv, Poetry, PDM, Pipenv{% if not pypi_enabled %} <span class="badge">disabled</span>{% endif %}</summary>
-      {{ snippet("pip config set global.index-url " ~ pypi_index, "pip") }}
-      {{ snippet("# pyproject.toml\n[[tool.uv.index]]\nname = \"slowshield\"\nurl = \"" ~ pypi_index ~ "\"\ndefault = true", "uv") }}
-      {{ snippet("poetry source add --priority=primary slowshield " ~ pypi_index, "Poetry") }}
-      {{ snippet("# pyproject.toml\n[[tool.pdm.source]]\nname = \"pypi\"\nurl = \"" ~ pypi_index ~ "\"", "PDM") }}
-      {{ snippet("# Pipfile\n[[source]]\nurl = \"" ~ pypi_index ~ "\"\nverify_ssl = " ~ ("false" if pypi_index.startswith("http://") else "true") ~ "\nname = \"slowshield\"", "Pipenv") }}
-    </details>
-    <details>
-      <summary>JavaScript: npm, pnpm, Yarn, Bun{% if not npm_enabled %} <span class="badge">disabled</span>{% endif %}</summary>
-      {{ snippet("npm config set registry " ~ npm_registry, "npm") }}
-      {{ snippet("# .npmrc (project or ~)\nregistry=" ~ npm_registry, ".npmrc (npm, pnpm, bun)") }}
-      {{ snippet("pnpm config set registry " ~ npm_registry, "pnpm") }}
-      {{ snippet("# .yarnrc.yml (Yarn Berry)\nnpmRegistryServer: \"" ~ npm_registry ~ "\"" ~ ("\nunsafeHttpWhitelist:\n  - localhost" if npm_registry.startswith("http://") else ""), "Yarn") }}
-      {{ snippet("# bunfig.toml\n[install]\nregistry = \"" ~ npm_registry ~ "\"", "Bun") }}
-    </details>
+  <label class="tool-search"><span>Find your tool</span>
+    <input type="search" list="tool-names" placeholder="e.g. poetry, yarn, pnpm" autocomplete="off" spellcheck="false"
+      data-tool-input></label>
+  <datalist id="tool-names">{% for t in tools %}<option value="{{ t.name }}"></option>{% endfor %}</datalist>
+  <p class="tool-picks" data-tool-hint>
+    {%- for t in tools %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
+  </p>
+  <p class="muted small" role="status" data-tool-empty hidden>No tool matches. Try pip, uv, Poetry, PDM, Pipenv, npm,
+    pnpm, Yarn or Bun.</p>
+  <div class="tool-results">
+    {%- for t in tools %}
+    <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}">
+      <h3>{{ t.name }}{% if (t.ecosystem == "pypi" and not pypi_enabled) or (t.ecosystem == "npm" and not npm_enabled) %}
+        <span class="badge">disabled</span>{% endif %}</h3>
+      {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}
+    </div>
+    {%- endfor %}
   </div>
 </section>
 <section class="card">

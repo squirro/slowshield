@@ -8,8 +8,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 - The Setup page follows slowshield.org: one global shell setup (bash on Linux, bash on macOS, zsh, fish) filled in
-  with this instance's URLs and preselected from the visitor's OS, a one-line install to try it, per-tool snippets
-  folded away, and CI/Dockerfile snippets. Its shell and install snippets come from the same file as the website's
+  with this instance's URLs and preselected from the visitor's OS, a one-line install to try it, a tool finder (type
+  `poe` for Poetry, `ya` for Yarn) for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn and Bun, and CI/Dockerfile
+  snippets. Its shell and install snippets come from the same file as the website's
   (`src/slowshield/ui/snippets.toml`), and an end-to-end test runs every one of them in bash, zsh and fish against
   the stack, including Debian 12's pip 23.0.1.
 

@@ -147,3 +147,16 @@ async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: 
     assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
     doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()
     assert doc["versions"]["1.0.0"]["dist"]["tarball"].startswith("https://localhost/npm/")
+
+
+async def test_setup_page_tool_finder(start_app) -> None:
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
+    names = ["pip", "uv", "Poetry", "PDM", "Pipenv", "npm", "pnpm", "Yarn", "Bun"]
+    assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
+    assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
+    keywords = dict(re.findall(r'data-tool="(([a-z]+)[^"]*)"', page)[i][::-1] for i in range(len(names)))
+    assert "pipfile" in keywords["pipenv"] and "npmrc" in keywords["npm"] and "berry" in keywords["yarn"]
+    assert "poetry source add --priority=primary slowshield https://slowshield.example.com/pypi/simple/" in page
+    assert "verify_ssl = true" in page and "unsafeHttpWhitelist" not in page
+    assert "data-tool-empty hidden" in page  # JS shows it; without JS every tool stays visible

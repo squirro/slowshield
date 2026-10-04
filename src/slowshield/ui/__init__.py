@@ -508,6 +508,7 @@ class UI:
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
+            tools=S.tools(pypi_index, npm_registry),
             shell=shell,
             os=os_name,
         )

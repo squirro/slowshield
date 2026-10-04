@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- One host, one path per ecosystem ([docs/design/routing.md](docs/design/routing.md)). The UI lives entirely
+  under `/ui/`: the dashboard moved from `/` to `/ui/` (`/` redirects there) and assets from `/static/` to
+  `/ui/static/`. The root paths SlowShield answers on are a fixed list, with names reserved for every ecosystem
+  on the roadmap.
+- The Setup page shows path URLs only (`/pypi/simple/`, `/npm/`).
+
+### Deprecated
+- Per-ecosystem hostnames (`upstreams.pypi.hostnames` / `SLOWSHIELD_PYPI_HOSTNAMES`, `upstreams.npm.hostnames` /
+  `SLOWSHIELD_NPM_HOSTNAMES`, Helm `ecosystems.*.hostnames`), the root PyPI alias (`/simple/`, `/packages/`) and
+  `/static/`. They keep working until 0.1, log a startup warning (hostnames), show a notice on the Setup page,
+  and are counted in `slowshield_legacy_routing_requests_total` so operators can see when nothing uses them.
+
+### Fixed
+- With npm hostnames configured, clients using `/npm/` got tarball links on the npm hostname, which then ended
+  up in their lockfiles. Tarball links now follow the route the client used.
+
 ## [0.0.3] - 2026-10-04
 
 0.0.2 was tagged but never published: its release stopped at the performance gate, which counted the expected

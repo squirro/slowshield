@@ -48,6 +48,11 @@ cache_evictions = meter.create_counter(
 feed_sync_duration = meter.create_histogram(
     "slowshield.feed.sync.duration", unit="s", description="Duration of threat-feed synchronisation runs."
 )
+legacy_routing = meter.create_counter(
+    "slowshield.legacy_routing.requests",
+    unit="{request}",
+    description="Requests through deprecated routing, removed in 0.1: per-ecosystem hostnames, /simple/, /static/.",
+)
 feed_errors = meter.create_counter("slowshield.feed.errors", unit="{error}", description="Feed sync failures.")
 feed_changes = meter.create_counter(
     "slowshield.feed.changes", unit="{advisory}", description="Advisories added/updated/withdrawn by feeds."

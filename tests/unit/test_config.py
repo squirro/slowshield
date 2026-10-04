@@ -62,7 +62,11 @@ def test_rust_config_is_accepted_with_warnings() -> None:
         assert key in joined
     assert cfg.delay_days_for("pypi", "litellm") == 14  # normalised name
     assert cfg.delay_days_for("pypi", "other") == 7
-    assert cfg.npm_public_base() == "https://npmjs-slowshield.squirro.net"
+    # Path requests get path URLs; only requests on the deprecated npm hostname keep it.
+    assert cfg.npm_public_base() == "http://localhost:8080/npm"
+    assert cfg.npm_public_base(via_hostname=True) == "https://npmjs-slowshield.squirro.net"
+    for eco in ("pypi", "npm"):
+        assert any(f"upstreams.{eco}.hostnames" in w and "removed in 0.1" in w for w in cfg.warnings), eco
 
 
 def test_defaults_and_paths() -> None:

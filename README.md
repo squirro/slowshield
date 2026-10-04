@@ -91,8 +91,8 @@ npm config set registry https://slowshield.example.com/npm/
 ```
 
 The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn
-and Bun with your hostnames. Per-ecosystem hostnames (`pypi.example.com/simple/`,
-`npm.example.com/`) are supported too.
+and Bun with your URLs. Every ecosystem lives under a path on the one host
+([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:
 

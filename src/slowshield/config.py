@@ -67,7 +67,7 @@ class NpmUpstream(msgspec.Struct, forbid_unknown_fields=True):
     hostnames: list[str] = []
     mirrors: list[str] = msgspec.field(default_factory=lambda: ["https://registry.npmjs.org"])
     # Absolute base URL clients use for this registry (tarball URLs are rewritten to it).
-    # Defaults to `<public_url>/npm` (single host) or `https://<first hostname>` (host routing).
+    # Defaults to `<public_url>/npm`; requests on a deprecated npm hostname use `https://<first hostname>`.
     public_url: str | None = None
     audit_passthrough: bool = True
 
@@ -178,11 +178,13 @@ class LoadedConfig:
     def has_version_rules(self, ecosystem: str, name: str) -> bool:
         return any(k[0] == ecosystem and k[1] == name for k in self._ver_rules)
 
-    def npm_public_base(self) -> str:
+    def npm_public_base(self, *, via_hostname: bool = False) -> str:
+        """Base for npm tarball URLs: `upstreams.npm.public_url`, else `<public_url>/npm`. Only requests that
+        arrived on a deprecated npm hostname (removed in 0.1) keep `https://<first hostname>`."""
         npm = self.raw.upstreams.npm
         if npm.public_url:
             return npm.public_url.rstrip("/")
-        if npm.hostnames:
+        if via_hostname and npm.hostnames:
             return f"https://{npm.hostnames[0]}"
         return f"{self.public_base()}/npm"
 
@@ -333,6 +335,16 @@ def _validate(cfg: Config) -> None:
 def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: int = 0) -> LoadedConfig:
     _apply_env(cfg)
     _validate(cfg)
+    base = (cfg.public_url or "http://localhost:8080").rstrip("/")
+    for eco, env, path_url in (
+        ("pypi", "SLOWSHIELD_PYPI_HOSTNAMES", f"{base}/pypi/simple/"),
+        ("npm", "SLOWSHIELD_NPM_HOSTNAMES", f"{base}/npm/"),
+    ):
+        if getattr(cfg.upstreams, eco).hostnames:
+            warnings.append(
+                f"upstreams.{eco}.hostnames ({env}) is deprecated and will be removed in 0.1: "
+                f"point clients at {path_url} instead (docs/design/routing.md)"
+            )
     pkg_rules: dict[tuple[str, str], float] = {}
     ver_rules: dict[tuple[str, str, str], float] = {}
     for rule in cfg.exceptions:

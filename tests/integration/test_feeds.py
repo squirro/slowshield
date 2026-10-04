@@ -32,7 +32,7 @@ async def test_github_disabled_without_token(running: Running) -> None:
     assert running.ctx.feeds["github"].reason == "missing_token"
     page = await running.client.get("/ui/feeds")
     assert "Needs a token" in page.text and "GITHUB_TOKEN_FILE" in page.text
-    dash = await running.client.get("/")
+    dash = await running.client.get("/ui/")
     assert "no API token configured" in dash.text
 
 

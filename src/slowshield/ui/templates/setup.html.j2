@@ -8,6 +8,14 @@
 <div class="page-head">
   <div><h1>Client setup</h1><p class="muted">Point your package managers at SlowShield. New releases become installable {{ cfg.default_delay_days|round(1)|replace(".0", "") }} days after publication.</p></div>
 </div>
+{% if legacy_hosts %}
+<section class="card" role="note">
+  <p><strong>Per-ecosystem hostnames are deprecated</strong> and stop working in SlowShield 0.1:
+    {% for h in legacy_hosts %}<code>{{ h }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Point clients at the URLs below and re-lock (or replace the hostname in lockfiles), so nothing depends on
+    them any more.</p>
+</section>
+{% endif %}
 {% if secure %}
 <section class="card">
   <p><strong>Plain HTTP on localhost.</strong> These URLs work without trusting a certificate; traffic stays on this

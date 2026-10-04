@@ -38,6 +38,8 @@ function discover() {
     const wheel = files.find((f) => f.filename.endsWith(".whl")) || files[0];
     if (wheel) out.small = resolve(wheel.url);
   }
+  // The dashboard moved from / to /ui/; A/B runs compare images on both sides of that change.
+  out.dashboard = http.get(`${TARGET}/ui/`, { redirects: 0 }).status === 200 ? `${TARGET}/ui/` : `${TARGET}/`;
   const big = http.get(`${TARGET}/pypi/simple/big-wheel/`, JSON_ACCEPT);
   if (big.status === 200) {
     const files = big.json("files") || [];
@@ -56,7 +58,7 @@ const SCENARIOS = {
   artifact_cached: (d) => http.get(d.small),
   artifact_big: (d) => http.get(d.big, { responseType: "none", timeout: "120s" }),
   blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, BLOCKED),
-  dashboard: () => http.get(`${TARGET}/`),
+  dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();
     if (r < 0.45) return http.get(`${TARGET}/pypi/simple/alpha/`, JSON_ACCEPT);

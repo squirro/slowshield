@@ -90,7 +90,7 @@ def test_serves_and_caches_over_real_http(server: str, upstream: FakeUpstream) -
         assert hit.content == first.content
         part = c.get(f"/pypi{path}", headers={"Range": "bytes=5-14"})
         assert part.status_code == 206 and part.content == first.content[5:15]
-        ui = c.get("/")
+        ui = c.get("/ui/")
         assert ui.status_code == 200 and "content-security-policy" in ui.headers
 
 

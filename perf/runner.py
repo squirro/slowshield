@@ -58,6 +58,7 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("npm_packument_corgi", "throughput", vus=32),
         Scenario("artifact_cached", "throughput", vus=32),
         Scenario("mixed", "latency", rate=200),
+        Scenario("blocked", "latency", rate=200),
     ],
 }
 
@@ -153,6 +154,24 @@ def _wait_ready(url: str, timeout: float = 60.0) -> float:
     raise TimeoutError(f"{url} not ready after {timeout}s")
 
 
+def _wait_blocked(url: str, timeout: float = 120.0) -> None:
+    """Wait until the malware feed is loaded and `url` answers 451. The `blocked` scenario measures the
+    451 path; a round started earlier would be served 200s and report every request as an error."""
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.pypi.simple.v1+json"})
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        try:
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except urllib.error.HTTPError as exc:
+            if exc.code == 451:
+                return
+        except urllib.error.URLError, OSError:
+            pass
+        time.sleep(0.5)
+    raise TimeoutError(f"{url} not blocked after {timeout}s: the malware feed did not load")
+
+
 class Harness:
     def __init__(
         self,
@@ -244,6 +263,7 @@ class Harness:
         # First artifact downloads populate the verified cache.
         self._k6_raw("artifact_cached", "throughput", vus=2, rate=0, duration="3s")
         self._k6_raw("artifact_big", "throughput", vus=1, rate=0, duration="5s")
+        _wait_blocked(base + "/pypi/simple/malware-pkg/")
 
     def _k6_raw(self, scenario: str, mode: str, *, vus: int, rate: int, duration: str) -> dict[str, Any]:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:

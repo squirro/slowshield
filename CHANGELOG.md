@@ -6,7 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.0.2] - 2026-10-04
+## [0.0.3] - 2026-10-04
+
+0.0.2 was tagged but never published: its release stopped at the performance gate, which counted the expected
+HTTP 451 responses of the blocked-package scenario as errors. 0.0.3 has the same changes plus that fix.
 
 ### Fixed
 - pip 22.3 to 23.1, including Debian 12's pip 23.0.1, crashed (`TypeError: unhashable type: 'dict'`) on every
@@ -16,6 +19,8 @@ All notable changes to this project are documented here. The format is based on
 - Quick start (README and website): the install example runs pip in a throwaway virtualenv, since Homebrew and
   current Linux Pythons refuse pip installs outside one, and bash on macOS gets its own shell setup
   (`~/.bash_profile`, which Terminal's login shells read).
+- Release performance gate: the blocked-package scenario treats 451 as success and starts only once the
+  malware feed is loaded; pull requests now run it too.
 
 ## [0.0.1] - 2026-10-02
 

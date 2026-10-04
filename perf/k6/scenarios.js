@@ -66,6 +66,9 @@ const SCENARIOS = {
 const scenarioName = __ENV.SCENARIO || "pypi_simple_json";
 const run = SCENARIOS[scenarioName];
 if (!run) throw new Error(`unknown SCENARIO ${scenarioName}`);
+// k6 counts every status >= 400 as a failed request, which would make each correct block an error.
+// In the blocked scenario 451 is the success; anything else (a 200 serves the malware) is a failure.
+if (scenarioName === "blocked") http.setResponseCallback(http.expectedStatuses(451));
 
 export const options = {
   discardResponseBodies: scenarioName === "artifact_big",

@@ -1,7 +1,8 @@
 # Routing: one host, one path per ecosystem
 
-Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract and the
-deprecation of per-ecosystem hostnames are implemented; ecosystems beyond PyPI and npm are planned.
+Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract, the
+deprecation of per-ecosystem hostnames and the new Setup page are implemented; ecosystems beyond PyPI and npm
+are planned.
 
 SlowShield serves every ecosystem from **one host**, each under a path named after its **protocol**. No
 ecosystem gets its own hostname. This document is the contract for those paths, so that new ecosystems never
@@ -132,7 +133,7 @@ How the deprecated forms behave until 0.1:
 
 ## Setup page
 
-[#10](https://github.com/squirro/slowshield/issues/10), separate change:
+[#10](https://github.com/squirro/slowshield/issues/10), implemented:
 
 - **Follow slowshield.org.** Same steps: start, try it, use it for everything. The global shell setup has tabs
   for bash (Linux), bash (macOS), zsh and fish, filled in with this instance's URLs. The visitor's OS is

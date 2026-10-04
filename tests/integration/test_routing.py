@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -97,6 +98,36 @@ async def test_npm_tarball_urls_follow_the_route_the_client_used(start_app) -> N
     assert via_host["versions"]["1.0.0"]["dist"]["tarball"] == f"https://npm.internal/{tarball}"
 
 
+@pytest.mark.parametrize(
+    ("headers", "shell", "windows_note"),
+    [
+        ({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15"}, "zsh", False),
+        ({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/150.0"}, "bash", False),
+        ({"Sec-CH-UA-Platform": '"macOS"', "User-Agent": "Mozilla/5.0"}, "zsh", False),
+        ({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, "bash", True),
+        ({"User-Agent": "curl/8.18.0"}, "bash", False),
+    ],
+)
+async def test_setup_page_preselects_the_shell(
+    running: Running, headers: dict[str, str], shell: str, windows_note: bool
+) -> None:
+    page = (await running.client.get("/ui/setup", headers=headers)).text
+    selected = re.findall(r'data-shell="([a-z-]+)"\s+aria-selected="true"', page)
+    assert selected == [shell]
+    assert re.search(rf'id="sh-{shell}" aria-labelledby="t-sh-{shell}">', page)  # its panel is not hidden
+    assert page.count(" hidden>") >= 3
+    assert ("WSL" in page) is windows_note
+
+
+async def test_setup_page_snippets_use_this_instance(start_app) -> None:
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
+    assert "export PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/" in page
+    assert "set -Ux npm_config_registry https://slowshield.example.com/npm/" in page
+    assert "python3 -m venv /tmp/slowshield-try" in page
+    assert "{pypi}" not in page and "{npm}" not in page
+
+
 async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None:
     run = await start_app(HOSTNAMES)
     page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
@@ -106,3 +137,26 @@ async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None
     assert "https://pypi.internal/" not in page and "https://npm.internal/" not in page
     plain = (await (await start_app()).client.get("/ui/setup")).text
     assert "deprecated" not in plain
+
+
+@pytest.mark.parametrize("host", ["localhost:$(id)", "127.0.0.1:80;id", "x$(id).localhost"])
+async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: str) -> None:
+    run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
+    page = (await run.client.get("/ui/setup", headers={"Host": host})).text
+    assert "$(" not in page and ";id" not in page
+    assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
+    doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()
+    assert doc["versions"]["1.0.0"]["dist"]["tarball"].startswith("https://localhost/npm/")
+
+
+async def test_setup_page_tool_finder(start_app) -> None:
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
+    names = ["pip", "uv", "Poetry", "PDM", "Pipenv", "npm", "pnpm", "Yarn", "Bun"]
+    assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
+    assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
+    keywords = dict(re.findall(r'data-tool="(([a-z]+)[^"]*)"', page)[i][::-1] for i in range(len(names)))
+    assert "pipfile" in keywords["pipenv"] and "npmrc" in keywords["npm"] and "berry" in keywords["yarn"]
+    assert "poetry source add --priority=primary slowshield https://slowshield.example.com/pypi/simple/" in page
+    assert "verify_ssl = true" in page and "unsafeHttpWhitelist" not in page
+    assert "data-tool-empty hidden" in page  # JS shows it; without JS every tool stays visible

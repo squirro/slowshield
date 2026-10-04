@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- The Setup page follows slowshield.org: one global shell setup (bash on Linux, bash on macOS, zsh, fish) filled in
+  with this instance's URLs and preselected from the visitor's OS, a one-line install to try it, a tool finder (type
+  `poe` for Poetry, `ya` for Yarn) for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn and Bun, and CI/Dockerfile
+  snippets. Its shell and install snippets come from the same file as the website's
+  (`src/slowshield/ui/snippets.toml`), and an end-to-end test runs every one of them in bash, zsh and fish against
+  the stack, including Debian 12's pip 23.0.1.
+
 ### Changed
 - One host, one path per ecosystem ([docs/design/routing.md](docs/design/routing.md)). The UI lives entirely
   under `/ui/`: the dashboard moved from `/` to `/ui/` (`/` redirects there) and assets from `/static/` to
@@ -19,7 +27,17 @@ All notable changes to this project are documented here. The format is based on
   `/static/`. They keep working until 0.1, log a startup warning (hostnames), show a notice on the Setup page,
   and are counted in `slowshield_legacy_routing_requests_total` so operators can see when nothing uses them.
 
+### Security
+- Values shown in copy-paste shell snippets can no longer carry shell syntax (reported by Aikido). With
+  `local_http` on, a loopback `Host` header such as `localhost:$(id)` was echoed into the Setup page and npm
+  tarball links; only well-formed hosts with a numeric port qualify now. `public_url` and
+  `upstreams.npm.public_url` must be plain `http(s)://host[:port][/path]` URLs (no query, credentials or
+  special characters), and the snippet renderer refuses anything else. A config with such a URL now fails to
+  load instead of being served.
+
 ### Fixed
+- The UI's CSS and JavaScript URLs are versioned by content instead of the release, so an image rebuilt under the
+  same version no longer leaves browsers on stale assets.
 - With npm hostnames configured, clients using `/npm/` got tarball links on the npm hostname, which then ended
   up in their lockfiles. Tarball links now follow the route the client used.
 

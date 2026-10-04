@@ -65,7 +65,16 @@ def test_local_http_helpers() -> None:
         "::1",
     ):
         assert web.is_loopback_host(host), host
-    for host in ("slowshield.test", "10.0.0.1", "localhost.evil.test", "[2001:db8::1]", ""):
+    # Hosts are echoed into Setup page snippets and npm tarball links: malformed ones never qualify.
+    crafted = (
+        "localhost:$(id)",
+        "127.0.0.1:80;id",
+        "x$(id).localhost",
+        "localhost:8080 x",
+        "[::1]x",
+        "localhost:99999x",
+    )
+    for host in ("slowshield.test", "10.0.0.1", "localhost.evil.test", "[2001:db8::1]", "", *crafted):
         assert not web.is_loopback_host(host), host
 
     def scope(peer: str, proto: str | None, host: str) -> dict:

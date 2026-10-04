@@ -64,6 +64,8 @@ class Feed(Protocol):
         ...
 
 
+RETRY_FIRST_S = 60.0  # first retry after a failed sync; doubles up to the poll interval
+
 GITHUB_FEED_FIX = (
     "Create a GitHub token (a fine-grained personal access token with no extra permissions is enough; "
     "it only reads the public advisory database) and pass it as GITHUB_TOKEN, or mount it as a file and set "
@@ -224,11 +226,21 @@ class FeedScheduler:
             self.refresh_status()
         await asyncio.to_thread(self.refresh_counts)
 
+    def next_delay(self, retry: float) -> tuple[float, float]:
+        """Seconds until the next run, and the retry delay after that. A failed sync (say the registry was
+        unreachable at startup) is retried after 1, 2, 4 ... minutes, up to the poll interval, instead of
+        leaving the blocklist empty or stale for a whole interval."""
+        interval = self.ctx.cfg.raw.feeds.poll_interval_minutes * 60
+        if any(self.ctx.feeds[f.name].enabled and self.ctx.feeds[f.name].reason == "error" for f in self.feeds):
+            return min(retry, interval), min(retry * 2, interval)
+        return interval, RETRY_FIRST_S
+
     async def run_forever(self) -> None:
+        retry = RETRY_FIRST_S
         while True:
             await self.run_once()
-            interval = self.ctx.cfg.raw.feeds.poll_interval_minutes * 60
-            await asyncio.sleep(interval)
+            delay, retry = self.next_delay(retry)
+            await asyncio.sleep(delay)
 
     async def follow(self, interval: float = 30.0) -> None:
         """Non-leader workers: keep status (UI + gauges) fresh from the DB."""

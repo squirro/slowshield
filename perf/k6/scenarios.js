@@ -20,6 +20,9 @@ const JSON_ACCEPT = { headers: { Accept: "application/vnd.pypi.simple.v1+json" }
 const HTML_ACCEPT = { headers: { Accept: "text/html" } };
 const CORGI = { headers: { Accept: "application/vnd.npm.install-v1+json" } };
 const FULL = { headers: { Accept: "application/json" } };
+// k6 counts every status >= 400 as a failed request. For the blocked request 451 is the success and
+// anything else (a 200 serves the malware) the failure; setup() requests keep the default.
+const BLOCKED = { ...JSON_ACCEPT, responseCallback: http.expectedStatuses(451) };
 
 // Index URLs are relative ("../../packages/..") to the project page; resolve them against /pypi/.
 function resolve(url) {
@@ -52,7 +55,7 @@ const SCENARIOS = {
   npm_huge_corgi: () => http.get(`${TARGET}/npm/huge-packument`, CORGI),
   artifact_cached: (d) => http.get(d.small),
   artifact_big: (d) => http.get(d.big, { responseType: "none", timeout: "120s" }),
-  blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, JSON_ACCEPT),
+  blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, BLOCKED),
   dashboard: () => http.get(`${TARGET}/`),
   mixed: (d) => {
     const r = Math.random();

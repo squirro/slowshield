@@ -1,7 +1,7 @@
 [project]
 name = "slowshield"
 dynamic = []
-version = "0.0.3"
+version = "0.0.4"
 description = "Supply-chain defence proxy for PyPI and npm: delays new releases, blocks known malware, detects tampering."
 readme = "README.md"
 license = "Apache-2.0"

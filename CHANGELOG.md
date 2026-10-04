@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-10-04
+
 ### Added
 - The Setup page follows slowshield.org: one global shell setup (bash on Linux, bash on macOS, zsh, fish) filled in
   with this instance's URLs and preselected from the visitor's OS, a one-line install to try it, a tool finder (type

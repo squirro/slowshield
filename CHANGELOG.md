@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- The Setup page follows slowshield.org: one global shell setup (bash on Linux, bash on macOS, zsh, fish) filled in
+  with this instance's URLs and preselected from the visitor's OS, a one-line install to try it, per-tool snippets
+  folded away, and CI/Dockerfile snippets. Its shell and install snippets come from the same file as the website's
+  (`src/slowshield/ui/snippets.toml`), and an end-to-end test runs every one of them in bash, zsh and fish against
+  the stack, including Debian 12's pip 23.0.1.
+
 ### Changed
 - One host, one path per ecosystem ([docs/design/routing.md](docs/design/routing.md)). The UI lives entirely
   under `/ui/`: the dashboard moved from `/` to `/ui/` (`/` redirects there) and assets from `/static/` to

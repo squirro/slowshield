@@ -4,9 +4,10 @@
 <div class="snippet">{% if label %}<span class="snippet-label">{{ label }}</span>{% endif %}
 <pre><code>{{ code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
 {%- endmacro %}
+{% set days = cfg.default_delay_days|round(1)|replace(".0", "") %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Client setup</h1><p class="muted">Point your package managers at SlowShield. New releases become installable {{ cfg.default_delay_days|round(1)|replace(".0", "") }} days after publication.</p></div>
+  <div><h1>Client setup</h1><p class="muted">Point pip, uv and npm at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
 </div>
 {% if legacy_hosts %}
 <section class="card" role="note">
@@ -23,27 +24,66 @@
     <code>{{ secure.npm }}</code>.</p>
 </section>
 {% endif %}
-<div class="grid-2">
-  <section class="card">
-    <header class="card-head"><h2>Python</h2>{% if not pypi_enabled %}<span class="badge">disabled</span>{% endif %}</header>
-    <p>Index URL: <code>{{ pypi_index }}</code></p>
-    {{ snippet("pip config set global.index-url " ~ pypi_index, "pip") }}
-    {{ snippet("# pyproject.toml\n[[tool.uv.index]]\nname = \"slowshield\"\nurl = \"" ~ pypi_index ~ "\"\ndefault = true", "uv") }}
-    {{ snippet("export UV_DEFAULT_INDEX=" ~ pypi_index, "uv (environment)") }}
-    {{ snippet("poetry source add --priority=primary slowshield " ~ pypi_index, "Poetry") }}
-    {{ snippet("# pyproject.toml\n[[tool.pdm.source]]\nname = \"pypi\"\nurl = \"" ~ pypi_index ~ "\"", "PDM") }}
-    {{ snippet("# Pipfile\n[[source]]\nurl = \"" ~ pypi_index ~ "\"\nverify_ssl = " ~ ("false" if pypi_index.startswith("http://") else "true") ~ "\nname = \"slowshield\"", "Pipenv") }}
-  </section>
-  <section class="card">
-    <header class="card-head"><h2>JavaScript</h2>{% if not npm_enabled %}<span class="badge">disabled</span>{% endif %}</header>
-    <p>Registry URL: <code>{{ npm_registry }}</code></p>
-    {{ snippet("npm config set registry " ~ npm_registry, "npm") }}
-    {{ snippet("# .npmrc (project or ~)\nregistry=" ~ npm_registry, ".npmrc (npm, pnpm, bun)") }}
-    {{ snippet("pnpm config set registry " ~ npm_registry, "pnpm") }}
-    {{ snippet("# .yarnrc.yml (Yarn Berry)\nnpmRegistryServer: \"" ~ npm_registry ~ "\"" ~ ("\nunsafeHttpWhitelist:\n  - localhost" if npm_registry.startswith("http://") else ""), "Yarn") }}
-    {{ snippet("# bunfig.toml\n[install]\nregistry = \"" ~ npm_registry ~ "\"", "Bun") }}
-  </section>
-</div>
+<ol class="setup-steps">
+  <li class="card">
+    <header class="card-head"><h2><span class="step">1</span> Use it for everything</h2></header>
+    <p class="muted">Three environment variables in your shell profile: pip, uv and npm then go through SlowShield in
+      every new terminal. Remove the lines to switch it off.</p>
+    <div class="tabs" data-tabs="shell">
+      <div class="tablist" role="tablist" aria-label="Shell">
+        {%- for sh in snippets.shells %}
+        <button type="button" role="tab" id="t-sh-{{ sh.id }}" aria-controls="sh-{{ sh.id }}" data-shell="{{ sh.id }}"
+          aria-selected="{{ 'true' if sh.id == shell else 'false' }}"{% if sh.id != shell %} tabindex="-1"{% endif %}>{{ sh.label }}</button>
+        {%- endfor %}
+      </div>
+      {%- for sh in snippets.shells %}
+      <div class="snippet" role="tabpanel" id="sh-{{ sh.id }}" aria-labelledby="t-sh-{{ sh.id }}"{% if sh.id != shell %} hidden{% endif %}>
+<pre><code>{{ sh.code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
+      {%- endfor %}
+    </div>
+    {% if os == "windows" %}<p class="muted small">On Windows, set the three variables under
+      <em>System → Environment Variables</em>, or use the bash tab in WSL.</p>{% endif %}
+  </li>
+  <li class="card">
+    <header class="card-head"><h2><span class="step">2</span> Try it</h2></header>
+    {{ snippet(snippets.try_python) }}
+    <p class="muted small">A throwaway virtualenv, because Homebrew and current Linux Pythons refuse pip installs outside
+      one. Releases younger than {{ days }} days are held back; known malware is refused with HTTP 451.</p>
+  </li>
+</ol>
+<section class="card">
+  <header class="card-head"><h2>Per tool</h2></header>
+  <p class="muted">For a single tool or project instead. Index URL <code>{{ pypi_index }}</code>, registry URL
+    <code>{{ npm_registry }}</code>.</p>
+  <div class="grid-2">
+    <details>
+      <summary>Python: pip, uv, Poetry, PDM, Pipenv{% if not pypi_enabled %} <span class="badge">disabled</span>{% endif %}</summary>
+      {{ snippet("pip config set global.index-url " ~ pypi_index, "pip") }}
+      {{ snippet("# pyproject.toml\n[[tool.uv.index]]\nname = \"slowshield\"\nurl = \"" ~ pypi_index ~ "\"\ndefault = true", "uv") }}
+      {{ snippet("poetry source add --priority=primary slowshield " ~ pypi_index, "Poetry") }}
+      {{ snippet("# pyproject.toml\n[[tool.pdm.source]]\nname = \"pypi\"\nurl = \"" ~ pypi_index ~ "\"", "PDM") }}
+      {{ snippet("# Pipfile\n[[source]]\nurl = \"" ~ pypi_index ~ "\"\nverify_ssl = " ~ ("false" if pypi_index.startswith("http://") else "true") ~ "\nname = \"slowshield\"", "Pipenv") }}
+    </details>
+    <details>
+      <summary>JavaScript: npm, pnpm, Yarn, Bun{% if not npm_enabled %} <span class="badge">disabled</span>{% endif %}</summary>
+      {{ snippet("npm config set registry " ~ npm_registry, "npm") }}
+      {{ snippet("# .npmrc (project or ~)\nregistry=" ~ npm_registry, ".npmrc (npm, pnpm, bun)") }}
+      {{ snippet("pnpm config set registry " ~ npm_registry, "pnpm") }}
+      {{ snippet("# .yarnrc.yml (Yarn Berry)\nnpmRegistryServer: \"" ~ npm_registry ~ "\"" ~ ("\nunsafeHttpWhitelist:\n  - localhost" if npm_registry.startswith("http://") else ""), "Yarn") }}
+      {{ snippet("# bunfig.toml\n[install]\nregistry = \"" ~ npm_registry ~ "\"", "Bun") }}
+    </details>
+  </div>
+</section>
+<section class="card">
+  <header class="card-head"><h2>CI and containers</h2></header>
+  <div class="grid-2">
+    {{ snippet("# GitHub Actions (workflow or job)\nenv:\n  PIP_INDEX_URL: " ~ pypi_index ~ "\n  UV_DEFAULT_INDEX: " ~ pypi_index ~ "\n  npm_config_registry: " ~ npm_registry, "CI") }}
+    {{ snippet("ENV PIP_INDEX_URL=" ~ pypi_index ~ " \\\n    UV_DEFAULT_INDEX=" ~ pypi_index ~ " \\\n    npm_config_registry=" ~ npm_registry, "Dockerfile") }}
+  </div>
+  <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
+    the container itself. Block direct access to pypi.org and registry.npmjs.org at the firewall so nothing
+    bypasses SlowShield.</p>
+</section>
 <section class="card">
   <header class="card-head"><h2>What to expect</h2></header>
   <ul>

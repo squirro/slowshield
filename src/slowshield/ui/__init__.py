@@ -26,6 +26,7 @@ from slowshield import names as N
 from slowshield.context import AppContext
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
+from slowshield.ui import snippets as S
 from slowshield.ui import svg
 from slowshield.web import is_loopback_host, local_http_origin
 
@@ -496,15 +497,19 @@ class UI:
             pypi_index = f"{local}/pypi/simple/"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
+        snippets = S.for_instance(pypi_index, npm_registry)
+        os_name = _client_os(request)
+        shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
             "setup.html.j2",
             request,
             pypi_index=pypi_index,
             npm_registry=npm_registry,
             legacy_hosts=legacy_hosts,
-            base=base,
-            plain_http=pypi_index.startswith("http://") or npm_registry.startswith("http://"),
             secure=secure,
+            snippets=snippets,
+            shell=shell,
+            os=os_name,
         )
 
     async def about(self, request: Request) -> Response:
@@ -513,6 +518,19 @@ class UI:
             text = _read_doc(name)
             docs[name] = Markup(self.md.render(text)) if text else None  # noqa: S704 - markdown-it with html disabled
         return self._render("about.html.j2", request, docs=docs, info=build_info())
+
+
+def _client_os(request: Request) -> str:
+    """mac, linux, windows or "", from the client hint or the User-Agent: preselects the Setup page's shell tab
+    (app.js then prefers the visitor's last choice)."""
+    probe = (request.headers.get("sec-ch-ua-platform", "").strip('"') or request.headers.get("user-agent", "")).lower()
+    if "mac" in probe or "iphone" in probe or "ipad" in probe:
+        return "mac"
+    if "windows" in probe:
+        return "windows"
+    if ("linux" in probe or "x11" in probe) and "android" not in probe:
+        return "linux"
+    return ""
 
 
 def _qs(base: dict[str, Any], **changes: Any) -> str:

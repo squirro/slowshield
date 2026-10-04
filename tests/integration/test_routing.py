@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -95,6 +96,36 @@ async def test_npm_tarball_urls_follow_the_route_the_client_used(start_app) -> N
     # Path clients record path URLs in their lockfiles, so removing the hostname in 0.1 breaks nothing.
     assert via_path["versions"]["1.0.0"]["dist"]["tarball"] == f"https://slowshield.example.com/npm/{tarball}"
     assert via_host["versions"]["1.0.0"]["dist"]["tarball"] == f"https://npm.internal/{tarball}"
+
+
+@pytest.mark.parametrize(
+    ("headers", "shell", "windows_note"),
+    [
+        ({"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15"}, "zsh", False),
+        ({"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/150.0"}, "bash", False),
+        ({"Sec-CH-UA-Platform": '"macOS"', "User-Agent": "Mozilla/5.0"}, "zsh", False),
+        ({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, "bash", True),
+        ({"User-Agent": "curl/8.18.0"}, "bash", False),
+    ],
+)
+async def test_setup_page_preselects_the_shell(
+    running: Running, headers: dict[str, str], shell: str, windows_note: bool
+) -> None:
+    page = (await running.client.get("/ui/setup", headers=headers)).text
+    selected = re.findall(r'data-shell="([a-z-]+)"\s+aria-selected="true"', page)
+    assert selected == [shell]
+    assert re.search(rf'id="sh-{shell}" aria-labelledby="t-sh-{shell}">', page)  # its panel is not hidden
+    assert page.count(" hidden>") >= 3
+    assert ("WSL" in page) is windows_note
+
+
+async def test_setup_page_snippets_use_this_instance(start_app) -> None:
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
+    assert "export PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/" in page
+    assert "set -Ux npm_config_registry https://slowshield.example.com/npm/" in page
+    assert "python3 -m venv /tmp/slowshield-try" in page
+    assert "{pypi}" not in page and "{npm}" not in page
 
 
 async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None:

@@ -177,6 +177,23 @@ tr.withdrawn { opacity: 0.55; }
   color: var(--text); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
 .copy.done { color: var(--ok); }
 
+/* Setup page: numbered steps, shell tabs, collapsed per-tool snippets */
+.setup-steps { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+.setup-steps > .card { margin-bottom: 0; }
+.step { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary); font-size: 0.85em; }
+.tablist { display: inline-flex; flex-wrap: wrap; max-width: 100%; gap: 4px; padding: 4px; margin: 4px 0 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); }
+.tablist [role="tab"] { border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.82rem; font-weight: 600;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.tablist [role="tab"][aria-selected="true"] { background: var(--primary); color: var(--surface); }
+.tablist [role="tab"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+details > summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
+.grid-2 > .snippet { align-self: start; }
+.card p code { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }
+
 .prose h1 { font-size: 1.3rem; } .prose h2 { font-size: 1.1rem; margin-top: 18px; } .prose table { border-collapse: collapse; }
 .prose td, .prose th { border: 1px solid var(--border); padding: 4px 8px; }
 

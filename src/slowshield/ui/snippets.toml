@@ -1,0 +1,58 @@
+# Client setup snippets, one source for the Setup page (/ui/setup) and slowshield.org (website/build.py).
+# Placeholders: {pypi} PyPI index URL, {npm} npm registry URL, {py_pkg} example Python package.
+# tests/e2e/test_snippets.py runs every snippet below in bash, zsh and fish containers against the e2e stack.
+
+# Global setup: pip, uv and npm go through SlowShield in every new terminal. `os` preselects the tab
+# (macOS defaults to zsh); the visitor's last choice wins.
+[[shell]]
+id = "bash"
+label = "bash (Linux)"
+os = "linux"
+code = """
+cat >> ~/.bashrc <<'EOF'
+export PIP_INDEX_URL={pypi}
+export UV_DEFAULT_INDEX={pypi}
+export npm_config_registry={npm}
+EOF
+source ~/.bashrc"""
+
+# macOS Terminal opens login shells, which read ~/.bash_profile, not ~/.bashrc.
+[[shell]]
+id = "bash-macos"
+label = "bash (macOS)"
+os = ""
+code = """
+cat >> ~/.bash_profile <<'EOF'
+export PIP_INDEX_URL={pypi}
+export UV_DEFAULT_INDEX={pypi}
+export npm_config_registry={npm}
+EOF
+source ~/.bash_profile"""
+
+[[shell]]
+id = "zsh"
+label = "zsh"
+os = "mac"
+code = """
+cat >> ~/.zshrc <<'EOF'
+export PIP_INDEX_URL={pypi}
+export UV_DEFAULT_INDEX={pypi}
+export npm_config_registry={npm}
+EOF
+source ~/.zshrc"""
+
+[[shell]]
+id = "fish"
+label = "fish"
+os = ""
+code = """
+set -Ux PIP_INDEX_URL {pypi}
+set -Ux UV_DEFAULT_INDEX {pypi}
+set -Ux npm_config_registry {npm}"""
+
+# One install through SlowShield, in a throwaway virtualenv: Homebrew and current Linux Pythons refuse pip
+# installs outside one (PEP 668).
+[try]
+python = """
+python3 -m venv /tmp/slowshield-try
+/tmp/slowshield-try/bin/pip install --index-url {pypi} {py_pkg}"""

@@ -21,7 +21,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_DATABASE_PATH`, `DATABASE_URL` | `database_path` | `DATABASE_URL` takes `sqlite:/path` |
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |
 | `SLOWSHIELD_DEFAULT_DELAY_DAYS` | `default_delay_days` | float |
-| `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | space/comma separated |
+| `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | **deprecated, removed in 0.1**; space/comma separated |
 | `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED` | `upstreams.*.enabled` | booleans |
 | `SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD` | `enforce_age_on_download` | |
 | `SLOWSHIELD_FAIL_OPEN` | `fail_open` | |
@@ -40,15 +40,28 @@ Local development: `uv run slowshield serve` also loads a `.env` file from the w
 
 ## Routing
 
-* **Single host** (no `hostnames` configured): PyPI at `/pypi/simple/` (and, for compatibility, at
-  `/simple/`), npm at `/npm/`, the UI at `/`.
-* **Per-ecosystem hosts**: requests whose `Host` matches `upstreams.pypi.hostnames` are served as a
-  PyPI index at the root (`/simple/…`, `/packages/…`); `upstreams.npm.hostnames` are served as an npm
-  registry at the root. Any other host gets the UI plus the prefixed routes.
+One host serves everything, each ecosystem under a path named after its protocol: PyPI at `/pypi/simple/`,
+npm at `/npm/`. The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
+these and the names reserved for future ecosystems may be used at the root; see
+[design/routing.md](design/routing.md) for the contract and the plan for every ecosystem on the roadmap.
 
 PyPI file links are relative, so they work behind any prefix without trusting the `Host` header. npm
-requires absolute tarball URLs; they are built from `upstreams.npm.public_url` (or the first npm
-hostname, or `public_url + /npm`), never from request headers.
+requires absolute tarball URLs; they are built from `upstreams.npm.public_url`, or `public_url + /npm`,
+never from request headers.
+
+**Deprecated, removed in 0.1:**
+
+* Per-ecosystem hostnames (`upstreams.pypi.hostnames`, `upstreams.npm.hostnames`): requests whose `Host`
+  matches are served as a PyPI index or npm registry at the root of that host. npm tarball links on such a
+  host use `https://<first npm hostname>`; everywhere else they use the path form.
+* The root PyPI alias (`/simple/…`, `/packages/…`) on deployments without hostnames, from the Rust version.
+* The old UI asset path `/static/…` (redirects to `/ui/static/…`).
+
+All of them still work, log a startup warning (hostnames) and are counted in
+`slowshield_legacy_routing_requests_total{route}`. To migrate, point clients at the path URLs (the Setup page
+shows them) and re-lock, or replace `https://pypi.example.com/` with `https://<host>/pypi/` and
+`https://npm.example.com/` with `https://<host>/npm/` in lockfiles. Once the counter stays at zero, the
+deployment is ready for 0.1.
 
 ## Hot reload
 

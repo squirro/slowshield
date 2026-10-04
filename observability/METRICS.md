@@ -47,6 +47,7 @@ Each worker exports its own series, so aggregate across `instance` with `sum` (c
 | `slowshield_cache_limit_bytes` | gauge | `slowshield.cache.limit` | `By` | `cache` | Configured cache limit (same `cache` values; `metadata_memory` is per worker) |
 | `slowshield_feed_enabled` | gauge | `slowshield.feed.enabled` | | `feed`, `reason` | 1 if the threat feed is on. `reason`: `ok`, `error`, `disabled`, `missing_token`, … (unit `1` is dropped by Alloy so the name gets no `_ratio` suffix) |
 | `slowshield_feed_last_success_timestamp_seconds` | gauge | `slowshield.feed.last_success.timestamp` | `s` | `feed` | Unix time of the last successful sync |
+| `slowshield_legacy_routing_requests_total` | counter | `slowshield.legacy_routing.requests` | `{request}` | `route` | Requests through routing that is removed in 0.1. `route`: `pypi-hostname`, `npm-hostname` (per-ecosystem hostnames), `root-simple` (the root `/simple/` and `/packages/` alias), `static` (old `/static/` asset path). Zero over a few weeks means the deployment is ready for 0.1 |
 | `slowshield_feed_errors_total` | counter | `slowshield.feed.errors` | `{error}` | `feed` | Failed feed syncs |
 | `slowshield_feed_changes_total` | counter | `slowshield.feed.changes` | `{advisory}` | `feed` | Advisories added, updated or withdrawn |
 | `slowshield_feed_sync_duration_seconds` | histogram | `slowshield.feed.sync.duration` | `s` | `feed`, `outcome` | Feed sync duration. `outcome`: `ok`, `error` |

@@ -135,8 +135,10 @@ class UI:
 
     def routes(self) -> list[Route]:
         return [
-            Route("/", self.dashboard),
-            Route("/ui", lambda r: RedirectResponse("/", 302)),
+            # The UI lives entirely under /ui/ (root contract, slowshield.routing); / only points there.
+            Route("/", lambda r: RedirectResponse("/ui/", 302)),
+            Route("/ui", lambda r: RedirectResponse("/ui/", 302)),
+            Route("/ui/", self.dashboard),
             Route("/ui/partials/dashboard", self.dashboard_partial),
             Route("/ui/packages", self.packages),
             Route("/ui/partials/packages", self.packages_partial),
@@ -150,7 +152,7 @@ class UI:
             Route("/ui/feeds", self.feeds),
             Route("/ui/setup", self.setup),
             Route("/ui/about", self.about),
-            Route("/favicon.ico", lambda r: RedirectResponse("/static/brand/favicon.ico", 301)),
+            Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
 
     def _ago(self, ts: float | None) -> str:
@@ -478,12 +480,10 @@ class UI:
         cfg = self.ctx.cfg
         raw = cfg.raw
         base = cfg.public_base()
-        pypi_index = (
-            f"https://{raw.upstreams.pypi.hostnames[0]}/simple/"
-            if raw.upstreams.pypi.hostnames
-            else f"{base}/pypi/simple/"
-        )
+        # Path URLs only: per-ecosystem hostnames are deprecated (removed in 0.1) and only get a notice.
+        pypi_index = f"{base}/pypi/simple/"
         npm_registry = cfg.npm_public_base() + "/"
+        legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
         if local is None and raw.local_http:
@@ -493,15 +493,15 @@ class UI:
         secure = None
         if local:
             secure = {"pypi": pypi_index, "npm": npm_registry}
-            if not raw.upstreams.pypi.hostnames:
-                pypi_index = f"{local}/pypi/simple/"
-            if not (raw.upstreams.npm.hostnames or raw.upstreams.npm.public_url):
+            pypi_index = f"{local}/pypi/simple/"
+            if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         return self._render(
             "setup.html.j2",
             request,
             pypi_index=pypi_index,
             npm_registry=npm_registry,
+            legacy_hosts=legacy_hosts,
             base=base,
             plain_http=pypi_index.startswith("http://") or npm_registry.startswith("http://"),
             secure=secure,

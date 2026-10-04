@@ -15,7 +15,8 @@ event_retention_days = 365
 
 [upstreams.pypi]
 enabled = true
-# Optional dedicated hostnames (host routing). Without them PyPI is served at /pypi/simple/.
+# Clients use <public_url>/pypi/simple/ and <public_url>/npm/. Per-ecosystem hostnames are deprecated
+# (removed in 0.1): leave these empty.
 hostnames = []
 mirrors = ["https://pypi.org"]
 

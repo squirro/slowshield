@@ -73,7 +73,7 @@ def test_http2_and_modern_tls(stack: Stack) -> None:
 
 
 def test_security_headers(stack: Stack) -> None:
-    status, headers, _ = stack.get("/")
+    status, headers, _ = stack.get("/ui/")
     assert status == 200
     assert headers["strict-transport-security"].startswith("max-age=63072000")
     assert "default-src 'none'" in headers["content-security-policy"]

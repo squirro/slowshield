@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+
+from slowshield.app import STATIC_DIR
 from slowshield.ecosystems.pypi.project import JSON_V1
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
@@ -137,7 +140,11 @@ async def test_static_assets_and_favicon(running: Running) -> None:
     for asset in ("favicon.ico", "favicon.svg", "mark.svg", "mark-dark.svg", "apple-touch-icon.png"):
         assert (await running.client.get(f"/ui/static/brand/{asset}")).status_code == 200, asset
     page = (await running.client.get("/ui/")).text
-    assert "/ui/static/app.css" in page and '"/static/' not in page
+    assert '"/static/' not in page
+    # Versioned by content, not release: a rebuilt asset is never served from a stale browser cache.
+    for name in ("app.css", "app.js"):
+        digest = hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        assert f'"/ui/static/{name}?v={digest}"' in page, name
 
 
 async def test_health_endpoints(running: Running) -> None:

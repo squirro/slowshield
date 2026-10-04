@@ -9,9 +9,9 @@
 <link rel="icon" href="/ui/static/brand/favicon.ico" sizes="any">
 <link rel="icon" href="/ui/static/brand/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/ui/static/brand/apple-touch-icon.png">
-<link rel="stylesheet" href="/ui/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
 <script src="/ui/static/vendor/htmx.min.js?v={{ htmx_version }}" defer></script>
-<script src="/ui/static/app.js?v={{ version }}" defer></script>
+<script src="{{ asset('app.js') }}" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>

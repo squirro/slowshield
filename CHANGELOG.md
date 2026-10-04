@@ -36,6 +36,8 @@ All notable changes to this project are documented here. The format is based on
   load instead of being served.
 
 ### Fixed
+- The UI's CSS and JavaScript URLs are versioned by content instead of the release, so an image rebuilt under the
+  same version no longer leaves browsers on stale assets.
 - With npm hostnames configured, clients using `/npm/` got tarball links on the npm hostname, which then ended
   up in their lockfiles. Tarball links now follow the route the client used.
 

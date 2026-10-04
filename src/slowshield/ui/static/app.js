@@ -44,8 +44,8 @@
     }
   });
 
-  // Tool finder (Setup page): typing shows the tools whose name or keywords contain the text. Without JS every
-  // tool stays visible.
+  // Tool finder (Setup page): typing shows the tools whose name or keywords contain the text; Enter completes to
+  // the first match, Escape clears. Without JS every tool stays visible.
   document.querySelectorAll("[data-tool-finder]").forEach((finder) => {
     const input = finder.querySelector("[data-tool-input]");
     const tools = [...finder.querySelectorAll("[data-tool]")];
@@ -65,6 +65,10 @@
     input.addEventListener("input", apply);
     input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") { input.value = ""; apply(); }
+      if (event.key === "Enter") {
+        const first = tools.find((tool) => !tool.hidden);
+        if (first) { input.value = first.dataset.toolName; apply(); }
+      }
     });
     finder.addEventListener("click", (event) => {
       const pick = event.target.closest("[data-tool-pick]");

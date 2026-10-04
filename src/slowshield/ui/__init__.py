@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import math
 import os
 from datetime import UTC, datetime
-from functools import partial
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
@@ -31,6 +32,7 @@ from slowshield.ui import svg
 from slowshield.web import is_loopback_host, local_http_origin
 
 TEMPLATES = Path(__file__).parent / "templates"
+STATIC = Path(__file__).parent / "static"
 HTMX_VERSION = "4.0.0"
 ECO_LABEL = {"pypi": "PyPI", "npm": "npm"}
 EVENT_LABEL = {
@@ -101,6 +103,14 @@ def safe_href(url: str | None) -> str:
     return url if isinstance(url, str) and url.startswith("https://") else "#"
 
 
+@cache
+def asset(name: str) -> str:
+    """URL of a UI asset, versioned by its content: a changed file never comes from a browser's stale cache, even
+    when the release version stays the same (dev builds)."""
+    digest = hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:12]
+    return f"/ui/static/{name}?v={digest}"
+
+
 def fmt_pct(x: float | None) -> str:
     return "—" if x is None else f"{x * 100:.1f}%"
 
@@ -119,6 +129,7 @@ class UI:
         env.filters.update(bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href)
         cast(dict[str, Any], env.globals).update(
             version=__version__,
+            asset=asset,
             build=build_info(),
             htmx_version=HTMX_VERSION,
             eco_label=ECO_LABEL,

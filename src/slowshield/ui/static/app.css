@@ -194,10 +194,15 @@ tr.withdrawn { opacity: 0.55; }
 .tool-search input { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface); color: var(--text); }
 .tool-search input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.tool-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.tool-picks { display: grid; gap: 8px; margin: 2px 0 8px; }
+.tool-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tool-group-label { min-width: 7.5em; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); }
 .tool-pick { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit;
-  font-size: 0.82rem; padding: 3px 10px; border-radius: 999px; cursor: pointer; }
-.tool-pick:hover, .tool-pick:focus-visible { border-color: var(--primary); color: var(--primary); }
+  font-size: 0.85rem; font-weight: 500; line-height: 1.4; padding: 4px 14px; border-radius: 999px; cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s; }
+.tool-pick:hover, .tool-pick:focus-visible { border-color: var(--primary); background: var(--primary-soft); color: var(--primary);
+  outline: none; }
 /* auto-fit: a single match spans the card, several share it */
 .tool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; }
 .tool h3 { font-size: 0.95rem; margin: 8px 0 6px; }

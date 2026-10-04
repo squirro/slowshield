@@ -59,14 +59,18 @@
     <input type="search" list="tool-names" placeholder="e.g. poetry, yarn, pnpm" autocomplete="off" spellcheck="false"
       data-tool-input></label>
   <datalist id="tool-names">{% for t in tools %}<option value="{{ t.name }}"></option>{% endfor %}</datalist>
-  <p class="tool-picks" data-tool-hint>
-    {%- for t in tools %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
-  </p>
+  <div class="tool-picks" data-tool-hint>
+    {%- for eco, label in (("pypi", "Python"), ("npm", "JavaScript")) %}
+    <div class="tool-group"><span class="tool-group-label">{{ label }}</span>
+      {%- for t in tools if t.ecosystem == eco %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
+    </div>
+    {%- endfor %}
+  </div>
   <p class="muted small" role="status" data-tool-empty hidden>No tool matches. Try pip, uv, Poetry, PDM, Pipenv, npm,
     pnpm, Yarn or Bun.</p>
   <div class="tool-results">
     {%- for t in tools %}
-    <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}">
+    <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}" data-tool-name="{{ t.name }}">
       <h3>{{ t.name }}{% if (t.ecosystem == "pypi" and not pypi_enabled) or (t.ecosystem == "npm" and not npm_enabled) %}
         <span class="badge">disabled</span>{% endif %}</h3>
       {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}

@@ -210,6 +210,21 @@ async def test_feed_sync_failure_is_recorded(running: Running) -> None:
     assert running.ctx.feeds["osv"].reason == "error"
 
 
+async def test_failed_sync_is_retried_with_backoff(running: Running) -> None:
+    sched = _scheduler(running)
+    interval = running.ctx.cfg.raw.feeds.poll_interval_minutes * 60
+    running.fake.control("fail", prefix="/osv", status=503)
+    await sched.run_once()
+    # Unreachable registry: retry after 1, 2, 4 ... minutes, never later than the poll interval.
+    assert sched.next_delay(60) == (60, 120)
+    assert sched.next_delay(120) == (120, 240)
+    assert sched.next_delay(interval) == (interval, interval)
+    running.fake.control("fail", prefix="/osv", status=0)
+    await sched.run_once()
+    assert running.ctx.feeds["osv"].reason == "ok"
+    assert sched.next_delay(240) == (interval, 60)  # back to the normal interval, backoff reset
+
+
 async def test_removed_malicious_version_is_still_refused_and_recorded(running: Running) -> None:
     """A lockfile pinned during an attack window asks for a version the registry has since removed.
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +28,7 @@ from perf.stats import mann_whitney_p, median, relative_change
 ROOT = Path(__file__).resolve().parent
 K6_SCRIPT = ROOT / "k6" / "scenarios.js"
 PORT = 18080
+UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +174,21 @@ def _wait_blocked(url: str, timeout: float = 120.0) -> None:
     raise TimeoutError(f"{url} not blocked after {timeout}s: the malware feed did not load")
 
 
+def _diagnose(container: str) -> None:
+    """A failed run removes its container: print what it knew first (logs, feed status) for the CI log."""
+    logs = subprocess.run(["docker", "logs", "--tail", "60", container], capture_output=True, text=True, check=False)
+    print(f"--- {container}: last log lines\n{logs.stdout}{logs.stderr}", flush=True)
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/ui/feeds", timeout=5) as resp:
+            page = resp.read().decode(errors="replace")
+        text = " ".join(re.sub(r"<[^>]+>", " ", page).split())
+        start = text.find("OSV malicious packages")
+        osv = text[start : start + 400] if start >= 0 else "(no OSV section)"
+        print(f"--- {container}: feeds page: {osv}", flush=True)
+    except urllib.error.URLError, OSError, ValueError:
+        print(f"--- {container}: feeds page not reachable", flush=True)
+
+
 class Harness:
     def __init__(
         self,
@@ -199,9 +216,11 @@ class Harness:
         sh("docker", "network", "create", self.network)
         sh(
             "docker", "run", "-d", "--rm", "--name", f"{self.network}-up", "--network", self.network,
-            "--network-alias", "fakeupstream", *self._cpuset(self.load_cpus),
+            "--network-alias", "fakeupstream", *self._cpuset(self.load_cpus), "-p", f"127.0.0.1:{UPSTREAM_PORT}:9000",
             self.fakeupstream, "--host", "0.0.0.0", "--port", "9000", "--perf", "--now", str(self.now),
         )  # fmt: skip
+        # SlowShield syncs its feeds right at startup: an upstream still starting would fail that sync.
+        _wait_ready(f"http://127.0.0.1:{UPSTREAM_PORT}/healthz")
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -230,10 +249,15 @@ class Harness:
             _wait_ready(f"http://127.0.0.1:{PORT}/readyz")
             startup = time.perf_counter() - t0
             cg = _cgroup_dir(cid)
+            # Before the warmup, so its large downloads do not compete with the first feed sync.
+            _wait_blocked(f"http://127.0.0.1:{PORT}/pypi/simple/malware-pkg/")
             self._warmup()
             samples = [self._k6(image, rnd, sc, cg) for sc in scenarios]
             rss = _mem_peak(cg, name)
             return ImageRun(image, rnd, startup, rss), samples
+        except Exception:
+            _diagnose(name)
+            raise
         finally:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
             subprocess.run(["docker", "volume", "rm", "-f", volume], capture_output=True, check=False)
@@ -263,7 +287,6 @@ class Harness:
         # First artifact downloads populate the verified cache.
         self._k6_raw("artifact_cached", "throughput", vus=2, rate=0, duration="3s")
         self._k6_raw("artifact_big", "throughput", vus=1, rate=0, duration="5s")
-        _wait_blocked(base + "/pypi/simple/malware-pkg/")
 
     def _k6_raw(self, scenario: str, mode: str, *, vus: int, rate: int, duration: str) -> dict[str, Any]:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:

@@ -19,8 +19,11 @@ HTTP 451 responses of the blocked-package scenario as errors. 0.0.3 has the same
 - Quick start (README and website): the install example runs pip in a throwaway virtualenv, since Homebrew and
   current Linux Pythons refuse pip installs outside one, and bash on macOS gets its own shell setup
   (`~/.bash_profile`, which Terminal's login shells read).
-- Release performance gate: the blocked-package scenario treats 451 as success and starts only once the
-  malware feed is loaded; pull requests now run it too.
+- A failed feed sync, for example with the registry unreachable at startup, was retried only after the poll
+  interval (60 minutes by default), so a fresh install could run that long without a malware blocklist. Failed
+  syncs are now retried after 1, 2, 4 ... minutes, up to the poll interval.
+- Release performance gate: the blocked-package scenario treats 451 as success, the harness waits for its fake
+  registry and for the malware feed before measuring, and pull requests run the scenario too.
 
 ## [0.0.1] - 2026-10-02
 

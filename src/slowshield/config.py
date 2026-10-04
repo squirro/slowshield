@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -301,6 +302,13 @@ def _apply_env(cfg: Config) -> None:
             raise ConfigError(f"SLOWSHIELD_ARTIFACT_CACHE_MAX_GB must be a number, got {v!r}") from exc
 
 
+# Public URLs end up unquoted in the Setup page's shell snippets and in npm tarball links: scheme, host, optional
+# port and a path of URL-safe characters only, so no value can carry shell syntax.
+_PUBLIC_URL = re.compile(
+    r"https?://(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/-]*)?"
+)
+
+
 def _validate(cfg: Config) -> None:
     if cfg.default_delay_days < 0:
         raise ConfigError("default_delay_days must be >= 0")
@@ -315,9 +323,12 @@ def _validate(cfg: Config) -> None:
     host, sep, port = cfg.bind_address.rpartition(":")
     if not sep or not port.isdigit() or not host:
         raise ConfigError(f"bind_address must be host:port, got {cfg.bind_address!r}")
-    for url in (cfg.public_url, cfg.upstreams.npm.public_url):
-        if url and not url.startswith(("http://", "https://")):
-            raise ConfigError(f"public URLs must start with http:// or https://, got {url!r}")
+    for name, url in (("public_url", cfg.public_url), ("upstreams.npm.public_url", cfg.upstreams.npm.public_url)):
+        if url and not _PUBLIC_URL.fullmatch(url):
+            raise ConfigError(
+                f"{name} must be a plain http(s)://host[:port][/path] URL (no query, credentials or special "
+                f"characters: it appears in copy-paste shell snippets), got {url!r}"
+            )
     for eco, mirrors in (("pypi", cfg.upstreams.pypi.mirrors), ("npm", cfg.upstreams.npm.mirrors)):
         if not mirrors:
             raise ConfigError(f"upstreams.{eco}.mirrors must not be empty")

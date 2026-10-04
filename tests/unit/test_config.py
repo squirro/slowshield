@@ -157,6 +157,22 @@ def test_token_from_config_file() -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://slowshield.example.com",
+        "http://localhost:8080",
+        "https://h.example/",
+        "https://h/sub/path_1.2~x",
+        "http://[::1]:8080",
+        "http://127.0.0.1:8080/",
+        "https://xn--bcher-kva.example/%7Euser",
+    ],
+)
+def test_valid_public_urls(url: str) -> None:
+    assert C.parse(f'public_url = "{url}"').raw.public_url == url
+
+
+@pytest.mark.parametrize(
     "toml",
     [
         "default_delay_days = -1",
@@ -165,6 +181,14 @@ def test_token_from_config_file() -> None:
         "[feeds]\npoll_interval_minutes = 0",
         'bind_address = "nope"',
         'public_url = "ftp://x"',
+        # public URLs appear unquoted in shell snippets: no shell syntax, query, credentials or spaces
+        'public_url = "https://h/$(id)"',
+        'public_url = "https://h/pypi;id"',
+        'public_url = "https://h/?a=1&b=2"',
+        'public_url = "https://user:pw@h"',
+        'public_url = "https://h/a b"',
+        'public_url = "https://h`id`"',
+        '[upstreams.npm]\npublic_url = "https://h/npm\'x"',
         "[upstreams.pypi]\nmirrors = []",
         '[upstreams.npm]\nmirrors = ["registry.npmjs.org"]',
         '[upstreams.pypi]\nhostnames = ["same"]\n[upstreams.npm]\nhostnames = ["SAME"]',

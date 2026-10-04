@@ -137,3 +137,13 @@ async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None
     assert "https://pypi.internal/" not in page and "https://npm.internal/" not in page
     plain = (await (await start_app()).client.get("/ui/setup")).text
     assert "deprecated" not in plain
+
+
+@pytest.mark.parametrize("host", ["localhost:$(id)", "127.0.0.1:80;id", "x$(id).localhost"])
+async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: str) -> None:
+    run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
+    page = (await run.client.get("/ui/setup", headers={"Host": host})).text
+    assert "$(" not in page and ";id" not in page
+    assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
+    doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()
+    assert doc["versions"]["1.0.0"]["dist"]["tarball"].startswith("https://localhost/npm/")

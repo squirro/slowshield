@@ -26,6 +26,14 @@ All notable changes to this project are documented here. The format is based on
   `/static/`. They keep working until 0.1, log a startup warning (hostnames), show a notice on the Setup page,
   and are counted in `slowshield_legacy_routing_requests_total` so operators can see when nothing uses them.
 
+### Security
+- Values shown in copy-paste shell snippets can no longer carry shell syntax (reported by Aikido). With
+  `local_http` on, a loopback `Host` header such as `localhost:$(id)` was echoed into the Setup page and npm
+  tarball links; only well-formed hosts with a numeric port qualify now. `public_url` and
+  `upstreams.npm.public_url` must be plain `http(s)://host[:port][/path]` URLs (no query, credentials or
+  special characters), and the snippet renderer refuses anything else. A config with such a URL now fails to
+  load instead of being served.
+
 ### Fixed
 - With npm hostnames configured, clients using `/npm/` got tarball links on the npm hostname, which then ended
   up in their lockfiles. Tarball links now follow the route the client used.

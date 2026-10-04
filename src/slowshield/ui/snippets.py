@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
 PATH = Path(__file__).with_name("snippets.toml")
+# Values are placed unquoted in shell code. Config validation and the loopback Host check already guarantee URL-safe
+# values; refusing anything else here means a regression fails the page instead of serving runnable shell syntax.
+_SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +31,8 @@ class Snippets:
 def render(code: str, *, pypi: str, npm: str, py_pkg: str = "requests") -> str:
     """Fill the placeholders. Plain replacement: the shell code itself may contain braces."""
     for key, value in (("pypi", pypi), ("npm", npm), ("py_pkg", py_pkg)):
+        if not _SAFE.fullmatch(value):
+            raise ValueError(f"refusing to put {value!r} into a shell snippet")
         code = code.replace("{" + key + "}", value)
     return code
 

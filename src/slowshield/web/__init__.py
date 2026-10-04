@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -83,11 +84,22 @@ def request_scheme(scope: Scope, trusted: Sequence[Network]) -> str:
     return str(scope.get("scheme", "http"))
 
 
+# A host: DNS labels or an IPv4 address, or a bracketed IPv6 address, then an optional numeric port; or a bare IPv6
+# address (as `urlsplit().hostname` returns it). Nothing else, so no value can carry URL or shell syntax.
+_HOST = re.compile(r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?|[0-9a-f.]*:[0-9a-f:.]*")
+
+
 def is_loopback_host(host: str) -> bool:
-    """`localhost`, `*.localhost`, 127.0.0.0/8 or ::1, with or without a port."""
+    """`localhost`, `*.localhost`, 127.0.0.0/8 or ::1, with or without a port.
+
+    Only well-formed hosts qualify: the value is echoed into URLs on the Setup page and in npm tarball links,
+    so anything else (`localhost:$(id)`, `x;y.localhost`) must never pass.
+    """
     h = host.strip().lower()
+    if not _HOST.fullmatch(h):
+        return False
     if h.startswith("["):
-        h = h[1 : h.find("]")] if "]" in h else h[1:]
+        h = h[1 : h.find("]")]
     elif h.count(":") == 1:
         h = h.rsplit(":", 1)[0]
     if h == "localhost" or h.endswith(".localhost"):

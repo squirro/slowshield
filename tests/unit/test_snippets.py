@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from slowshield.ui import snippets as S
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,3 +39,11 @@ def test_website_uses_every_shared_snippet() -> None:
     markers = set(re.findall(r"<!-- @snippet ([a-z]+\.[a-z-]+) -->", SITE.read_text(encoding="utf-8")))
     shared = {f"shell.{sh.id}" for sh in S.load().shells} | {"try.python"}
     assert markers == shared
+
+
+@pytest.mark.parametrize(
+    "bad", ["https://h/$(id)", "https://h/`id`", "https://h/a;b", "https://h/?a&b", "https://h/ x", "h'x"]
+)
+def test_unsafe_values_never_reach_a_snippet(bad: str) -> None:
+    with pytest.raises(ValueError, match="shell snippet"):
+        S.for_instance(bad, "https://h/npm/")

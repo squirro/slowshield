@@ -59,6 +59,8 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
 const figure = document.querySelector(".story-figure");
 const steps = [...document.querySelectorAll(".step")];
 if (figure && steps.length && "IntersectionObserver" in window) {
+  // The scene before the first step; each step then plays from its beginning when it becomes active.
+  figure.dataset.step = "0";
   const io = new IntersectionObserver(
     (entries) => {
       for (const e of entries) {

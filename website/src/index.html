@@ -141,80 +141,128 @@
 <section class="how" id="how" aria-labelledby="how-title">
   <div class="how-head">
     <p class="eyebrow">How it works</p>
-    <h2 id="how-title">Five simple ideas. One proxy.</h2>
+    <h2 id="how-title">From a maintainer's laptop to yours.</h2>
   </div>
   <div class="story">
     <div class="story-figure" data-step="1" aria-hidden="true">
-      <svg viewBox="0 0 640 400" class="diagram">
-        <!-- registries on the left: this is where releases (and attacks) arrive from -->
-        <g class="dg-box" transform="translate(16 140)">
-          <rect width="128" height="120" rx="16"/>
-          <text x="64" y="38" class="dg-title">PyPI · npm</text>
-          <text x="64" y="58">public registries</text>
-          <g class="dg-stock"><rect x="29" y="76" width="18" height="18" rx="4"/><rect x="55" y="76" width="18" height="18" rx="4"/><rect x="81" y="76" width="18" height="18" rx="4"/></g>
+      <!-- data-step (site.js) shows the layers of one step (.st .sN) and starts their animations from the beginning;
+           0 is the scene before the first step. Without motion, every layer shows how its step ends. -->
+      <svg viewBox="0 0 680 440" class="diagram">
+        <!-- who publishes: the maintainer, and in steps 2 to 4 the attacker with a stolen token -->
+        <path class="dg-line dg-pub" d="M72 96 C112 98 140 120 150 150"/>
+        <g class="dg-actor" transform="translate(44 92)"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g>
+        <text x="44" y="140" class="dg-title">maintainer</text>
+        <g class="st s2 s3 s4">
+          <path class="dg-line dg-atk" d="M72 324 C112 322 140 300 150 270"/>
+          <path class="dg-line dg-atk dg-ctl" d="M72 342 C140 392 220 384 292 374"/>
+          <g class="dg-actor bad" transform="translate(44 328)"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g>
+          <text x="44" y="376" class="dg-title dg-bad">attacker</text>
         </g>
-        <path class="dg-line dg-in" d="M144 200 H280"/>
-        <path class="dg-line dg-out o1" d="M384 200 C440 200 440 86 496 86"/>
-        <path class="dg-line dg-out o2" d="M384 200 H496"/>
-        <path class="dg-line dg-out o3" d="M384 200 C440 200 440 314 496 314"/>
-        <g class="dg-box" transform="translate(496 60)"><rect width="128" height="52" rx="12"/><text x="64" y="31" class="dg-title">laptop</text></g>
-        <g class="dg-box" transform="translate(496 174)"><rect width="128" height="52" rx="12"/><text x="64" y="31" class="dg-title">CI runner</text></g>
-        <g class="dg-box" transform="translate(496 288)"><rect width="128" height="52" rx="12"/><text x="64" y="31" class="dg-title">prod build</text></g>
-        <g transform="translate(266 136) scale(2)"><path class="dg-ripple" d="M32 4 L10 11 L10 30 C10 45 19 55 32 60 Z"/></g>
-        <use href="#ss-mark" class="dg-mark" x="266" y="136" width="128" height="128"/>
-        <text x="330" y="288" class="dg-label">SlowShield</text>
-        <!-- step 2: a fresh release waits outside -->
-        <g class="st st-2"><g transform="translate(226 200)"><circle class="dg-wait" r="19"/><rect class="dg-pkg held" x="-9" y="-9" width="18" height="18" rx="4"/></g></g>
-        <!-- step 3: known malware hits the solid side and stops -->
-        <g class="st st-3"><g transform="translate(0 200)"><rect class="dg-pkg bad dg-hit" x="-9" y="-9" width="18" height="18" rx="4"/></g></g>
-        <!-- step 4: a verified package passes through -->
-        <g class="st st-4"><rect class="dg-pkg ok dg-pass" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <!-- step 5: served from the verified cache -->
-        <g class="st st-5">
-          <g class="dg-cache" transform="translate(278 306)"><rect width="104" height="40" rx="10"/>
-            <rect class="dg-pkg ok" x="20" y="11" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="43" y="11" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="66" y="11" width="18" height="18" rx="4"/></g>
-          <circle class="dg-packet p1" r="5"/><circle class="dg-packet p2" r="5"/><circle class="dg-packet p3" r="5"/>
+        <!-- the registry and its releases: two old ones, 2.4.0 from the maintainer, 2.4.1 from the attacker -->
+        <g class="dg-box" transform="translate(92 150)">
+          <rect width="140" height="120" rx="16"/>
+          <text x="70" y="36" class="dg-title">registry</text>
+          <text x="70" y="55" class="dg-sub">PyPI · npm · Go · Maven</text>
+          <g class="dg-stock"><rect x="19" y="74" width="18" height="18" rx="4"/><rect x="47" y="74" width="18" height="18" rx="4"/></g>
+          <g class="st s1 s2 s3 s4 s5"><rect class="dg-pkg ok dg-pop k1-slot" x="75" y="74" width="18" height="18" rx="4"/></g>
+          <g class="st s2 s3 s4"><rect class="dg-pkg bad dg-pop k2-slot" x="103" y="74" width="18" height="18" rx="4"/></g>
+          <g class="st s4"><rect class="dg-altered dg-pop k4-alt" x="72" y="71" width="24" height="24" rx="6"/></g>
+        </g>
+        <!-- without SlowShield: straight from the registry to every machine -->
+        <g class="st s0 s1 s2"><path class="dg-line dg-direct" d="M232 210 C376 210 376 92 520 92"/><path class="dg-line dg-direct" d="M232 210 H520"/><path class="dg-line dg-direct" d="M232 210 C376 210 376 328 520 328"/></g>
+        <!-- with SlowShield: everything goes through it -->
+        <g class="st s3 s4 s5">
+          <path class="dg-line dg-in" d="M232 210 H318"/>
+          <g transform="translate(318 166) scale(1.375)"><path class="dg-ripple" d="M32 4 L10 11 L10 30 C10 45 19 55 32 60 Z"/></g>
+          <use href="#ss-mark" class="dg-mark" x="318" y="166" width="88" height="88"/>
+          <text x="362" y="280" class="dg-label">SlowShield</text>
+        </g>
+        <g class="st s3 s4"><path class="dg-line dg-out" d="M406 210 C463 210 463 92 520 92"/><path class="dg-line dg-out" d="M406 210 H520"/><path class="dg-line dg-out" d="M406 210 C463 210 463 328 520 328"/></g>
+        <!-- the machines that install -->
+        <g class="st s0 s1 s2 s3 s4">
+          <g class="dg-box dg-machine" transform="translate(520 68)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">laptop</text></g>
+          <g class="dg-box dg-machine" transform="translate(520 186)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">CI runner</text></g>
+          <g class="dg-box dg-machine" transform="translate(520 304)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">prod build</text></g>
+        </g>
+        <g class="st s1 s3 s4 dg-badge ok"><g transform="translate(638 70)"><g class="dg-pop k-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(638 188)"><g class="dg-pop k-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(638 306)"><g class="dg-pop k-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
+        <g class="st s2 dg-badge bad"><g transform="translate(638 70)"><g class="dg-pop k-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(638 188)"><g class="dg-pop k-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(638 306)"><g class="dg-pop k-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g></g>
+        <!-- the attacker's server, where the secrets go -->
+        <g class="st s2 s3 s4"><g class="dg-box dg-server" transform="translate(292 352)"><rect width="140" height="40" rx="10"/><text x="70" y="25" class="dg-title">attacker's server</text></g></g>
+        <!-- 1: 2.4.0 is published and installed everywhere -->
+        <g class="st s1">
+          <rect class="dg-pkg ok dg-pkt k1-pub" x="-9" y="-9" width="18" height="18" rx="4"/>
+          <rect class="dg-pkg ok dg-pkt k1-get g0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok dg-pkt k1-get g1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok dg-pkt k1-get g2" x="-9" y="-9" width="18" height="18" rx="4"/>
+        </g>
+        <!-- 2: 2.4.1 is published, installed everywhere, and the machines send their secrets out -->
+        <g class="st s2">
+          <rect class="dg-pkg bad dg-pkt k2-pub" x="-9" y="-9" width="18" height="18" rx="4"/>
+          <rect class="dg-pkg bad dg-pkt k2-get g0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad dg-pkt k2-get g1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad dg-pkt k2-get g2" x="-9" y="-9" width="18" height="18" rx="4"/>
+          <path class="dg-exl" d="M520 104 C470 150 440 300 420 352"/><path class="dg-exl" d="M520 222 C480 260 440 320 404 352"/><path class="dg-exl" d="M520 336 C484 344 456 372 432 372"/>
+          <circle class="dg-dot bad dg-pkt k2-out g0" r="4"/><circle class="dg-dot bad dg-pkt k2-out g1" r="4"/><circle class="dg-dot bad dg-pkt k2-out g2" r="4"/>
+        </g>
+        <!-- 3: 2.4.1 waits outside; the machines get 2.4.0 -->
+        <g class="st s3">
+          <g transform="translate(276 210)"><circle class="dg-wait" r="19"/><rect class="dg-pkg bad k3-held" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <rect class="dg-pkg ok dg-pkt k3-get g0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok dg-pkt k3-get g1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok dg-pkt k3-get g2" x="-9" y="-9" width="18" height="18" rx="4"/>
+        </g>
+        <!-- 4: the attacker swaps the file behind 2.4.0; the changed bytes stop at SlowShield -->
+        <g class="st s4">
+          <rect class="dg-pkg bad dg-pkt k4-pub" x="-9" y="-9" width="18" height="18" rx="4"/>
+          <g transform="translate(0 210)"><rect class="dg-pkg bad dg-hit" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+        </g>
+        <!-- 5: many machines, one download -->
+        <g class="st s5">
+          <text x="275" y="198" class="dg-note">1 download</text>
+          <g class="dg-cache" transform="translate(314 294)"><rect width="96" height="38" rx="10"/>
+            <rect class="dg-pkg ok" x="17" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="39" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="61" y="10" width="18" height="18" rx="4"/></g>
+          <path class="dg-fan" d="M406 210 C436 210 436 50 466 50"/><path class="dg-fan" d="M406 210 C436 210 436 82 466 82"/><path class="dg-fan" d="M406 210 C436 210 436 114 466 114"/><path class="dg-fan" d="M406 210 C436 210 436 146 466 146"/><path class="dg-fan" d="M406 210 C436 210 436 178 466 178"/><path class="dg-fan" d="M406 210 C436 210 436 210 466 210"/><path class="dg-fan" d="M406 210 C436 210 436 242 466 242"/><path class="dg-fan" d="M406 210 C436 210 436 274 466 274"/><path class="dg-fan" d="M406 210 C436 210 436 306 466 306"/><path class="dg-fan" d="M406 210 C436 210 436 338 466 338"/><path class="dg-fan" d="M406 210 C436 210 436 370 466 370"/>
+          <text x="567" y="26" class="dg-sub">every laptop, runner and build</text>
+          <rect class="dg-dev d0" x="470" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d1" x="504" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d2" x="538" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d3" x="572" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d4" x="606" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="640" y="42.5" width="24" height="15" rx="3"/><rect class="dg-dev d1" x="470" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d2" x="504" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d3" x="538" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d4" x="572" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="606" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="640" y="74.5" width="24" height="15" rx="3"/><rect class="dg-dev d2" x="470" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d3" x="504" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d4" x="538" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="572" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="606" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="640" y="106.5" width="24" height="15" rx="3"/><rect class="dg-dev d3" x="470" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d4" x="504" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="538" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="572" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="606" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="640" y="138.5" width="24" height="15" rx="3"/><rect class="dg-dev d4" x="470" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="504" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="538" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="572" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="606" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="640" y="170.5" width="24" height="15" rx="3"/><rect class="dg-dev d5" x="470" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="504" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="538" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="572" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="606" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="640" y="202.5" width="24" height="15" rx="3"/><rect class="dg-dev d6" x="470" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="504" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="538" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="572" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="606" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d11" x="640" y="234.5" width="24" height="15" rx="3"/><rect class="dg-dev d7" x="470" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="504" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="538" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="572" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d11" x="606" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d12" x="640" y="266.5" width="24" height="15" rx="3"/><rect class="dg-dev d8" x="470" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="504" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="538" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d11" x="572" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d12" x="606" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d13" x="640" y="298.5" width="24" height="15" rx="3"/><rect class="dg-dev d9" x="470" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="504" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d11" x="538" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d12" x="572" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d13" x="606" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d14" x="640" y="330.5" width="24" height="15" rx="3"/><rect class="dg-dev d10" x="470" y="362.5" width="24" height="15" rx="3"/><rect class="dg-dev d11" x="504" y="362.5" width="24" height="15" rx="3"/><rect class="dg-dev d12" x="538" y="362.5" width="24" height="15" rx="3"/><rect class="dg-dev d13" x="572" y="362.5" width="24" height="15" rx="3"/><rect class="dg-dev d14" x="606" y="362.5" width="24" height="15" rx="3"/><rect class="dg-dev d15" x="640" y="362.5" width="24" height="15" rx="3"/>
+          <circle class="dg-dot dg-pkt k5-get g0" r="4"/><circle class="dg-dot dg-pkt k5-get g1" r="4"/><circle class="dg-dot dg-pkt k5-get g2" r="4"/><circle class="dg-dot dg-pkt k5-get g3" r="4"/><circle class="dg-dot dg-pkt k5-get g4" r="4"/><circle class="dg-dot dg-pkt k5-get g5" r="4"/>
         </g>
         <!-- one caption per step, always in the same place -->
-        <text x="320" y="388" class="st st-1 dg-callout">one URL for pip · uv · Poetry · npm · pnpm · Yarn · Bun · go</text>
-        <text x="320" y="388" class="st st-2 dg-callout held">held back · unlocks in 6 d 23 h</text>
-        <text x="320" y="388" class="st st-3 dg-callout bad">HTTP 451 · known malware, refused</text>
-        <text x="320" y="388" class="st st-4 dg-callout ok">sha256 ✓  registry digest ✓  first seen ✓</text>
-        <text x="320" y="388" class="st st-5 dg-callout ok">fetched once, served from the cache many times</text>
+        <text x="340" y="430" class="st s1 dg-callout ok">2.4.0 published · on every machine within minutes</text>
+        <text x="340" y="430" class="st s2 dg-callout bad">2.4.1 carries a payload · every machine runs it and sends its secrets out</text>
+        <text x="340" y="430" class="st s3 dg-callout held">2.4.1 held back · unlocks in 6 d 23 h · installs get 2.4.0</text>
+        <text x="340" y="430" class="st s4 dg-callout bad">2.4.0 changed after release · fingerprint mismatch · cut off, alert sent</text>
+        <text x="340" y="430" class="st s5 dg-callout ok">1 download from the registry · served to every machine from the cache</text>
       </svg>
     </div>
     <ol class="steps">
       <li class="step" data-step="1">
-        <span class="step-n">01</span>
-        <h3>One URL. Every tool.</h3>
-        <p>Point pip, uv, Poetry, npm, pnpm, Yarn, Bun or go at SlowShield. Nothing else changes: the same packages, the
-          same commands, the same lockfiles. Developers don't have to think about it — that's the point.</p>
+        <span class="step-n">01 · without SlowShield</span>
+        <h3>A maintainer publishes. Everyone installs.</h3>
+        <p>The maintainer releases 2.4.0. Within minutes it is on every laptop, CI runner and build that installs or
+          updates the package. That's how it should be: a real release from the real maintainer.</p>
       </li>
       <li class="step" data-step="2">
-        <span class="step-n">02</span>
-        <h3>Fresh releases wait their turn.</h3>
-        <p>Anything published less than a few days ago simply isn't there yet. Indexes show the newest release that
-          has stood the test of time, <code>latest</code> moves back to it, and a lockfile that pins a too-new version
-          gets a clear answer: <em>try again in 2 days</em>.</p>
+        <span class="step-n">02 · without SlowShield</span>
+        <h3>Then someone steals the maintainer's token.</h3>
+        <p>The attacker publishes 2.4.1 with a payload. It's the newest version, so the same machines install it just as
+          fast, run it, and send their tokens and keys to a server the attacker controls. Nobody on your side did
+          anything wrong.</p>
       </li>
       <li class="step" data-step="3">
-        <span class="step-n">03</span>
-        <h3>Known malware is blocked within the hour.</h3>
-        <p>Live advisory streams from OSV / OpenSSF and the GitHub Advisory Database are applied automatically.
-          A malicious package or version is refused with HTTP 451 — every time, even for brand-new packages.</p>
+        <span class="step-n">03 · with SlowShield</span>
+        <h3>New releases wait their turn.</h3>
+        <p>Now every tool goes through SlowShield: pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle and more. A release
+          younger than the delay isn't offered yet, so installs get 2.4.0, the newest release that's old enough, and a
+          lockfile pinned to 2.4.1 gets a clear answer: <em>try again in 6 days</em>. Once an advisory feed reports
+          2.4.1 as malware, it is refused for good, with HTTP 451.</p>
       </li>
       <li class="step" data-step="4">
-        <span class="step-n">04</span>
-        <h3>Every byte verified. Tampering caught mid-stream.</h3>
-        <p>Each download is checked against the registry's own digests and against the fingerprint recorded the first
-          time anyone fetched it. If the bytes ever change, the transfer is cut off before it completes and your team
-          gets an alert.</p>
+        <span class="step-n">04 · with SlowShield</span>
+        <h3>Every byte is checked.</h3>
+        <p>Say someone swaps the file behind 2.4.0, on the registry or on the way. SlowShield checks every download
+          against the registry's own digest and against the fingerprint it recorded the first time anyone fetched the
+          file. If the bytes don't match, the transfer is cut off before it completes and your team gets an alert.</p>
       </li>
       <li class="step" data-step="5">
-        <span class="step-n">05</span>
-        <h3>Fetched once. Served fast.</h3>
-        <p>Verified artifacts land in a local cache: faster installs and CI, calm during registry outages, and far less
-          traffic on the public infrastructure we all depend on.</p>
+        <span class="step-n">05 · with SlowShield</span>
+        <h3>Fetched once, served to everyone.</h3>
+        <p>One SlowShield serves the whole team: laptops, CI runners, build servers and containers. Each file is
+          downloaded from the registry once, verified, and served from the local cache after that. Installs and CI get
+          faster, a registry outage matters less, and the registries see one download instead of hundreds.</p>
       </li>
     </ol>
   </div>

@@ -61,7 +61,7 @@ h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: -0.0
 h2 { font-size: clamp(2rem, 4.2vw, 3.4rem); max-width: 22ch; }
 h3 { font-size: 1.2rem; letter-spacing: -0.01em; }
 section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin: 0 auto; position: relative; }
-.eyebrow { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.9rem; font-weight: 650; color: var(--brand); margin: 0 0 1rem; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.14em; font-size: 1.05rem; font-weight: 650; color: var(--brand); margin: 0 0 1rem; }
 .lead { font-size: clamp(1.08rem, 1.6vw, 1.3rem); color: var(--muted); max-width: 62ch; }
 .muted { color: var(--muted); }
 .section-head { margin-bottom: 3.5rem; }
@@ -101,7 +101,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .btn-ghost { border: 1px solid var(--line); color: var(--ink); background: color-mix(in srgb, var(--surface) 60%, transparent); }
 
 /* ---- hero ---------------------------------------------------------------------------------------------- */
-.hero { min-height: min(calc(100svh - 64px), 980px); display: grid; grid-template-columns: 1.25fr 0.75fr; align-items: center; gap: 2.5rem; padding-top: 3rem; }
+.hero { min-height: min(calc(100svh - 64px), 980px); display: grid; grid-template-columns: 1.25fr 0.75fr; align-items: center; gap: 2.5rem; padding-top: 5.5rem; }
 .hero h1 { font-size: clamp(2.4rem, 5.2vw, 4.4rem); font-weight: 750; letter-spacing: -0.018em; text-wrap: balance; }
 .grad { background: linear-gradient(100deg, var(--brand) 10%, var(--brand-2) 70%, var(--brand) 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -175,7 +175,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 
 /* ---- how: scrollytelling -------------------------------------------------------------------------------- */
 .how-head { margin-bottom: 2rem; }
-.story { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 3rem; }
+.story { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 2.5rem; }
 .story-figure { position: sticky; top: 14vh; height: 72vh; display: flex; align-items: center; order: 2; }
 .diagram { width: 100%; height: auto; overflow: visible; }
 .steps { list-style: none; margin: 0; padding: 0; order: 1; }
@@ -195,55 +195,117 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 }
 
 .diagram text { fill: var(--muted); font: 13px var(--font); text-anchor: middle; }
-.dg-box rect { fill: var(--surface); stroke: var(--line); }
-.dg-box .dg-title { fill: var(--ink); font-weight: 600; }
+.diagram .dg-title { fill: var(--ink); font-weight: 600; }
+.diagram .dg-sub { font-size: 10.5px; }
+.diagram .dg-bad, .diagram .dg-server .dg-title { fill: var(--bad); }
+.dg-box rect { fill: var(--surface); stroke: var(--line); transition: stroke 0.4s, fill 0.4s; }
 .dg-stock rect { fill: var(--muted); stroke: none; opacity: 0.55; }
+.dg-actor > circle { fill: var(--surface); stroke: var(--ok); stroke-width: 1.5; }
+.dg-actor .dg-person { fill: var(--muted); }
+.dg-actor.bad > circle { stroke: var(--bad); } .dg-actor.bad .dg-person { fill: var(--bad); }
 .dg-line { fill: none; stroke: var(--line); stroke-width: 2.5; transition: stroke 0.5s, opacity 0.5s; }
+.dg-atk { stroke: color-mix(in srgb, var(--bad) 60%, var(--line)); stroke-width: 2; stroke-dasharray: 5 6; }
+.dg-ctl { stroke-width: 1.5; }
 .dg-mark { color: var(--brand); transition: filter 0.6s; }
 .diagram .dg-label { fill: var(--ink); font: 650 14px var(--display); }
-.dg-pkg { stroke: none; }
+.dg-pkg, .dg-box .dg-pkg { stroke: none; }
 .dg-pkg.held { fill: var(--amber); } .dg-pkg.bad { fill: var(--bad); } .dg-pkg.ok { fill: var(--ok); }
+.dg-box .dg-altered { fill: none; stroke: var(--bad); stroke-width: 2.5; }
+.dg-pop, .dg-dev { transform-box: fill-box; transform-origin: center; }
+.dg-badge circle { stroke: none; }
+.dg-badge path { fill: none; stroke: var(--on-fill); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.dg-badge.ok circle { fill: var(--ok); } .dg-badge.bad circle { fill: var(--bad); }
+.dg-server rect { stroke: var(--bad); }
+.dg-exl { fill: none; stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 3 5; }
 .dg-wait { fill: none; stroke: var(--amber); stroke-width: 2; stroke-dasharray: 4 5; transform-box: fill-box; transform-origin: center; }
 .dg-ripple { fill: none; stroke: var(--bad); stroke-width: 1; opacity: 0; transform-box: fill-box; transform-origin: center; }
 .dg-cache rect:first-child { fill: var(--surface); stroke: var(--ok); stroke-width: 1.5; }
-.dg-packet { fill: var(--ok); opacity: 0; }
+.dg-fan { fill: none; stroke: color-mix(in srgb, var(--ok) 45%, var(--line)); stroke-width: 1.2; }
+.dg-dev { fill: var(--surface); stroke: var(--ok); stroke-width: 1.2; }
+.dg-dot { fill: var(--ok); } .dg-dot.bad { fill: var(--bad); }
+.diagram .dg-note { font: 11px var(--mono); fill: var(--ok); }
 .diagram .dg-callout { font: 12.5px var(--mono); fill: var(--ink); }
 .diagram .dg-callout.held { fill: var(--amber); } .diagram .dg-callout.bad { fill: var(--bad); } .diagram .dg-callout.ok { fill: var(--ok); }
-/* only the active step's layer and caption are shown; no step overlaps another */
+/* only the active step's layers show; packages in transit are hidden unless they are moving */
 .st { opacity: 0; transition: opacity 0.5s ease; }
-.story-figure[data-step="1"] .st-1, .story-figure[data-step="2"] .st-2, .story-figure[data-step="3"] .st-3,
-.story-figure[data-step="4"] .st-4, .story-figure[data-step="5"] .st-5 { opacity: 1; }
-.story-figure[data-step="1"] .dg-line { stroke: var(--brand); stroke-dasharray: 6 8; }
-.story-figure[data-step="2"] .dg-in { stroke: var(--amber); }
-.story-figure[data-step="3"] .dg-in { stroke: var(--bad); }
-.story-figure[data-step="3"] .dg-mark { filter: drop-shadow(0 0 14px color-mix(in srgb, var(--bad) 55%, transparent)); }
-.story-figure[data-step="4"] .dg-in, .story-figure[data-step="4"] .o2 { stroke: var(--ok); }
-.story-figure[data-step="5"] .dg-in { stroke-dasharray: 3 8; opacity: 0.35; }
-.story-figure[data-step="5"] .dg-out { stroke: var(--ok); }
-/* resting positions (also the reduced-motion frame) */
-.dg-hit { transform: translateX(270px); }
-.dg-pass { transform: translate(450px, 200px); }
-.dg-packet { offset-rotate: 0deg; offset-distance: 60%; }
-.p1 { offset-path: path("M384 200 C440 200 440 86 496 86"); } .p2 { offset-path: path("M384 200 H496"); } .p3 { offset-path: path("M384 200 C440 200 440 314 496 314"); }
+.story-figure[data-step="0"] .s0, .story-figure[data-step="1"] .s1, .story-figure[data-step="2"] .s2,
+.story-figure[data-step="3"] .s3, .story-figure[data-step="4"] .s4, .story-figure[data-step="5"] .s5 { opacity: 1; }
+.dg-pkt { offset-rotate: 0deg; opacity: 0; }
+.story-figure[data-step="1"] .dg-pub, .story-figure[data-step="1"] .dg-direct { stroke: var(--ok); }
+.story-figure[data-step="2"] .dg-direct { stroke: var(--bad); }
+.story-figure[data-step="2"] .dg-machine rect { stroke: var(--bad); fill: color-mix(in srgb, var(--bad) 14%, var(--surface)); }
+.story-figure[data-step="3"] .dg-in { stroke: var(--amber); }
+.story-figure[data-step="4"] .dg-in { stroke: var(--bad); }
+.story-figure[data-step="3"] .dg-out, .story-figure[data-step="4"] .dg-out { stroke: var(--ok); }
+.story-figure[data-step="3"] .dg-server, .story-figure[data-step="4"] .dg-server { opacity: 0.35; }
+.story-figure[data-step="4"] .dg-mark { filter: drop-shadow(0 0 14px color-mix(in srgb, var(--bad) 55%, transparent)); }
+.story-figure[data-step="5"] .dg-in { stroke: var(--ok); stroke-dasharray: 3 8; opacity: 0.6; }
+/* resting position of the refused package (also the reduced-motion frame) */
+.dg-hit { transform: translateX(300px); }
+.k1-pub { offset-path: path("M72 96 C130 100 172 160 176 233"); }
+.k2-pub { offset-path: path("M72 324 C140 320 200 300 204 233"); }
+.k4-pub { offset-path: path("M72 324 C130 318 172 300 176 233"); }
+.k1-get.g0, .k2-get.g0 { offset-path: path("M232 210 C376 210 376 92 520 92"); }
+.k1-get.g1, .k2-get.g1 { offset-path: path("M232 210 H520"); }
+.k1-get.g2, .k2-get.g2 { offset-path: path("M232 210 C376 210 376 328 520 328"); }
+.k2-out.g0 { offset-path: path("M520 104 C470 150 440 300 420 352"); }
+.k2-out.g1 { offset-path: path("M520 222 C480 260 440 320 404 352"); }
+.k2-out.g2 { offset-path: path("M520 336 C484 344 456 372 432 372"); }
+.k3-get.g0 { offset-path: path("M406 210 C463 210 463 92 520 92"); }
+.k3-get.g1 { offset-path: path("M406 210 H520"); }
+.k3-get.g2 { offset-path: path("M406 210 C463 210 463 328 520 328"); }
+.k5-get.g0 { offset-path: path("M406 210 C436 210 436 82 466 82 H572"); }
+.k5-get.g1 { offset-path: path("M406 210 C436 210 436 178 466 178 H640"); }
+.k5-get.g2 { offset-path: path("M406 210 C436 210 436 242 466 242 H504"); }
+.k5-get.g3 { offset-path: path("M406 210 C436 210 436 338 466 338 H606"); }
+.k5-get.g4 { offset-path: path("M406 210 C436 210 436 114 466 114 H470"); }
+.k5-get.g5 { offset-path: path("M406 210 C436 210 436 306 466 306 H538"); }
 @media (prefers-reduced-motion: no-preference) {
-  .story-figure[data-step="1"] .dg-line { animation: flow 0.9s linear infinite; }
-  .dg-wait { animation: spin-r 4s linear infinite; }
-  .dg-hit { animation: dg-hit 2.4s cubic-bezier(.55,0,.9,.45) infinite; }
-  .dg-ripple { animation: dg-ripple 2.4s ease-out infinite; }
-  .dg-pass { offset-path: path("M160 200 H486"); offset-rotate: 0deg; transform: none; animation: dg-pass 3.6s ease-in-out infinite; }
-  .dg-packet { animation: dg-serve 1.8s ease-in infinite; }
-  .p2 { animation-delay: 0.6s; } .p3 { animation-delay: 1.2s; }
+  /* 1: the maintainer publishes 2.4.0, every machine installs it */
+  .story-figure[data-step="1"] .k1-pub { animation: dg-travel 1s ease-in-out 0.2s both; }
+  .story-figure[data-step="1"] .k1-slot { animation: pop 0.35s ease-out 1.1s both; }
+  .story-figure[data-step="1"] .k1-get { animation: dg-travel 1.2s ease-in-out 1.4s both; }
+  .story-figure[data-step="1"] .k-ok { animation: pop 0.35s ease-out 2.6s both; }
+  /* 2: the attacker publishes 2.4.1, every machine runs it and sends its secrets out */
+  .story-figure[data-step="2"] .k2-pub { animation: dg-travel 1s ease-in-out 0.5s both; }
+  .story-figure[data-step="2"] .k2-slot { animation: pop 0.35s ease-out 1.4s both; }
+  .story-figure[data-step="2"] .dg-direct { animation: dg-turn 0.4s 1.7s both; }
+  .story-figure[data-step="2"] .k2-get { animation: dg-travel 1.2s ease-in-out 1.7s both; }
+  .story-figure[data-step="2"] .dg-machine rect { animation: dg-infect 0.4s 2.9s both; }
+  .story-figure[data-step="2"] .k-bad { animation: pop 0.35s ease-out 2.9s both; }
+  .story-figure[data-step="2"] .dg-exl { animation: dg-fade 0.4s 3.1s both; }
+  .story-figure[data-step="2"] .k2-out { animation: dg-travel 1.4s linear 3.3s infinite both; }
+  .story-figure[data-step="2"] .k2-out.g1 { animation-delay: 3.75s; } .story-figure[data-step="2"] .k2-out.g2 { animation-delay: 4.2s; }
+  /* 3: 2.4.1 waits outside, the machines get 2.4.0 */
+  .story-figure[data-step="3"] .k3-held { animation: dg-arrive 0.8s ease-out 0.6s both; }
+  .story-figure[data-step="3"] .dg-wait { animation: spin-r 4s linear infinite, dg-fade 0.3s 1.3s both; }
+  .story-figure[data-step="3"] .k3-get { animation: dg-travel 1.8s ease-in 1s infinite both; }
+  .story-figure[data-step="3"] .k3-get.g1 { animation-delay: 1.6s; } .story-figure[data-step="3"] .k3-get.g2 { animation-delay: 2.2s; }
+  /* 4: the file behind 2.4.0 is swapped, the changed bytes stop at SlowShield */
+  .story-figure[data-step="4"] .k4-pub { animation: dg-travel 1s ease-in-out 0.2s both; }
+  .story-figure[data-step="4"] .k4-alt { animation: pop 0.35s ease-out 1.1s both; }
+  .story-figure[data-step="4"] .dg-hit { animation: dg-hit 2.4s cubic-bezier(.55,0,.9,.45) 1.5s infinite both; }
+  .story-figure[data-step="4"] .dg-ripple { animation: dg-ripple 2.4s ease-out 1.5s infinite both; }
+  /* 5: the machines appear in a wave, served from the cache */
+  .story-figure[data-step="5"] .dg-dev { animation: pop 0.3s ease-out both; }
+  .story-figure[data-step="5"] .dg-dev.d1 { animation-delay: 0.05s; } .story-figure[data-step="5"] .dg-dev.d2 { animation-delay: 0.10s; } .story-figure[data-step="5"] .dg-dev.d3 { animation-delay: 0.15s; } .story-figure[data-step="5"] .dg-dev.d4 { animation-delay: 0.20s; } .story-figure[data-step="5"] .dg-dev.d5 { animation-delay: 0.25s; } .story-figure[data-step="5"] .dg-dev.d6 { animation-delay: 0.30s; } .story-figure[data-step="5"] .dg-dev.d7 { animation-delay: 0.35s; } .story-figure[data-step="5"] .dg-dev.d8 { animation-delay: 0.40s; } .story-figure[data-step="5"] .dg-dev.d9 { animation-delay: 0.45s; } .story-figure[data-step="5"] .dg-dev.d10 { animation-delay: 0.50s; } .story-figure[data-step="5"] .dg-dev.d11 { animation-delay: 0.55s; } .story-figure[data-step="5"] .dg-dev.d12 { animation-delay: 0.60s; } .story-figure[data-step="5"] .dg-dev.d13 { animation-delay: 0.65s; } .story-figure[data-step="5"] .dg-dev.d14 { animation-delay: 0.70s; } .story-figure[data-step="5"] .dg-dev.d15 { animation-delay: 0.75s; }
+  .story-figure[data-step="5"] .k5-get { animation: dg-travel 1.6s ease-in 0.9s infinite both; }
+  .story-figure[data-step="5"] .k5-get.g1 { animation-delay: 1.25s; } .story-figure[data-step="5"] .k5-get.g2 { animation-delay: 1.60s; } .story-figure[data-step="5"] .k5-get.g3 { animation-delay: 1.95s; } .story-figure[data-step="5"] .k5-get.g4 { animation-delay: 2.30s; } .story-figure[data-step="5"] .k5-get.g5 { animation-delay: 2.65s; }
 }
-.story-figure:not([data-step="3"]) .dg-ripple { animation: none; }
 @keyframes spin-r { to { transform: rotate(360deg); } }
+@keyframes dg-travel { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes dg-arrive { from { transform: translateX(-40px); opacity: 0; } }
+@keyframes dg-fade { from { opacity: 0; } }
+@keyframes dg-turn { from { stroke: var(--line); } }
+/* both ends as color-mix: Chrome interpolates a plain colour into a color-mix() one wrongly */
+@keyframes dg-infect { from { stroke: var(--line); fill: color-mix(in srgb, var(--bad) 0%, var(--surface)); } }
 @keyframes dg-hit {
-  0% { transform: translateX(160px); opacity: 0; }
+  0% { transform: translateX(236px); opacity: 0; }
   15% { opacity: 1; }
-  55% { transform: translateX(270px); opacity: 1; }
-  62%, 100% { transform: translateX(272px) scaleX(0.4); opacity: 0; }
+  55% { transform: translateX(308px); opacity: 1; }
+  62%, 100% { transform: translateX(310px) scaleX(0.4); opacity: 0; }
 }
 @keyframes dg-ripple { 0%, 54% { opacity: 0; transform: scale(1); } 58% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1.25); } }
-@keyframes dg-pass { 0% { offset-distance: 0%; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
 @keyframes dg-serve { 0% { offset-distance: 0%; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
 
 /* ---- edge / caching ----------------------------------------------------------------------------------- */

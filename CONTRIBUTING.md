@@ -26,8 +26,9 @@ uvx zizmor==1.30.1 --persona=pedantic .github/   # when touching workflows
   closing or could be opening. Never trust upstream data in the UI (it is escaped by Jinja2 autoescape —
   don't use `|safe` on anything derived from feeds or registries).
 - **Performance matters.** Keep blocking work off the event loop, avoid per-request allocations of large
-  objects, and run `uv run python -m perf micro` before/after changes to hot paths. Release builds are
-  gated on the macro benchmarks (see `perf/README.md`).
+  objects, and run `uv run python -m perf micro` before/after changes to hot paths. Every pull request
+  compares the macro benchmarks against its base branch (see `perf/README.md`); add the `skip-perf` label
+  when a change can't affect performance.
 - **Containers** use Amazon Linux 2023 only (builder stages too), pinned by digest.
 - **Workflows** must pass zizmor's pedantic persona: SHA-pinned actions with version comments, explicit
   minimal permissions with comments, no `${{ }}` inside `run:`, `persist-credentials: false`.
@@ -43,5 +44,5 @@ uvx zizmor==1.30.1 --persona=pedantic .github/   # when touching workflows
 
 ## Releases
 
-Maintainers tag `vX.Y.Z` on `main`; the release workflow builds both architectures, runs e2e tests and the
-performance gate against the previous release, then promotes the images and creates the GitHub Release.
+Maintainers tag `vX.Y.Z` on `main`; the release workflow builds both architectures, runs the e2e tests and the
+observability smoke test on the pushed images, then promotes them and creates the GitHub Release.

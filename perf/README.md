@@ -10,9 +10,9 @@ Two layers, both runnable locally and in CI:
 ## Why A/B instead of absolute numbers
 
 GitHub-hosted runners are shared VMs (2 vCPUs for private repositories), so absolute throughput varies from
-run to run by more than the regressions we care about. The release workflow therefore never compares against
-numbers recorded on another day: it measures the **previous release image and the candidate on the same
-runner, in the same job**, alternating order every round (AB, BA, AB, …), and compares medians.
+run to run by more than the regressions we care about. CI therefore never compares against numbers recorded
+on another day: it measures the **base branch's image and the candidate on the same runner, in the same job**,
+alternating order every round (AB, BA, AB, …), and compares medians.
 
 Noise controls:
 
@@ -42,8 +42,13 @@ The first tagged release has no predecessor: its run *establishes* the baseline 
 holds per scenario: when the baseline image does not serve one yet (the Go and Maven scenarios against a release from
 before their support), the scenario is reported without a comparison, and only its error rate is gated. Such a baseline also
 gets `perf/slowshield.toml` without the `[upstreams.go]` and `[upstreams.maven]` sections, which it would reject.
-Every later release is gated against the image currently tagged `latest` in Harbor. Reports are attached to
-the GitHub Release and written to the job summary; raw samples are uploaded as `results.json`.
+In CI, every pull request compares its image against one built from its base branch (`--profile quick`,
+3 rounds, informational: the report goes to the job summary and the `perf-<arch>` artifact, and doesn't fail the
+build). It runs by default; the `skip-perf` label skips it and the micro benchmarks, for a change that can't affect
+performance (the label is read when the job runs, so adding it and re-running the job is enough). Releases don't
+run it again. The gate (`--gate`, thresholds in `thresholds.toml`) is for running by hand, for example against
+the current release before tagging a performance-sensitive change:
+`uv run python -m perf run --gate --candidate slowshield:dev --baseline ghcr.io/squirro/slowshield:latest`.
 
 ## Running locally
 

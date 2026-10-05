@@ -12,10 +12,10 @@ Both build amd64 and arm64 on native GitHub-hosted runners without build caches,
 and a provenance attestation, then create the multi-arch tags. Pull requests build the images too (`ci.yml`)
 but never push them.
 
-The release additionally runs, per architecture, the end-to-end tests, the performance gate against the
-previous `latest` (skipped for the first release) and the observability smoke test. Nothing is tagged unless
-both architectures pass, and only then is the GitHub Release created with the CHANGELOG section and the
-performance reports.
+The release additionally runs, per architecture, the end-to-end tests and the observability smoke test on the
+pushed images. Nothing is tagged unless both architectures pass, and only then is the GitHub Release created with
+the CHANGELOG section. Performance is compared on the pull requests that make up the release (`ci.yml`), not
+again at release time.
 
 ## Setup
 

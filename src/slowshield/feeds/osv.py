@@ -1,4 +1,4 @@
-"""OSV malicious-package feed (OpenSSF `MAL-*` advisories) for PyPI and npm. No token required.
+"""OSV malicious-package feed (OpenSSF `MAL-*` advisories) for every served ecosystem. No token required.
 
 First sync downloads `<eco>/all.zip` (streamed to disk, read entry by entry with size caps). Later
 syncs read the head of `<eco>/modified_id.csv` (newest first, `<RFC3339>,<ID>` per line) until the
@@ -18,13 +18,14 @@ from typing import Any
 
 import msgspec
 
-from slowshield import names
+from slowshield.ecosystems import ECOSYSTEMS as REGISTRY
+from slowshield.ecosystems import normalize
 from slowshield.feeds import Advisory, BlockSpec, apply_advisories, load_state, save_state
 from slowshield.upstream import TooLargeError, UpstreamError
 
 log = logging.getLogger(__name__)
 
-ECOSYSTEMS = {"PyPI": "pypi", "npm": "npm"}
+ECOSYSTEMS = {e.osv: e.id for e in REGISTRY.values()}  # OSV name -> ours
 MAX_ZIP_BYTES = 4 << 30
 MAX_ENTRY_BYTES = 8 << 20
 MAX_DOC_BYTES = 8 << 20
@@ -96,7 +97,7 @@ def to_advisory(v: OsvVuln) -> Advisory | None:
         eco = ECOSYSTEMS.get(aff.package.ecosystem)
         if eco is None:
             continue
-        name = names.normalize_pypi(aff.package.name) if eco == "pypi" else names.normalize_npm(aff.package.name)
+        name = normalize(eco, aff.package.name)
         if aff.versions:
             specs.extend(BlockSpec(eco, name, version=ver) for ver in dict.fromkeys(aff.versions))
             continue

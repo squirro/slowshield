@@ -1,4 +1,4 @@
-"""Serving artifacts (wheels, sdists, npm tarballs): cache hit -> zero-copy file; miss -> verified stream.
+"""Serving artifacts (wheels, sdists, npm tarballs, Go modules): cache hit -> zero-copy file; miss -> verified stream.
 
 On a miss the body is streamed to the client while being hashed and teed into the cache. The final
 chunk is held back until every digest has been checked, so a client never receives a complete
@@ -8,11 +8,13 @@ against the announced Content-Length), the event is recorded and the temp file d
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from starlette.responses import FileResponse, Response
 from starlette.types import Receive, Scope, Send
@@ -53,6 +55,11 @@ class ArtifactRequest:
     upstream_url: str
     expected: Expected
     content_type: str = "application/octet-stream"
+    # A check that needs the whole body (the Go zip `h1:` hashes the files inside the zip): called with the
+    # spooled temp file before the final chunk is released; returns a problem description, or None.
+    check_file: Callable[[Path], str | None] | None = None
+    upstream_digest: str | None = None  # recorded when `expected` carries no sha256/sha512
+    error: Callable[..., Response] = field(default=error)  # error responses, in the format the client reads
 
 
 @dataclass(slots=True)
@@ -110,7 +117,7 @@ AsgiResponse = Response | StreamedArtifact
 
 
 def _tamper_response(req: ArtifactRequest) -> Response:
-    return error(
+    return req.error(
         451,
         "tamper_detected",
         artifact=req.key,
@@ -150,7 +157,7 @@ class ArtifactServer:
         rec = self.record_for(req.ecosystem, req.key)
         if rec is not None and rec.tampered:
             self.recorder.decision(req.ecosystem, "artifact", "tampered")
-            return error(
+            return req.error(
                 451,
                 "tamper_detected",
                 artifact=req.key,
@@ -194,15 +201,15 @@ class ArtifactServer:
         except UpstreamError as exc:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
-            return error(502, "upstream_error", detail=exc.detail)
+            return req.error(502, "upstream_error", detail=exc.detail)
         if up.status in (404, 410):
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "not_found")
-            return error(404, "not_found")
+            return req.error(404, "not_found")
         if not 200 <= up.status < 300:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
-            return error(502, "upstream_error", detail=f"upstream returned {up.status}")
+            return req.error(502, "upstream_error", detail=f"upstream returned {up.status}")
 
         size = req.expected.size or up.content_length
         if req.expected.size is None and up.content_length is not None:
@@ -229,6 +236,10 @@ class ArtifactServer:
                     yield pending
                 pending = chunk
             problems = verifier.problems()
+            if req.check_file is not None and tee is not None and not problems:
+                problem = await asyncio.to_thread(req.check_file, tee.path)
+                if problem:
+                    problems.append(problem)
             if verifier.tofu_mismatch():
                 independently_verified = not problems and bool(
                     req.expected.sha256 or req.expected.sha512 or req.expected.blake2b_256
@@ -243,7 +254,7 @@ class ArtifactServer:
                 await self._integrity_mismatch(req, verifier, client_ip, problems)
                 raise IntegrityAbort(
                     req.key,
-                    error(502, "integrity_mismatch", artifact=req.key, detail="; ".join(problems)),
+                    req.error(502, "integrity_mismatch", artifact=req.key, detail="; ".join(problems)),
                 )
             stored = await self._remember(req, verifier)
             if stored is not None and stored != verifier.sha256:
@@ -295,7 +306,8 @@ class ArtifactServer:
         """Insert-or-keep the TOFU digest; returns the digest now on record."""
         now = self.clock.now()
         sha = verifier.sha256
-        digest = req.expected.sha256 or (req.expected.sha512.hex() if req.expected.sha512 else None)
+        e = req.expected
+        digest = e.sha256 or (e.sha512.hex() if e.sha512 else None) or req.upstream_digest
 
         def op(conn):  # type: ignore[no-untyped-def]
             conn.execute(
@@ -319,7 +331,8 @@ class ArtifactServer:
             extra={"artifact": req.key, "legacy_sha256": req.expected.tofu_sha256, "sha256": verifier.sha256},
         )
         sha = verifier.sha256
-        digest = req.expected.sha256 or (req.expected.sha512.hex() if req.expected.sha512 else None)
+        e = req.expected
+        digest = e.sha256 or (e.sha512.hex() if e.sha512 else None) or req.upstream_digest
 
         def op(conn):  # type: ignore[no-untyped-def]
             conn.execute(

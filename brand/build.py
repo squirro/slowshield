@@ -296,7 +296,7 @@ def social_preview() -> str:
     p = DARK
     title, _ = wordmark(470, 250, 104, p)
     tag, _ = text_el(TAGLINE, 650, 42, 474, 318, p["brand"])
-    l1, _ = text_el("Supply-chain shield for PyPI and npm.", 400, 30, 474, 392, p["ink"])
+    l1, _ = text_el("Supply-chain shield for PyPI, npm and Go.", 400, 30, 474, 392, p["ink"])
     l2, _ = text_el("Known-bad is blocked. Brand-new is held back.", 400, 30, 474, 436, p["muted"])
     foot, _ = text_el("slowshield.org  ·  open source, Apache-2.0", 500, 22, 474, 560, p["muted"])
     inner = (
@@ -316,7 +316,7 @@ def readme_banner(p: dict[str, str], dark: bool) -> str:
     title, _ = wordmark(x, 132, 64, p)
     tag, _ = text_el(TAGLINE, 650, 26, x + 2, 176, p["brand"])
     sub, _ = text_el(
-        "A supply-chain shield for PyPI and npm: known-bad is blocked, brand-new is held back.",
+        "A supply-chain shield for PyPI, npm and Go: known-bad is blocked, brand-new is held back.",
         400,
         19,
         x + 2,

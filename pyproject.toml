@@ -2,7 +2,7 @@
 name = "slowshield"
 dynamic = []
 version = "0.0.4"
-description = "Supply-chain defence proxy for PyPI and npm: delays new releases, blocks known malware, detects tampering."
+description = "Supply-chain defence proxy for PyPI, npm and Go modules: delays new releases, blocks known malware, detects tampering."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -92,7 +92,7 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = ["-ra", "--strict-markers", "--import-mode=importlib", "-m", "not e2e and not live"]
 markers = [
   "e2e: end-to-end tests against built containers (deselected unless -m e2e)",
-  "live: tests that reach the real PyPI/npm registries",
+  "live: tests that reach the real registries (PyPI, npm, the Go module mirror)",
 ]
 filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 

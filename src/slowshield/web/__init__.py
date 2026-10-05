@@ -1,4 +1,4 @@
-"""Shared HTTP helpers: JSON error responses, client-IP resolution, content negotiation."""
+"""Shared HTTP helpers: JSON and plain-text error responses, client-IP resolution, content negotiation."""
 
 from __future__ import annotations
 
@@ -28,6 +28,20 @@ def error(status: int, code: str, *, headers: dict[str, str] | None = None, **fi
 
 def not_found() -> Response:
     return error(404, "not_found")
+
+
+TEXT = "text/plain; charset=utf-8"
+
+
+def text_error(status: int, message: str, *, headers: dict[str, str] | None = None) -> Response:
+    """A plain-text error for clients that show the body to the user: the go command prints a
+    `text/plain; charset=utf-8` body (its first 8 lines) under the status line, and ignores any other type."""
+    return Response(
+        message.rstrip("\n") + "\n",
+        status_code=status,
+        media_type=TEXT,
+        headers={"Cache-Control": "no-store", **(headers or {})},
+    )
 
 
 def route_path(scope: Scope) -> str:

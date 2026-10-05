@@ -130,7 +130,7 @@
         "name": "ecosystem",
         "label": "Ecosystem",
         "type": "custom",
-        "query": "pypi,npm",
+        "query": "pypi,npm,go",
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -151,6 +151,11 @@
           {
             "text": "npm",
             "value": "npm",
+            "selected": false
+          },
+          {
+            "text": "go",
+            "value": "go",
             "selected": false
           }
         ],
@@ -1208,7 +1213,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#2f6fb3"
+                  "fixedColor": "#3775a9"
                 }
               }
             ]
@@ -1224,6 +1229,21 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#cb3837"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "go"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#00add8"
                 }
               }
             ]
@@ -1468,7 +1488,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#2f6fb3"
+                  "fixedColor": "#3775a9"
                 }
               }
             ]

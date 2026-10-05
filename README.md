@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-SlowShield is a supply-chain defence proxy for **PyPI** and **npm**. It sits between your developers,
+SlowShield is a supply-chain defence proxy for **PyPI**, **npm** and **Go modules**. It sits between your developers,
 CI and production builds and the public registries, and:
 
 - **holds new releases back** for a configurable number of days (default 7), so the community and the
@@ -19,19 +19,19 @@ CI and production builds and the public registries, and:
   ready-made Grafana dashboards and alerts.
 
 ```
-pip / uv / poetry / npm / pnpm / yarn / bun
+pip / uv / poetry / npm / pnpm / yarn / bun / go
                  │  HTTPS (TLS 1.3, HTTP/2, HTTP/3)
                  ▼
           Caddy (TLS, H3)  ──────────────── certificates: ACME, your files, or internal CA
                  │
           SlowShield (Python 3.15, Granian)
           ├─ blocklist      OSV + GitHub malware advisories (sync every hour)
-          ├─ release age    per file (PyPI) / per version (npm), exceptions, fail-open
+          ├─ release age    per file (PyPI) / per version (npm, Go), exceptions, fail-open
           ├─ integrity      registry digests + trust-on-first-use fingerprint, verified cache
           └─ telemetry      OTLP → Alloy → Prometheus / Loki / Tempo → Grafana
                  │  HTTP/2
                  ▼
-     pypi.org · files.pythonhosted.org · registry.npmjs.org
+     pypi.org · files.pythonhosted.org · registry.npmjs.org · proxy.golang.org · sum.golang.org
 ```
 
 ## Quick start
@@ -50,8 +50,8 @@ python3 -m venv /tmp/slowshield-try
 /tmp/slowshield-try/bin/pip install --index-url http://localhost:8080/pypi/simple/ requests
 ```
 
-Releases younger than a week are held back; known malware is refused with HTTP 451. To send pip, uv and npm
-through it in every new terminal (bash on Linux shown; on macOS bash reads `~/.bash_profile` and zsh
+Releases younger than a week are held back; known malware is refused with HTTP 451. To send pip, uv, npm and
+go through it in every new terminal (bash on Linux shown; on macOS bash reads `~/.bash_profile` and zsh
 `~/.zshrc`; in fish use `set -Ux NAME value`):
 
 ```bash
@@ -59,6 +59,7 @@ cat >> ~/.bashrc <<'EOF'
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
 export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
 export npm_config_registry=http://localhost:8080/npm/
+export GOPROXY=http://localhost:8080/go
 EOF
 source ~/.bashrc
 ```
@@ -88,10 +89,11 @@ attached); pin a release or a digest in production.
 pip config set global.index-url https://slowshield.example.com/pypi/simple/
 export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
 npm config set registry https://slowshield.example.com/npm/
+go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", which would go around SlowShield
 ```
 
-The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn
-and Bun with your URLs. Every ecosystem lives under a path on the one host
+The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
+Bun and Go with your URLs. Every ecosystem lives under a path on the one host
 ([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:

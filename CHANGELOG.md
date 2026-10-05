@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Go modules at `/go/`: set `GOPROXY=https://<host>/go` (without `,direct`). Versions younger than the delay are left
+  out of version lists, and requests for them get `403` with a `Retry-After` header and a message the go command
+  prints. Known malware gets `451`, never `404`/`410`, so a `,direct` fallback can't go around SlowShield either.
+  `.mod` and `.zip` downloads are checked against the `h1:` hashes in `sum.golang.org` and against their first-seen
+  fingerprint. The checksum database itself is proxied at `/go/sumdb/sum.golang.org/`, so clients need no other
+  route out. A version's publish time is when proxy.golang.org first stored it (the `Last-Modified` of its `.mod`),
+  never the commit time, which authors can backdate. It is looked up once per version, at no extra load on the
+  upstreams beyond one `HEAD` ([docs/design/go.md](docs/design/go.md),
+  https://github.com/squirro/slowshield/issues/15). OSV and GitHub malware advisories for Go feed the blocklist.
+  Configuration: `[upstreams.go]`, `SLOWSHIELD_GO_ENABLED`, Helm `ecosystems.go.enabled`.
+- The Setup page and slowshield.org set `GOPROXY` in the shell setup, and the tool finder has Go.
+- A nightly check that proxy.golang.org's `Last-Modified` still matches index.golang.org, and Go perf scenarios
+  (`go_list`, `go_mod`). The perf gate reports a scenario the baseline release doesn't serve yet without comparing it.
+
+### Changed
+- Ecosystems are shown in their logos' primary colours, in the UI and the Grafana dashboards: PyPI `#3775A9`, npm
+  `#CB3837`, Go `#00ADD8`, the same in light and dark mode.
+
 ## [0.0.4] - 2026-10-04
 
 ### Added

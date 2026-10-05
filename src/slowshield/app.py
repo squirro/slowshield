@@ -32,6 +32,7 @@ from slowshield.config import ConfigHolder, LoadedConfig, load
 from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems.artifacts import ArtifactServer
+from slowshield.ecosystems.go.service import GoService
 from slowshield.ecosystems.npm.service import NpmService
 from slowshield.ecosystems.pypi.service import PypiService
 from slowshield.feeds import FeedScheduler
@@ -61,10 +62,13 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
             *raw.upstreams.pypi.mirrors,
             raw.upstreams.pypi.files_url,
             *raw.upstreams.npm.mirrors,
+            *raw.upstreams.go.mirrors,
+            raw.upstreams.go.sumdb_url,
             raw.feeds.osv_base_url,
             raw.feeds.github_api_url,
         ]
     )
+    allowed |= {h.lower() for h in raw.upstreams.go.download_hosts}
     upstream = Upstream(
         user_agent=f"slowshield/{__version__} (+https://github.com/squirro/slowshield)", allowed_hosts=allowed
     )
@@ -150,12 +154,13 @@ class SlowShield:
             log.warning(w)
         pypi = PypiService(ctx) if self.cfg.raw.upstreams.pypi.enabled else None
         npm = NpmService(ctx) if self.cfg.raw.upstreams.npm.enabled else None
+        go = GoService(ctx) if self.cfg.raw.upstreams.go.enabled else None
         from slowshield.ui import UI
 
         ui = UI(ctx)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx)
-        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi, npm, ui))
+        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi, npm, go, ui))
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
             self._spawn(self._config_watcher(ctx), "config")
@@ -168,6 +173,7 @@ class SlowShield:
                 "version": __version__,
                 "pypi": bool(pypi),
                 "npm": bool(npm),
+                "go": bool(go),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
             },
@@ -285,7 +291,9 @@ class SlowShield:
 
     # ---- routing ------------------------------------------------------------------------------------
 
-    def _router(self, ctx: AppContext, pypi: PypiService | None, npm: NpmService | None, ui: Any) -> ASGIApp:
+    def _router(
+        self, ctx: AppContext, pypi: PypiService | None, npm: NpmService | None, go: GoService | None, ui: Any
+    ) -> ASGIApp:
         raw = self.cfg.raw
         common: list[Any] = [
             Route("/healthz", self.healthz, methods=["GET"]),
@@ -297,6 +305,8 @@ class SlowShield:
             main.append(Mount("/pypi", app=pypi.router()))
         if npm is not None:
             main.append(Mount("/npm", app=npm))
+        if go is not None:
+            main.append(Mount("/go", app=go))
         main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
         main.extend(ui.routes())
         # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
@@ -441,6 +451,7 @@ _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/simple/", "/simple/{project}/"),
     ("/packages/", "/packages/{file}"),
     ("/npm/-/", "/npm/-/{endpoint}"),
+    ("/go/sumdb/", "/go/sumdb/{endpoint}"),
     ("/ui/static/", "/ui/static/{asset}"),
     ("/static/", "/static/{asset}"),
     ("/ui/", "/ui/{page}"),
@@ -458,6 +469,15 @@ def _route_label(path: str) -> str:
             return label
     if path.startswith("/npm/"):
         return "/npm/{package}/-/{file}" if "/-/" in path else "/npm/{package}"
+    if path.startswith("/go/"):
+        if path.endswith("/@v/list"):
+            return "/go/{module}/@v/list"
+        if path.endswith("/@latest"):
+            return "/go/{module}/@latest"
+        ext = path.rsplit(".", 1)[-1]
+        if "/@v/" in path and ext in ("info", "mod", "zip"):
+            return f"/go/{{module}}/@v/{{version}}.{ext}"
+        return "/go/{path}"
     if "/-/" in path:
         return "/{package}/-/{file}"
     return "/{package}"

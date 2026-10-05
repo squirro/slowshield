@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent
 K6_SCRIPT = ROOT / "k6" / "scenarios.js"
 PORT = 18080
 UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
+CONFIG = ROOT / "slowshield.toml"
+_GO_SECTION = re.compile(r"(?ms)^# Releases before Go support.*?(?=^\[feeds\])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +56,8 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("blocked", "latency", rate=300),
         Scenario("dashboard", "latency", rate=30),
         Scenario("mixed", "throughput", vus=32),
+        Scenario("go_list", "throughput", vus=32),
+        Scenario("go_mod", "latency", rate=300),
     ],
     "quick": [
         Scenario("pypi_simple_json", "throughput", vus=32),
@@ -61,6 +65,7 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("artifact_cached", "throughput", vus=32),
         Scenario("mixed", "latency", rate=200),
         Scenario("blocked", "latency", rate=200),
+        Scenario("go_mod", "throughput", vus=32),
     ],
 }
 
@@ -211,6 +216,7 @@ class Harness:
         self.network = f"slowshield-perf-{os.getpid()}"
         self.now = int(time.time())
         self.taskset = shutil.which("taskset") if platform.system() == "Linux" else None
+        self._configs: dict[str, Path] = {}
 
     def __enter__(self) -> Harness:
         sh("docker", "network", "create", self.network)
@@ -232,6 +238,22 @@ class Harness:
     def _cpuset(self, cpus: str) -> list[str]:
         return ["--cpuset-cpus", cpus] if platform.system() == "Linux" and cpus else []
 
+    def _config_for(self, image: str) -> Path:
+        """perf/slowshield.toml, without the Go upstream for an image that rejects it (a baseline from before Go
+        support). Its Go scenarios then fail and are reported as new, without a comparison."""
+        if image not in self._configs:
+            probe = subprocess.run(
+                ["docker", "run", "--rm", "-v", f"{CONFIG}:/c.toml:ro", image, "check-config", "--config", "/c.toml"],
+                capture_output=True,
+                check=False,
+            )
+            path = CONFIG
+            if probe.returncode != 0:
+                path = Path(tempfile.gettempdir()) / f"slowshield-perf-{os.getpid()}-nogo.toml"
+                path.write_text(_GO_SECTION.sub("", CONFIG.read_text()))
+            self._configs[image] = path
+        return self._configs[image]
+
     def run_image(self, image: str, rnd: int, scenarios: list[Scenario]) -> tuple[ImageRun, list[Sample]]:
         name = f"{self.network}-ss"
         volume = f"{name}-data-{rnd}-{abs(hash(image)) % 10_000}"
@@ -241,7 +263,7 @@ class Harness:
             *self._cpuset(self.server_cpus), "--memory", self.memory, "--pids-limit", "256",
             "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "-p", f"127.0.0.1:{PORT}:8080",
-            "-v", f"{volume}:/data", "-v", f"{ROOT / 'slowshield.toml'}:/etc/slowshield/config.toml:ro",
+            "-v", f"{volume}:/data", "-v", f"{self._config_for(image)}:/etc/slowshield/config.toml:ro",
             "-e", "SLOWSHIELD_CONFIG=/etc/slowshield/config.toml", "-e", f"SLOWSHIELD_WORKERS={self.workers}",
             "-e", "SLOWSHIELD_LOG_LEVEL=warning", image,
         )  # fmt: skip
@@ -275,6 +297,8 @@ class Harness:
             ("/npm/huge-packument", "application/vnd.npm.install-v1+json"),
             ("/npm/@acme%2fwidget", "application/vnd.npm.install-v1+json"),
             ("/npm/tagged", "application/json"),
+            ("/go/example.com/many/@v/list", "text/plain"),
+            ("/go/example.com/hello/@v/v1.0.0.mod", "text/plain"),  # verified and cached on the first request
             ("/", "text/html"),
         ):
             req = urllib.request.Request(base + path, headers={"Accept": accept})
@@ -422,7 +446,9 @@ def evaluate(res: Results, thresholds: dict[str, Any]) -> list[Finding]:
     for scn, mode in keys:
         lim = _limits(thresholds, scn)
         a = [s for s in res.samples if s.image == cand and s.scenario == scn and s.mode == mode]
-        b = [s for s in res.samples if s.image == base and s.scenario == scn and s.mode == mode]
+        # A baseline that does not serve the scenario yet (Go before its release) answers mostly with errors:
+        # the scenario is new, so it is reported without a comparison (its own error rate is still checked).
+        b = [s for s in res.samples if s.image == base and s.scenario == scn and s.mode == mode and s.error_rate < 0.5]
         label = f"{scn}:{mode}"
         if mode == "throughput":
             compare(label, "rps", [s.rps for s in a], [s.rps for s in b], lim["throughput_drop"], higher_is_worse=False)

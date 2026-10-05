@@ -124,6 +124,7 @@ async def test_setup_page_snippets_use_this_instance(start_app) -> None:
     page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
     assert "export PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/" in page
     assert "set -Ux npm_config_registry https://slowshield.example.com/npm/" in page
+    assert "set -Ux GOPROXY https://slowshield.example.com/go" in page
     assert "python3 -m venv /tmp/slowshield-try" in page
     assert "{pypi}" not in page and "{npm}" not in page
 
@@ -152,7 +153,7 @@ async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: 
 async def test_setup_page_tool_finder(start_app) -> None:
     run = await start_app('public_url = "https://slowshield.example.com"\n')
     page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
-    names = ["pip", "uv", "Poetry", "PDM", "Pipenv", "npm", "pnpm", "Yarn", "Bun"]
+    names = ["pip", "uv", "Poetry", "PDM", "Pipenv", "npm", "pnpm", "Yarn", "Bun", "Go"]
     assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
     assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
     keywords = dict(re.findall(r'data-tool="(([a-z]+)[^"]*)"', page)[i][::-1] for i in range(len(names)))
@@ -160,3 +161,4 @@ async def test_setup_page_tool_finder(start_app) -> None:
     assert "poetry source add --priority=primary slowshield https://slowshield.example.com/pypi/simple/" in page
     assert "verify_ssl = true" in page and "unsafeHttpWhitelist" not in page
     assert "data-tool-empty hidden" in page  # JS shows it; without JS every tool stays visible
+    assert "go env -w GOPROXY=https://slowshield.example.com/go" in page and "GOPROXY: https://slowshield" in page

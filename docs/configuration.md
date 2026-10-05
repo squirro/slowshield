@@ -22,7 +22,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |
 | `SLOWSHIELD_DEFAULT_DELAY_DAYS` | `default_delay_days` | float |
 | `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | **deprecated, removed in 0.1**; space/comma separated |
-| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED` | `upstreams.*.enabled` | booleans |
+| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED` | `upstreams.*.enabled` | booleans |
 | `SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD` | `enforce_age_on_download` | |
 | `SLOWSHIELD_FAIL_OPEN` | `fail_open` | |
 | `SLOWSHIELD_RECORD_CLIENT_IP` | `record_client_ip` | |
@@ -41,13 +41,29 @@ Local development: `uv run slowshield serve` also loads a `.env` file from the w
 ## Routing
 
 One host serves everything, each ecosystem under a path named after its protocol: PyPI at `/pypi/simple/`,
-npm at `/npm/`. The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
+npm at `/npm/`, Go modules at `/go/` (`GOPROXY`, [design/go.md](design/go.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
 these and the names reserved for future ecosystems may be used at the root; see
 [design/routing.md](design/routing.md) for the contract and the plan for every ecosystem on the roadmap.
 
 PyPI file links are relative, so they work behind any prefix without trusting the `Host` header. npm
 requires absolute tarball URLs; they are built from `upstreams.npm.public_url`, or `public_url + /npm`,
-never from request headers.
+never from request headers. The Go module proxy protocol has no URLs in its responses.
+
+## Go
+
+```toml
+[upstreams.go]
+enabled = true
+mirrors = ["https://proxy.golang.org"]
+sumdb_url = "https://sum.golang.org"
+download_hosts = ["storage.googleapis.com"]
+```
+
+A version's publish time is the `Last-Modified` of its `.mod` on the mirror, which on proxy.golang.org is when the
+mirror first stored it ([design/go.md](design/go.md)). A mirror that fronts proxy.golang.org (Athens,
+Artifactory) reports its own storage time, which is later, so versions are held a little longer. `sumdb_url` is
+the checksum database proxied at `/go/sumdb/sum.golang.org/`. `download_hosts` are the only hosts the mirrors may
+redirect a download to: proxy.golang.org sends large zips to signed Cloud Storage URLs.
 
 **Deprecated, removed in 0.1:**
 

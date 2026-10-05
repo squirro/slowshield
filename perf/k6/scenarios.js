@@ -58,6 +58,10 @@ const SCENARIOS = {
   artifact_cached: (d) => http.get(d.small),
   artifact_big: (d) => http.get(d.big, { responseType: "none", timeout: "120s" }),
   blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, BLOCKED),
+  // Go: a 500-version list (the versions' publish times are known after the warm-up), and the cached go.mod
+  // requests that dominate `go mod download`.
+  go_list: () => http.get(`${TARGET}/go/example.com/many/@v/list`),
+  go_mod: () => http.get(`${TARGET}/go/example.com/hello/@v/v1.0.0.mod`),
   dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();

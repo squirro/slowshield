@@ -135,7 +135,9 @@ def cmd_check_config(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
-    parser = argparse.ArgumentParser(prog="slowshield", description="Supply-chain defence proxy for PyPI and npm.")
+    parser = argparse.ArgumentParser(
+        prog="slowshield", description="Supply-chain defence proxy for PyPI, npm and Go modules."
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("serve", help="run the proxy")

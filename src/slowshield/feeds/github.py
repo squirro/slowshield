@@ -1,4 +1,4 @@
-"""GitHub Advisory Database (malware advisories) for npm and pip via the REST API. Requires a token.
+"""GitHub Advisory Database (malware advisories) for every served ecosystem via the REST API. Requires a token.
 
 `GET /advisories?type=malware&ecosystem=<eco>&sort=updated&direction=asc&updated=>=<watermark>`,
 following `Link: rel="next"` cursors. Withdrawn advisories are fetched separately (`is_withdrawn=true`)
@@ -14,13 +14,15 @@ from urllib.parse import quote
 
 import msgspec
 
-from slowshield import names, versions
+from slowshield import versions
+from slowshield.ecosystems import ECOSYSTEMS as REGISTRY
+from slowshield.ecosystems import normalize
 from slowshield.feeds import Advisory, BlockSpec, apply_advisories, load_state, save_state
 from slowshield.upstream import UpstreamError
 
 log = logging.getLogger(__name__)
 
-ECOSYSTEMS = {"pip": "pypi", "npm": "npm"}
+ECOSYSTEMS = {e.github: e.id for e in REGISTRY.values()}  # GitHub name -> ours
 MAX_PAGES = 200
 PER_PAGE = 100
 _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
@@ -56,7 +58,7 @@ def to_advisory(a: GhAdvisory) -> Advisory:
         eco = ECOSYSTEMS.get(vuln.package.ecosystem.lower())
         if eco is None:
             continue
-        name = names.normalize_pypi(vuln.package.name) if eco == "pypi" else names.normalize_npm(vuln.package.name)
+        name = normalize(eco, vuln.package.name)
         rng = (vuln.vulnerable_version_range or "").strip()
         exact = versions.exact_version(rng)
         if exact is not None:

@@ -9,9 +9,14 @@
 {% macro eco_filter(current, base_path, extra={}) -%}
 <div class="segmented" role="group" aria-label="Ecosystem">
   <a href="{{ base_path }}{{ qs(extra, eco=None) }}"{% if not current %} aria-current="true"{% endif %}>All</a>
-  <a href="{{ base_path }}{{ qs(extra, eco='pypi') }}"{% if current == 'pypi' %} aria-current="true"{% endif %}>PyPI</a>
-  <a href="{{ base_path }}{{ qs(extra, eco='npm') }}"{% if current == 'npm' %} aria-current="true"{% endif %}>npm</a>
+  {% for e in ecosystems.values() %}
+  <a href="{{ base_path }}{{ qs(extra, eco=e.id) }}"{% if current == e.id %} aria-current="true"{% endif %}>{{ e.label }}</a>
+  {% endfor %}
 </div>
+{%- endmacro %}
+
+{% macro eco_options(current) -%}
+{%- for e in ecosystems.values() %}<option value="{{ e.id }}"{% if current == e.id %} selected{% endif %}>{{ e.label }}</option>{% endfor -%}
 {%- endmacro %}
 
 {% macro eco(e) -%}<span class="eco eco-{{ e }}">{{ eco_label.get(e, e) }}</span>{%- endmacro %}

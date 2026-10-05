@@ -30,7 +30,7 @@ K6_SCRIPT = ROOT / "k6" / "scenarios.js"
 PORT = 18080
 UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
 CONFIG = ROOT / "slowshield.toml"
-_GO_SECTION = re.compile(r"(?ms)^# Releases before Go support.*?(?=^\[feeds\])")
+_GO_SECTION = re.compile(r"(?ms)^# Releases before Go and Maven support.*?(?=^\[feeds\])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +58,8 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("mixed", "throughput", vus=32),
         Scenario("go_list", "throughput", vus=32),
         Scenario("go_mod", "latency", rate=300),
+        Scenario("maven_metadata", "throughput", vus=32),
+        Scenario("maven_jar", "latency", rate=300),
     ],
     "quick": [
         Scenario("pypi_simple_json", "throughput", vus=32),
@@ -66,6 +68,7 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("mixed", "latency", rate=200),
         Scenario("blocked", "latency", rate=200),
         Scenario("go_mod", "throughput", vus=32),
+        Scenario("maven_jar", "throughput", vus=32),
     ],
 }
 
@@ -299,6 +302,8 @@ class Harness:
             ("/npm/tagged", "application/json"),
             ("/go/example.com/many/@v/list", "text/plain"),
             ("/go/example.com/hello/@v/v1.0.0.mod", "text/plain"),  # verified and cached on the first request
+            ("/maven/all/org/example/many/maven-metadata.xml", "text/xml"),
+            ("/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar", "*/*"),
             ("/", "text/html"),
         ):
             req = urllib.request.Request(base + path, headers={"Accept": accept})

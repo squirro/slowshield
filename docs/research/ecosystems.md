@@ -11,7 +11,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | Go modules | `GOPROXY` (no `,direct`) | `.info` Time is **commit time** → the `Last-Modified` of the `.mod` on proxy.golang.org (when the mirror stored it; equals the index.golang.org `Timestamp`) | go.sum + sum.golang.org (only `.mod`/`.zip`) | **live** | spec: lists and `.info` are not authenticated, filtering allowed; MVS → refuse, don't hide. Tailing index.golang.org was rejected: ~100k entries/day, see [design/go.md](../design/go.md) |
 | NuGet | `nuget.config` `<clear/>` + source | registration `published` | repo signature inside `.nupkg`; lockfile SHA512 | easy | filter flat-container `index.json` too |
 | RubyGems | `bundle config mirror.…` | compact index `created_at` | sha256 per version; Gemfile.lock CHECKSUMS | medium | `/versions` stores MD5 of each info file → rewrite consistently |
-| Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | medium | exact pins → refuse, not downgrade |
+| Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | **live** | exact pins → refuse (`425`), not downgrade; see [design/maven.md](../design/maven.md) |
 | OCI images | containerd `hosts.toml`, podman `registries.conf`; dockerd mirrors only Docker Hub | none in the API; image `created` is builder-set | digests; cosign/notation bound to digest | medium | mutable tags → keep tag→digest history |
 | Terraform / OpenTofu providers | `provider_installation { network_mirror }` | `published-at` / `published` | lockfile `h1:`/`zh:` | easy | modules from git are hard |
 | Helm | `helm repo add` | index.yaml `created` (indexer) | `digest`, optional `.prov` | easy | every publisher hosts its own repo |
@@ -51,7 +51,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 ## Proposed phases
 
 1. **Next:** Cargo, NuGet, RubyGems (Go shipped); compatibility tests for pnpm/Yarn/Bun.
-2. **Then:** Maven/Gradle, OCI pull-through, Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains.
+2. **Then:** OCI pull-through (Maven/Gradle shipped), Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains.
 3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).
 4. **Opt-in only:** apt/dnf/apk re-signing, Hex/Homebrew refuse-at-download, GitHub Releases forward proxy.
 

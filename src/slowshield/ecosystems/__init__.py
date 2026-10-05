@@ -21,11 +21,12 @@ class EcosystemInfo:
     is_valid: Callable[[str], bool]
     osv: str  # ecosystem name in OSV
     github: str  # ecosystem name in the GitHub Advisory Database
-    registry_page: str  # the package's page on the public registry; `{name}` is replaced
+    registry_page: str  # the package's page on the public registry; `{name}` (Maven: `{group}`, `{artifact}`)
     registry_site: str  # what that site is called ("View on ...")
 
     def page_url(self, name: str) -> str:
-        return self.registry_page.replace("{name}", name)
+        group, _, artifact = name.partition(":")
+        return self.registry_page.replace("{name}", name).replace("{group}", group).replace("{artifact}", artifact)
 
 
 ECOSYSTEMS: dict[str, EcosystemInfo] = {
@@ -42,6 +43,10 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
         EcosystemInfo(
             "go", "Go", "Go", names.normalize_go, names.is_valid_go, "Go", "go", "https://pkg.go.dev/{name}",
             "pkg.go.dev",
+        ),
+        EcosystemInfo(
+            "maven", "Maven", "Java", names.normalize_maven, names.is_valid_maven, "Maven", "maven",
+            "https://central.sonatype.com/artifact/{group}/{artifact}", "Maven Central",
         ),
     )
 }  # fmt: skip

@@ -144,7 +144,7 @@ async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None
 async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: str) -> None:
     run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
     page = (await run.client.get("/ui/setup", headers={"Host": host})).text
-    assert "$(" not in page and ";id" not in page
+    assert "$(" not in page and "80;id" not in page  # (the settings.xml snippet's escaped <id> contains ";id")
     assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
     doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()
     assert doc["versions"]["1.0.0"]["dist"]["tarball"].startswith("https://localhost/npm/")
@@ -153,7 +153,22 @@ async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: 
 async def test_setup_page_tool_finder(start_app) -> None:
     run = await start_app('public_url = "https://slowshield.example.com"\n')
     page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
-    names = ["pip", "uv", "Poetry", "PDM", "Pipenv", "npm", "pnpm", "Yarn", "Bun", "Go"]
+    names = [
+        "pip",
+        "uv",
+        "Poetry",
+        "PDM",
+        "Pipenv",
+        "npm",
+        "pnpm",
+        "Yarn",
+        "Bun",
+        "Go",
+        "Maven",
+        "Gradle",
+        "sbt",
+        "Coursier",
+    ]
     assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
     assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
     keywords = dict(re.findall(r'data-tool="(([a-z]+)[^"]*)"', page)[i][::-1] for i in range(len(names)))
@@ -162,3 +177,9 @@ async def test_setup_page_tool_finder(start_app) -> None:
     assert "verify_ssl = true" in page and "unsafeHttpWhitelist" not in page
     assert "data-tool-empty hidden" in page  # JS shows it; without JS every tool stays visible
     assert "go env -w GOPROXY=https://slowshield.example.com/go" in page and "GOPROXY: https://slowshield" in page
+    assert "&lt;url&gt;https://slowshield.example.com/maven/all/&lt;/url&gt;" in page  # settings.xml mirror
+    assert (
+        "&#39;https://plugins.gradle.org/m2&#39;: &#39;https://slowshield.example.com/maven/gradle-plugins/&#39;"
+        in page
+    )
+    assert "allowInsecureProtocol" not in page and "maven-default-http-blocker" not in page  # HTTPS instance

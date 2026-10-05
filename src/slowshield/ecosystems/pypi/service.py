@@ -220,7 +220,7 @@ class PypiService:
             now=now,
             delay_for=lambda ver: cfg.delay_days_for(ECO, project.name, ver),
             is_blocked=is_blocked,
-            fail_open=cfg.raw.fail_open,
+            fail_open=cfg.fail_open_for(ECO),
         )
         v.files = [c.item for c in ev.allowed]
         v.allowed = {f.filename for f in v.files}

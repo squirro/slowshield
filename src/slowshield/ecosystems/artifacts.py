@@ -60,6 +60,11 @@ class ArtifactRequest:
     check_file: Callable[[Path], str | None] | None = None
     upstream_digest: str | None = None  # recorded when `expected` carries no sha256/sha512
     error: Callable[..., Response] = field(default=error)  # error responses, in the format the client reads
+    # Called once the upstream response has arrived, before anything is sent: may fill `expected` from its headers
+    # and URL, and returns a refusal (sent instead; nothing is streamed) or extra response headers.
+    on_upstream: Callable[[StreamResponse], Awaitable[Response | dict[str, str] | None]] | None = None
+    # Extra headers for a cache hit, from what was recorded on the first download.
+    hit_headers: Callable[[ArtifactRecord], dict[str, str]] | None = None
 
 
 @dataclass(slots=True)
@@ -68,6 +73,7 @@ class ArtifactRecord:
     size: int | None
     tampered: bool
     legacy: bool = False
+    upstream_digest: str | None = None
 
 
 class StreamedArtifact:
@@ -143,7 +149,7 @@ class ArtifactServer:
         )
         if row is None:
             return None
-        return ArtifactRecord(row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST)
+        return ArtifactRecord(row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST, upstream_digest=row[3])
 
     async def serve(
         self,
@@ -172,6 +178,7 @@ class ArtifactServer:
             self.recorder.decision(req.ecosystem, "artifact", "served")
             if method != "HEAD":
                 self.recorder.download(req.ecosystem, req.package, req.version, cached.size, cache_hit=True)
+            extra = req.hit_headers(rec) if req.hit_headers is not None and rec is not None else {}
             return FileResponse(
                 cached.path,
                 media_type=cached.content_type or req.content_type,
@@ -179,6 +186,7 @@ class ArtifactServer:
                     "Cache-Control": IMMUTABLE_CACHE_CONTROL,
                     "ETag": f'"{cached.sha256}"',
                     "X-SlowShield-Cache": "hit",
+                    **extra,
                 },
                 filename=None,
                 stat_result=None,
@@ -211,6 +219,17 @@ class ArtifactServer:
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
             return req.error(502, "upstream_error", detail=f"upstream returned {up.status}")
 
+        extra: dict[str, str] = {}
+        if req.on_upstream is not None:
+            try:
+                verdict = await req.on_upstream(up)
+            except BaseException:
+                await stack.aclose()
+                raise
+            if isinstance(verdict, Response):
+                await stack.aclose()
+                return verdict
+            extra = verdict or {}
         size = req.expected.size or up.content_length
         if req.expected.size is None and up.content_length is not None:
             req.expected.size = up.content_length
@@ -219,6 +238,7 @@ class ArtifactServer:
             "Content-Type": content_type,
             "Cache-Control": IMMUTABLE_CACHE_CONTROL,
             "X-SlowShield-Cache": "miss",
+            **extra,
         }
         if size is not None:
             out_headers["Content-Length"] = str(size)

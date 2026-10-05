@@ -1,4 +1,5 @@
-"""Version parsing/ordering for PyPI (PEP 440), npm and Go (SemVer 2.0), plus advisory range matching.
+"""Version parsing/ordering for PyPI (PEP 440), npm and Go (SemVer 2.0), Maven (ComparableVersion), plus advisory
+range matching.
 
 Ranges use the comma-separated comparator form shared by GitHub advisories and our blocklist table,
 e.g. ``">= 1.0.0, < 1.4.2"`` or ``"= 0.30.4"``. Each comma part must hold (logical AND).
@@ -12,6 +13,8 @@ from functools import lru_cache
 from typing import Any
 
 from packaging.version import InvalidVersion, Version
+
+from slowshield.ecosystems.maven import version as maven
 
 _SEMVER = re.compile(
     r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -79,6 +82,8 @@ def canonical(ecosystem: str, version: str) -> str:
     if ecosystem == "pypi":
         v = parse_pep440(version)
         return str(v) if v is not None else version.strip()
+    if ecosystem == "maven":
+        return version.strip()
     if not parse_semver(version):
         return version.strip()
     out = version.strip().removeprefix("v")
@@ -92,6 +97,8 @@ def sort_key(ecosystem: str, version: str) -> tuple[int, Any]:
     if ecosystem == "pypi":
         v = parse_pep440(version)
         return (1, v) if v is not None else (0, version)
+    if ecosystem == "maven":
+        return (1, maven.parse(version))  # every string is a Maven version
     s = parse_semver(version)
     return (1, s.key) if s is not None else (0, version)
 
@@ -100,6 +107,8 @@ def is_prerelease(ecosystem: str, version: str) -> bool:
     if ecosystem == "pypi":
         v = parse_pep440(version)
         return bool(v and (v.is_prerelease or v.is_devrelease))
+    if ecosystem == "maven":
+        return maven.is_snapshot(version)  # Maven's "release" is anything but a snapshot
     s = parse_semver(version)
     return bool(s and s.is_prerelease)
 
@@ -110,6 +119,8 @@ def _cmp(ecosystem: str, a: str, b: str) -> int | None:
         if pa is None or pb is None:
             return None
         return (pa > pb) - (pa < pb)
+    if ecosystem == "maven":
+        return maven.compare(a, b)
     sa, sb = parse_semver(a), parse_semver(b)
     if sa is None or sb is None:
         return None

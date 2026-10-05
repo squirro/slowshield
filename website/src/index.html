@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SlowShield — safety through patience</title>
-<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm and Go modules. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
+<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm, Go modules and Maven. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
 <meta name="theme-color" content="#060915">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://slowshield.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
 <meta property="og:title" content="SlowShield — safety through patience">
-<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm and Go — and soon everything that downloads.">
+<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go and Maven — and soon everything that downloads.">
 <meta property="og:url" content="https://slowshield.org/">
 <meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -62,7 +62,7 @@
       <span data-hl data-fit="111" data-fit-sm="73" hidden>Stay up to date.<br><span class="grad">Just not that<br class="br-sm"> up to date.</span></span>
       <span data-hl data-fit="71" hidden>Safety through<br><span class="grad">patience.</span></span>
     </h1>
-    <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm and Go. It holds
+    <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm, Go and Maven. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
       download. Made for developers and small teams who want supply-chain security that just works, without buying
       and running an artifact repository manager.</p>
@@ -486,18 +486,18 @@ slowshield.example.com
 <section class="ecosystems" id="ecosystems">
   <div class="section-head reveal">
     <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python, JavaScript and Go today.<br>Everything under the sun tomorrow.</h2>
+    <h2>Python, JavaScript, Go and Java today.<br>Everything under the sun tomorrow.</h2>
     <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
       same policy, same dashboard, same guarantees.</p>
   </div>
   <div class="sun reveal" aria-hidden="true">
     <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
     <div class="ring ring-1">
-      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco live">Go modules</span>
+      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco live">Go modules</span><span class="eco live">Maven</span>
       <span class="eco soon">Cargo</span><span class="eco soon">dnf / yum</span><span class="eco soon">apt / deb</span>
     </div>
     <div class="ring ring-2">
-      <span class="eco">Maven</span><span class="eco">Container images</span><span class="eco">RubyGems</span><span class="eco">Composer</span>
+      <span class="eco">Container images</span><span class="eco">RubyGems</span><span class="eco">Composer</span>
       <span class="eco">Helm charts</span><span class="eco">NuGet</span><span class="eco">Terraform</span><span class="eco">Hugging Face</span>
       <span class="eco">Homebrew</span><span class="eco">GitHub Releases</span>
     </div>
@@ -505,11 +505,12 @@ slowshield.example.com
   <div class="roadmap">
     <div class="phase now reveal">
       <span class="when">Available now</span>
-      <h3>Python, JavaScript &amp; Go</h3>
+      <h3>Python, JavaScript, Go &amp; Java</h3>
       <ul>
         <li>PyPI<span>pip, uv, Poetry, PDM, Pipenv</span></li>
         <li>npm<span>npm, pnpm, Yarn, Bun</span></li>
         <li>Go modules<span>as your <code>GOPROXY</code></span></li>
+        <li>Maven<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt</span></li>
         <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
       </ul>
     </div>
@@ -525,7 +526,6 @@ slowshield.example.com
       <span class="when">Then</span>
       <h3>The enterprise staples</h3>
       <ul>
-        <li>Maven &amp; Gradle<span>Maven Central, Gradle plugins</span></li>
         <li>Container images<span>Docker Hub, GHCR, Quay</span></li>
         <li>NuGet, RubyGems, Composer<span>.NET, Ruby, PHP</span></li>
         <li>Helm &amp; Terraform<span>charts, providers and modules</span></li>
@@ -611,7 +611,7 @@ go env -w GOPROXY=https://slowshield.example.com/go</code></pre><button class="c
     </header>
     <ul class="plan">
       <li>Every feature: release delay, malware blocking, integrity checks, verified cache, dashboard</li>
-      <li>PyPI, npm and Go modules, with every tool that installs through them</li>
+      <li>PyPI, npm, Go modules and Maven, with every tool that installs through them</li>
       <li>Unlimited users, machines, packages and instances</li>
       <li>Self-hosted: Docker, rootless Podman or Kubernetes, your data stays with you</li>
       <li>Grafana dashboards and alerts included</li>

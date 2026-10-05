@@ -1,4 +1,4 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm and Go modules."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules and Maven."""
 
 from __future__ import annotations
 
@@ -50,6 +50,21 @@ _GO_ELEM = re.compile(r"^[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?$")
 _GO_MAJOR = re.compile(r"^v(?:0|1|0\d+)$")  # /v0, /v1 and /v01 are not major-version suffixes
 _WINDOWS = frozenset({"con", "prn", "aux", "nul", *(f"{d}{i}" for d in ("com", "lpt") for i in range(1, 10))})
 GO_MAX_LEN = 1024
+
+
+# Maven coordinates `groupId:artifactId`, as Maven Central accepts them: dot-separated groupId segments and an
+# artifactId of letters, digits and `_-.` (matched exactly; Maven is case-sensitive here).
+_MAVEN_PART = r"[A-Za-z0-9_-](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?"
+_MAVEN_NAME = re.compile(rf"^{_MAVEN_PART}:{_MAVEN_PART}$")
+MAVEN_MAX_LEN = 512
+
+
+def normalize_maven(name: str) -> str:
+    return name.strip()
+
+
+def is_valid_maven(name: str) -> bool:
+    return 0 < len(name) <= MAVEN_MAX_LEN and _MAVEN_NAME.match(name) is not None and ".." not in name
 
 
 def normalize_go(path: str) -> str:

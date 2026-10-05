@@ -5,8 +5,8 @@ your SCA tool's job). They run on the leader worker every `feeds.poll_interval_m
 
 | Feed | Source | Token | Sync |
 |---|---|---|---|
-| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm and Go | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` documents |
-| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
+| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go and Maven | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` documents |
+| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
 
 ## Version semantics
 

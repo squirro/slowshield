@@ -43,6 +43,16 @@ mirrors = ["https://proxy.golang.org"] # GOPROXY-protocol mirrors; publish time 
 sumdb_url = "https://sum.golang.org"   # checksum database, proxied at /go/sumdb/sum.golang.org/
 download_hosts = ["storage.googleapis.com"]  # where the mirror may redirect large zips
 
+[upstreams.maven]                      # clients: <public_url>/maven/all/ (docs/design/maven.md)
+enabled = true
+fail_open = false                      # brand-new artifacts are held too (typosquats, dependency confusion)
+central = { url = "https://repo1.maven.org/maven2" }
+google = { url = "https://dl.google.com/dl/android/maven2" }
+gradle_plugins = { url = "https://plugins.gradle.org/m2", download_hosts = ["plugins-artifacts.gradle.org", "repo.maven.apache.org"] }
+# [upstreams.maven.repos]              # more repositories, served at /maven/<id>/
+# jitpack = { url = "https://jitpack.io" }
+# nightlies = { url = "https://repo.example.com/snapshots", snapshots = true }  # snapshots: no age check
+
 # --- caches -------------------------------------------------------------------------------------
 [cache]
 metadata_max_mb = 1024                 # upstream metadata + rendered responses: one SQLite file (data_dir/

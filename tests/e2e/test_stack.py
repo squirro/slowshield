@@ -286,3 +286,42 @@ def test_go_downloads_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     )
     assert held.returncode != 0
     assert "403 Forbidden" in held.stderr and "is too new" in held.stderr  # our text/plain body, printed by go
+
+
+MAVEN_IMAGE = "maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320"
+MAVEN_SETTINGS = """<settings><mirrors><mirror>
+  <!-- replaces Maven's built-in blocker of http:// repositories: the test talks plain HTTP inside the stack -->
+  <id>maven-default-http-blocker</id><mirrorOf>*</mirrorOf>
+  <url>http://localhost:8080/maven/all/</url><blocked>false</blocked>
+</mirror></mirrors></settings>
+"""
+
+
+def _parent_pom(version: str) -> str:
+    return (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
+        f"<parent><groupId>org.example</groupId><artifactId>bom</artifactId><version>{version}</version>"
+        "<relativePath/></parent><artifactId>child</artifactId><packaging>pom</packaging></project>"
+    )
+
+
+def test_maven_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Maven against the stack: a parent POM is resolved while the model is built, with no plugins needed (the
+    fake registry has none). 1.0.0 is 100 days old; 1.1.0 two days, so Maven reports a 425."""
+    (tmp_path / "settings.xml").write_text(MAVEN_SETTINGS)
+    (tmp_path / "ok.xml").write_text(_parent_pom("1.0.0"))
+    (tmp_path / "new.xml").write_text(_parent_pom("1.1.0"))
+
+    def mvn(pom: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", MAVEN_IMAGE, "mvn", "-B", "-s", "/w/settings.xml",
+             "-Dmaven.repo.local=/tmp/m2", "-f", f"/w/{pom}", "validate"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = mvn("ok.xml")
+    assert ok.returncode == 0, ok.stdout[-3000:]
+    held = mvn("new.xml")
+    assert held.returncode != 0
+    assert "status code: 425, reason phrase: Too Early (425)" in held.stdout, held.stdout[-3000:]

@@ -5,7 +5,8 @@
   </picture>
 </p>
 
-SlowShield is a supply-chain defence proxy for **PyPI**, **npm** and **Go modules**. It sits between your developers,
+SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules** and **Maven** (Maven, Gradle, sbt).
+It sits between your developers,
 CI and production builds and the public registries, and:
 
 - **holds new releases back** for a configurable number of days (default 7), so the community and the
@@ -19,19 +20,20 @@ CI and production builds and the public registries, and:
   ready-made Grafana dashboards and alerts.
 
 ```
-pip / uv / poetry / npm / pnpm / yarn / bun / go
+pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle
                  │  HTTPS (TLS 1.3, HTTP/2, HTTP/3)
                  ▼
           Caddy (TLS, H3)  ──────────────── certificates: ACME, your files, or internal CA
                  │
           SlowShield (Python 3.15, Granian)
           ├─ blocklist      OSV + GitHub malware advisories (sync every hour)
-          ├─ release age    per file (PyPI) / per version (npm, Go), exceptions, fail-open
+          ├─ release age    per file (PyPI, Maven) / per version (npm, Go), exceptions, fail-open
           ├─ integrity      registry digests + trust-on-first-use fingerprint, verified cache
           └─ telemetry      OTLP → Alloy → Prometheus / Loki / Tempo → Grafana
                  │  HTTP/2
                  ▼
      pypi.org · files.pythonhosted.org · registry.npmjs.org · proxy.golang.org · sum.golang.org
+     repo1.maven.org · dl.google.com (Google Maven) · plugins.gradle.org
 ```
 
 ## Quick start
@@ -90,10 +92,11 @@ pip config set global.index-url https://slowshield.example.com/pypi/simple/
 export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
 npm config set registry https://slowshield.example.com/npm/
 go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", which would go around SlowShield
+# Maven: a mirror in ~/.m2/settings.xml; Gradle: an init script in ~/.gradle/init.d/ (both on the Setup page)
 ```
 
 The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
-Bun and Go with your URLs. Every ecosystem lives under a path on the one host
+Bun, Go, Maven, Gradle, sbt and Coursier with your URLs. Every ecosystem lives under a path on the one host
 ([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:

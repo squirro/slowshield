@@ -155,7 +155,7 @@ def test_cli_migrate_and_import(tmp_path: Path, capsys: pytest.CaptureFixture[st
     cfg = tmp_path / "c.toml"
     cfg.write_text(f'data_dir = "{tmp_path / "data"}"\n')
     assert cli.main(["migrate", "--config", str(cfg)]) == 0
-    assert "schema version 2" in capsys.readouterr().out
+    assert "schema version 3" in capsys.readouterr().out
     src = make_rust_db(tmp_path / "mirror.db")
     assert cli.main(["import-legacy", str(src), "--config", str(cfg), "--dry-run"]) == 0
     assert '"dry_run": true' in capsys.readouterr().out

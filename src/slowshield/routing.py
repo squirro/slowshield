@@ -1,21 +1,20 @@
 """The root URL contract: which first path segments SlowShield answers on (docs/design/routing.md).
 
-One host serves every ecosystem under its own path, named after the protocol (`/pypi/`, `/npm/`, `/go/`, later
-`/cargo/`, `/rpm/<repo-id>/` ...). Everything else lives under a few reserved names, so a future
-protocol never collides with the UI. A test fails when a route outside these names is added.
+One host serves every ecosystem under its own path, named after the protocol (`/pypi/`, `/npm/`, `/go/`,
+`/maven/<repo-id>/`, later `/cargo/`, `/rpm/<repo-id>/` ...). Everything else lives under a few reserved names, so a
+future protocol never collides with the UI. A test fails when a route outside these names is added.
 """
 
 from __future__ import annotations
 
 # Served today.
-ECOSYSTEMS = frozenset({"pypi", "npm", "go"})
+ECOSYSTEMS = frozenset({"pypi", "npm", "go", "maven"})
 
 # Reserved for the ecosystems on the roadmap, so nothing else takes their names. `oci` is the container
 # mirror-mode prefix (Docker registry-mirrors, containerd); explicit image references need `v2` below.
 RESERVED_ECOSYSTEMS = frozenset(
     {
         "cargo",
-        "maven",
         "nuget",
         "rubygems",
         "composer",

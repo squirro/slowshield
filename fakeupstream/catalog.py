@@ -1,4 +1,4 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, OSV, GitHub advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, OSV, GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -190,6 +190,18 @@ def make_go_module(path: str, version: str) -> tuple[bytes, bytes, str, str]:
     return _zip(files), mod, go_h1(files), go_h1({"go.mod": mod})
 
 
+def make_pom(group: str, artifact: str, version: str, packaging: str = "jar") -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+        f"  <modelVersion>4.0.0</modelVersion>\n  <groupId>{group}</groupId>\n  <artifactId>{artifact}</artifactId>\n"
+        f"  <version>{version}</version>\n  <packaging>{packaging}</packaging>\n</project>\n"
+    ).encode()
+
+
+def make_jar(group: str, artifact: str, version: str) -> bytes:
+    return _zip({"META-INF/MANIFEST.MF": f"Manifest-Version: 1.0\nImplementation-Version: {version}\n".encode()})
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -261,6 +273,24 @@ class GoModule:
 
 
 @dataclass(slots=True)
+class MavenFile:
+    blob: Blob
+    stored: float | None  # Last-Modified; None: rewritten on every request (a repository that migrates files)
+
+
+@dataclass(slots=True)
+class MavenArtifact:
+    repo: str  # central | google | portal | snapshots
+    group: str
+    artifact: str
+    versions: dict[str, dict[str, MavenFile]] = field(default_factory=dict)  # version -> filename -> file
+
+    @property
+    def path(self) -> str:
+        return f"{self.group.replace('.', '/')}/{self.artifact}"
+
+
+@dataclass(slots=True)
 class Advisory:
     source: str  # osv | github
     ecosystem: str  # PyPI | npm | Go (OSV) / pip | npm | go (GitHub)
@@ -282,6 +312,7 @@ class Catalog:
         self.pypi: dict[str, PyProject] = {}
         self.npm: dict[str, NpmPackage] = {}
         self.go: dict[str, GoModule] = {}
+        self.maven: dict[tuple[str, str], MavenArtifact] = {}  # (repo, "group/path/artifact") -> artifact
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -384,6 +415,39 @@ class Catalog:
         if head:
             mod.head = version
 
+    def add_maven(
+        self,
+        repo: str,
+        coords: str,
+        version: str,
+        age_days: float | None,
+        *,
+        jar: bool = True,
+        extra: dict[str, float] | None = None,
+    ) -> None:
+        """`age_days` is how long ago the repository stored the files (None: their date changes on every request).
+        `extra` adds files (`-sources.jar`, ...) stored that many days ago."""
+        group, artifact = coords.split(":")
+        art = self.maven.setdefault(
+            (repo, f"{group.replace('.', '/')}/{artifact}"), MavenArtifact(repo, group, artifact)
+        )
+        stored = None if age_days is None else self.now - age_days * DAY
+        files = {
+            f"{artifact}-{version}.pom": MavenFile(
+                Blob(key=f"{coords}:{version}.pom", data=make_pom(group, artifact, version, "jar" if jar else "pom")),
+                stored,
+            )
+        }
+        if jar:
+            files[f"{artifact}-{version}.jar"] = MavenFile(
+                Blob(key=f"{coords}:{version}.jar", data=make_jar(group, artifact, version)), stored
+            )
+        for suffix, age in (extra or {}).items():
+            name = f"{artifact}-{version}{suffix}"
+            files[name] = MavenFile(Blob(key=f"{coords}:{name}", data=make_jar(group, artifact, version + suffix)),
+                                    self.now - age * DAY)  # fmt: skip
+        art.versions[version] = files
+
     def _build(self) -> None:
         # PyPI
         self.add_pypi("alpha", "1.0.0", 60)
@@ -435,6 +499,24 @@ class Catalog:
         self.add_go("example.com/incompat", "v2.0.0+incompatible", 50)
         self.add_go("example.com/redirected", "v1.0.0", 50)  # its zip is served from "storage" via a 302
         self.add_go("example.com/nolm", "v1.0.0", 300)  # served without Last-Modified
+        # Maven: Central (checksum headers), Google (checksum files, group index), the Plugin Portal (303s).
+        self.add_maven("central", "org.example:hello", "1.0.0", 100)
+        self.add_maven("central", "org.example:hello", "1.1.0", 30)
+        self.add_maven("central", "org.example:hello", "1.2.0", 2)
+        self.add_maven("central", "org.example:hello", "1.3.0-SNAPSHOT", 1)
+        self.add_maven("central", "org.example:late-classifier", "1.0.0", 100, extra={"-extra.jar": 1})
+        self.add_maven("central", "org.example:bom", "1.0.0", 100, jar=False)
+        self.add_maven("central", "org.example:bom", "1.1.0", 2, jar=False)
+        self.add_maven("central", "org.example:brandnew", "0.1.0", 1 / 24)
+        self.add_maven("central", "org.example:migrated", "1.0.0", None)
+        self.add_maven("central", "org.example:migrated", "0.9.0", None)
+        self.add_maven("central", "org.example:partly", "1.0.0", 90)
+        self.add_maven("central", "org.example:partly", "1.1.0", 60)
+        self.add_maven("central", "io.github.evil:typosquat", "1.0.0", 40)
+        self.add_maven("google", "androidx.test:core", "1.5.0", 200)
+        self.add_maven("google", "androidx.test:core", "1.6.0", 3)
+        self.add_maven("portal", "com.example.plugin:com.example.plugin.gradle.plugin", "1.0", 50, jar=False)
+        self.add_maven("snapshots", "org.example:nightly", "2.0-SNAPSHOT", 0)
         if self.perf:
             self.add_pypi("big-wheel", "1.0.0", 30, big=100 * 1024 * 1024)
             for i in range(500):
@@ -444,6 +526,7 @@ class Catalog:
             self.npm["huge-packument"].tags["latest"] = "1.49.99"
             for i in range(500):
                 self.add_go("example.com/many", f"v1.{i // 100}.{i % 100}", 600 - i)
+                self.add_maven("central", "org.example:many", f"1.{i // 100}.{i % 100}", 600 - i, jar=False)
         for pkg in self.npm.values():
             if "latest" not in pkg.tags:
                 pkg.tags["latest"] = list(pkg.versions)[-1]
@@ -554,6 +637,24 @@ class Catalog:
                 summary="example.com/partly v1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "Maven",
+                "MAL-2026-3001",
+                "io.github.evil:typosquat",
+                n - 9 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in io.github.evil:typosquat (Maven)",
+            ),
+            Advisory(
+                "github",
+                "maven",
+                "GHSA-aaaa-0006-0006",
+                "org.example:partly",
+                n - 8 * DAY,
+                gh_range="= 1.1.0",
+                summary="org.example:partly 1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -571,5 +672,7 @@ class Catalog:
             self.add_pypi(name, version, age_days or 0.0)
         elif ecosystem == "go":
             self.add_go(name, version, age_days)
+        elif ecosystem == "maven":
+            self.add_maven("central", name, version, age_days)
         else:
             self.add_npm(name, version, age_days or 0.0, tag="latest")

@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Maven repositories at `/maven/` for Maven, Gradle, sbt and Coursier ([docs/design/maven.md](docs/design/maven.md),
+  https://github.com/squirro/slowshield/issues/18). `/maven/all/` serves Maven Central and Google Maven behind one
+  URL for a `settings.xml` mirror; `/maven/central/`, `/maven/google/` and `/maven/gradle-plugins/` serve each
+  repository (Gradle's init script uses those), and operator repositories go under `/maven/<id>/`.
+  - `maven-metadata.xml` leaves out versions that are too new or blocked, with `<latest>`/`<release>` and the
+    checksum files recomputed. Files that are too new get `425 Too Early`, which Maven and Gradle show as the reason
+    and re-request on the next build. Malware gets `451`; upstream failures `503`, never a `404` Maven would cache.
+  - A file's publish time is its `Last-Modified` on the repository, or when SlowShield first saw the version listed,
+    whichever is earlier, so a file added to an old version later is held on its own.
+  - Downloads are checked against Central's `x-checksum-sha1`, the `.sha1` file, or the sha256 in the Plugin
+    Portal's path, and fingerprinted. Responses carry `X-Checksum-Sha1`, so Maven skips checksum requests.
+  - OSV and GitHub malware advisories for Maven feed the blocklist.
+- `fail_open` per ecosystem (`upstreams.<ecosystem>.fail_open`). Maven defaults to off: brand-new artifacts are held.
+- The Setup page has Maven (`settings.xml`), Gradle (init script), sbt and Coursier.
+
+### Added
 - Go modules at `/go/`: set `GOPROXY=https://<host>/go` (without `,direct`). Versions younger than the delay are left
   out of version lists, and requests for them get `403` with a `Retry-After` header and a message the go command
   prints. Known malware gets `451`, never `404`/`410`, so a `,direct` fallback can't go around SlowShield either.

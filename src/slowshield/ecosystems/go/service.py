@@ -419,7 +419,7 @@ class GoService:
             t = times.get(ver)
             if ver not in held and t is not None and not is_old_enough(t, delay(ver), now):
                 hold(ver, t)
-        if v.latest is None and v.complete and held and cfg.raw.fail_open:
+        if v.latest is None and v.complete and held and cfg.fail_open_for(ECO):
             # Nothing old enough yet (a brand-new module): serve it anyway, like PyPI and npm.
             v.fail_open = True
             v.latest = (releases or prereleases)[0]
@@ -471,7 +471,7 @@ class GoService:
         delay = cfg.delay_days_for(ECO, req.module, version)
         if is_old_enough(published, delay, ctx.clock.now()):
             return None
-        if cfg.raw.fail_open and await self._fails_open(req):
+        if cfg.fail_open_for(ECO) and await self._fails_open(req):
             ctx.recorder.decision(ECO, kind, "fail_open")
             ctx.recorder.event(
                 "fail_open",
@@ -609,7 +609,7 @@ class GoService:
             return True
         if is_old_enough(published, cfg.delay_days_for(ECO, req.module, version), self.ctx.clock.now()):
             return True
-        return cfg.raw.fail_open and await self._fails_open(req)
+        return cfg.fail_open_for(ECO) and await self._fails_open(req)
 
     def _newest_known_allowed(self, req: M.ProxyRequest) -> str | None:
         """The newest version of the module, among those SlowShield has looked up, that is old enough and not

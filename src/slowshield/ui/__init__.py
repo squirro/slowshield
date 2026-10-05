@@ -497,6 +497,7 @@ class UI:
         pypi_index = f"{base}/pypi/simple/"
         npm_registry = cfg.npm_public_base() + "/"
         go_proxy = f"{base}/go"
+        maven_base = f"{base}/maven"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
@@ -506,9 +507,10 @@ class UI:
                 local = f"http://{'[' + host + ']' if ':' in host else host}"
         secure = None
         if local:
-            secure = {"pypi": pypi_index, "npm": npm_registry, "go": go_proxy}
+            secure = {"pypi": pypi_index, "npm": npm_registry, "go": go_proxy, "maven": f"{maven_base}/all/"}
             pypi_index = f"{local}/pypi/simple/"
             go_proxy = f"{local}/go"
+            maven_base = f"{local}/maven"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy)
@@ -520,10 +522,11 @@ class UI:
             pypi_index=pypi_index,
             npm_registry=npm_registry,
             go_proxy=go_proxy,
+            maven_repo=f"{maven_base}/all/",
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
-            tools=S.tools(pypi_index, npm_registry, go_proxy),
+            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base),
             shell=shell,
             os=os_name,
         )

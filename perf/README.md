@@ -30,7 +30,8 @@ Noise controls:
 `npm_huge_full` / `npm_huge_corgi` (5,000 versions), `artifact_cached` (verified cache hit, zero-copy),
 `artifact_big` (100 MB stream, MB/s), `blocked` (451 path), `dashboard` (UI render), `mixed`
 (45 % PyPI index, 30 % npm abbreviated, 20 % artifacts, 5 % full packuments), `go_list` (500-version Go module) and
-`go_mod` (cached go.mod files, which dominate `go mod download`).
+`go_mod` (cached go.mod files, which dominate `go mod download`), `maven_metadata` (filtered metadata of a
+500-version artifact) and `maven_jar` (a cached jar).
 
 Recorded per scenario: requests/s, p50/p95/p99, error rate, MB/s, CPU-ms per 1,000 requests (cgroup
 `cpu.stat`); per image: peak RSS (cgroup `memory.peak`), startup-to-ready time and image size.
@@ -38,9 +39,9 @@ Recorded per scenario: requests/s, p50/p95/p99, error rate, MB/s, CPU-ms per 1,0
 ## Baseline
 
 The first tagged release has no predecessor: its run *establishes* the baseline (report only, no gate). The same
-holds per scenario: when the baseline image does not serve one yet (the Go scenarios against a release from before
-Go support), the scenario is reported without a comparison, and only its error rate is gated. Such a baseline also
-gets `perf/slowshield.toml` without the `[upstreams.go]` section, which it would reject.
+holds per scenario: when the baseline image does not serve one yet (the Go and Maven scenarios against a release from
+before their support), the scenario is reported without a comparison, and only its error rate is gated. Such a baseline also
+gets `perf/slowshield.toml` without the `[upstreams.go]` and `[upstreams.maven]` sections, which it would reject.
 Every later release is gated against the image currently tagged `latest` in Harbor. Reports are attached to
 the GitHub Release and written to the job summary; raw samples are uploaded as `results.json`.
 

@@ -1,14 +1,14 @@
 # Integrity & tamper detection
 
-Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`) is checked on the way
-through:
+Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file) is checked on the
+way through:
 
-| Check | PyPI | npm | Go |
-|---|---|---|---|
-| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) |
-| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — |
-| Size | `size` from the index | `Content-Length` | `Content-Length` |
-| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same |
+| Check | PyPI | npm | Go | Maven |
+|---|---|---|---|---|
+| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) | Central's `x-checksum-sha1` header; the `.sha1` file (Google, operator repositories); the sha256 in the Plugin Portal's redirect path |
+| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — | — |
+| Size | `size` from the index | `Content-Length` | `Content-Length` | `Content-Length` |
+| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same | same |
 
 The Go checksum lookup is cached and answers the go command's own lookup of the same version, so it costs no
 extra request. It also protects clients that set `GOSUMDB=off`.

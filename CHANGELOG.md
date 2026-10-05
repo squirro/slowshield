@@ -27,6 +27,10 @@ All notable changes to this project are documented here. The format is based on
 - Ecosystems are shown in their logos' primary colours, in the UI and the Grafana dashboards: PyPI `#3775A9`, npm
   `#CB3837`, Go `#00ADD8`, the same in light and dark mode.
 
+### Fixed
+- Chart axes in the UI show round, distinct values, with each gridline at its value. Small counts used to repeat
+  labels (a peak of 2 read `0, 1, 2, 2`).
+
 ## [0.0.4] - 2026-10-04
 
 ### Added

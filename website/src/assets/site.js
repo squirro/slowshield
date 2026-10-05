@@ -55,24 +55,36 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 }
 
-// Scrollytelling: the step closest to the middle of the viewport drives the pinned diagram.
+// Scrollytelling: the step at the reading line drives the pinned diagram. data-step picks that step's layers and --p
+// (0 to 1: how far the reading line is through the step) plays it, so the diagram follows the scroll in both
+// directions. With reduced motion, --p stays 1 and every step shows how it ends.
 const figure = document.querySelector(".story-figure");
 const steps = [...document.querySelectorAll(".step")];
-if (figure && steps.length && "IntersectionObserver" in window) {
-  // The scene before the first step; each step then plays from its beginning when it becomes active.
-  figure.dataset.step = "0";
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        const n = e.target.dataset.step;
-        figure.dataset.step = n;
-        steps.forEach((s) => s.classList.toggle("active", s === e.target));
-      }
-    },
-    { rootMargin: "-45% 0px -45% 0px", threshold: 0 },
-  );
-  steps.forEach((s) => io.observe(s));
+if (figure && steps.length) {
+  // On narrow screens the diagram is pinned at the top, so the text is read further down.
+  const narrow = window.matchMedia("(max-width: 900px)");
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    const line = window.innerHeight * (narrow.matches ? 0.72 : 0.5);
+    let step = "0";
+    let progress = 0;
+    let active = null;
+    for (const s of steps) {
+      const r = s.getBoundingClientRect();
+      if (r.top > line) break;
+      step = s.dataset.step;
+      active = s;
+      progress = Math.min(1, (line - r.top) / r.height);
+    }
+    figure.dataset.step = step;
+    figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
+    steps.forEach((s) => s.classList.toggle("active", s === active));
+  };
+  const queue = () => { if (!frame) frame = requestAnimationFrame(update); };
+  window.addEventListener("scroll", queue, { passive: true });
+  window.addEventListener("resize", queue);
+  update();
 }
 
 // Tabs (Get started).

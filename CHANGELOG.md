@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-05
+
 ### Added
 - Go modules at `/go/`: set `GOPROXY=https://<host>/go` (without `,direct`). Versions younger than the delay are left
   out of version lists, and requests for them get `403` with a `Retry-After` header and a message the go command

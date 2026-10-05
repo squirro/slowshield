@@ -591,7 +591,18 @@ helm install slowshield slowshield/deploy/helm/slowshield \
 export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
 npm config set registry https://slowshield.example.com/npm/
 go env -w GOPROXY=https://slowshield.example.com/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-      <p class="muted">Poetry, PDM, Pipenv, pnpm, Yarn and Bun snippets are on the built-in setup page.</p>
+      <div class="code"><pre><code>&lt;!-- Maven: ~/.m2/settings.xml --&gt;
+&lt;settings&gt;
+  &lt;mirrors&gt;
+    &lt;mirror&gt;
+      &lt;id&gt;slowshield&lt;/id&gt;
+      &lt;!-- private repositories stay direct: *,!their-id --&gt;
+      &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
+      &lt;url&gt;https://slowshield.example.com/maven/all/&lt;/url&gt;
+    &lt;/mirror&gt;
+  &lt;/mirrors&gt;
+&lt;/settings&gt;</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted">Poetry, PDM, Pipenv, pnpm, Yarn, Bun, Gradle, sbt and Coursier snippets are on the built-in setup page.</p>
     </li>
     <li class="reveal">
       <h3><span>3</span> Watch it work</h3>

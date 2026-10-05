@@ -22,6 +22,14 @@ All notable changes to this project are documented here. The format is based on
 - `fail_open` per ecosystem (`upstreams.<ecosystem>.fail_open`). Maven defaults to off: brand-new artifacts are held.
 - The Setup page has Maven (`settings.xml`), Gradle (init script), sbt and Coursier.
 
+### Changed
+- Maven is shown in Java orange `#ED8B00` (Maven's own red is too close to npm's), in the UI and in Grafana.
+- CI: the performance comparison on pull requests (k6 against the base branch, and the micro benchmarks) can be
+  skipped with the `skip-perf` label. Releases no longer run a performance gate against the previous release,
+  only the end-to-end tests and the observability smoke test on the release images.
+
+## [0.0.5] - 2026-10-05
+
 ### Added
 - Go modules at `/go/`: set `GOPROXY=https://<host>/go` (without `,direct`). Versions younger than the delay are left
   out of version lists, and requests for them get `403` with a `Retry-After` header and a message the go command

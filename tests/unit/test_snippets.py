@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import re
 from pathlib import Path
 
@@ -43,14 +42,6 @@ def test_website_uses_every_shared_snippet() -> None:
     markers = set(re.findall(r"<!-- @snippet ([a-z]+\.[a-z-]+) -->", SITE.read_text(encoding="utf-8")))
     shared = {f"shell.{sh.id}" for sh in S.load().shells} | {"try.python"}
     assert markers == shared
-
-
-def test_website_maven_example_is_the_setup_pages() -> None:
-    # The quick start's settings.xml is written into the page by hand, so check it against the Setup page's.
-    site = SITE.read_text(encoding="utf-8")
-    m = re.search(r"<code>&lt;!-- Maven: ~/.m2/settings.xml --&gt;\n(.*?)</code>", site, re.S)
-    assert m is not None
-    assert html.unescape(m.group(1)) == S.maven_settings("https://slowshield.example.com/maven")
 
 
 @pytest.mark.parametrize(

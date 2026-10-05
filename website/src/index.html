@@ -586,23 +586,12 @@ helm install slowshield slowshield/deploy/helm/slowshield \
       </div>
     </li>
     <li class="reveal">
-      <h3><span>2</span> Point your tools at it</h3>
-      <div class="code"><pre><code>pip config set global.index-url https://slowshield.example.com/pypi/simple/
-export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
-npm config set registry https://slowshield.example.com/npm/
-go env -w GOPROXY=https://slowshield.example.com/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-      <div class="code"><pre><code>&lt;!-- Maven: ~/.m2/settings.xml --&gt;
-&lt;settings&gt;
-  &lt;mirrors&gt;
-    &lt;mirror&gt;
-      &lt;id&gt;slowshield&lt;/id&gt;
-      &lt;!-- private repositories stay direct: *,!their-id --&gt;
-      &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
-      &lt;url&gt;https://slowshield.example.com/maven/all/&lt;/url&gt;
-    &lt;/mirror&gt;
-  &lt;/mirrors&gt;
-&lt;/settings&gt;</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-      <p class="muted">Poetry, PDM, Pipenv, pnpm, Yarn, Bun, Gradle, sbt and Coursier snippets are on the built-in setup page.</p>
+      <h3><span>2</span> Open the Setup page</h3>
+      <p>Open <code>/ui/setup</code> on your instance's hostname (<code>https://slowshield.example.com/ui/setup</code>), or
+        <strong>Setup</strong> in the dashboard's menu. It shows how to point each tool at your instance, with its address
+        already filled in: four lines for your shell
+        profile that cover pip, uv, npm and go; settings for Poetry, PDM, Pipenv, pnpm, Yarn, Bun, Maven, Gradle, sbt and
+        Coursier; and what to use in CI and containers.</p>
     </li>
     <li class="reveal">
       <h3><span>3</span> Watch it work</h3>

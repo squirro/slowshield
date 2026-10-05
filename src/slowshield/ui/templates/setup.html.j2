@@ -7,7 +7,7 @@
 {% set days = cfg.default_delay_days|round(1)|replace(".0", "") %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Client setup</h1><p class="muted">Point pip, uv and npm at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
+  <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm and go at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
 </div>
 {% if legacy_hosts %}
 <section class="card" role="note">
@@ -20,14 +20,14 @@
 {% if secure %}
 <section class="card">
   <p><strong>Plain HTTP on localhost.</strong> These URLs work without trusting a certificate; traffic stays on this
-    machine. HTTPS works too once your clients trust Caddy's root CA: <code>{{ secure.pypi }}</code> and
-    <code>{{ secure.npm }}</code>.</p>
+    machine. HTTPS works too once your clients trust Caddy's root CA: <code>{{ secure.pypi }}</code>,
+    <code>{{ secure.npm }}</code> and <code>{{ secure.go }}</code>.</p>
 </section>
 {% endif %}
 <ol class="setup-steps">
   <li class="card">
     <header class="card-head"><h2><span class="step">1</span> Use it for everything</h2></header>
-    <p class="muted">Three environment variables in your shell profile: pip, uv and npm then go through SlowShield in
+    <p class="muted">Four environment variables in your shell profile: pip, uv, npm and go then use SlowShield in
       every new terminal. Remove the lines to switch it off.</p>
     <div class="tabs" data-tabs="shell">
       <div class="tablist" role="tablist" aria-label="Shell">
@@ -41,7 +41,7 @@
 <pre><code>{{ sh.code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
       {%- endfor %}
     </div>
-    {% if os == "windows" %}<p class="muted small">On Windows, set the three variables under
+    {% if os == "windows" %}<p class="muted small">On Windows, set the four variables under
       <em>System → Environment Variables</em>, or use the bash tab in WSL.</p>{% endif %}
   </li>
   <li class="card">
@@ -54,24 +54,24 @@
 <section class="card tool-finder" data-tool-finder>
   <header class="card-head"><h2>Per tool</h2></header>
   <p class="muted">For a single tool or project instead. Index URL <code>{{ pypi_index }}</code>, registry URL
-    <code>{{ npm_registry }}</code>.</p>
+    <code>{{ npm_registry }}</code>, Go module proxy <code>{{ go_proxy }}</code>.</p>
   <label class="tool-search"><span>Find your tool</span>
     <input type="search" list="tool-names" placeholder="e.g. poetry, yarn, pnpm" autocomplete="off" spellcheck="false"
       data-tool-input></label>
   <datalist id="tool-names">{% for t in tools %}<option value="{{ t.name }}"></option>{% endfor %}</datalist>
   <div class="tool-picks" data-tool-hint>
-    {%- for eco, label in (("pypi", "Python"), ("npm", "JavaScript")) %}
-    <div class="tool-group"><span class="tool-group-label">{{ label }}</span>
-      {%- for t in tools if t.ecosystem == eco %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
+    {%- for e in ecosystems.values() %}
+    <div class="tool-group"><span class="tool-group-label">{{ e.language }}</span>
+      {%- for t in tools if t.ecosystem == e.id %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
     </div>
     {%- endfor %}
   </div>
   <p class="muted small" role="status" data-tool-empty hidden>No tool matches. Try pip, uv, Poetry, PDM, Pipenv, npm,
-    pnpm, Yarn or Bun.</p>
+    pnpm, Yarn, Bun or Go.</p>
   <div class="tool-results">
     {%- for t in tools %}
     <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}" data-tool-name="{{ t.name }}">
-      <h3>{{ t.name }}{% if (t.ecosystem == "pypi" and not pypi_enabled) or (t.ecosystem == "npm" and not npm_enabled) %}
+      <h3>{{ t.name }}{% if not enabled[t.ecosystem] %}
         <span class="badge">disabled</span>{% endif %}</h3>
       {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}
     </div>
@@ -81,18 +81,22 @@
 <section class="card">
   <header class="card-head"><h2>CI and containers</h2></header>
   <div class="grid-2">
-    {{ snippet("# GitHub Actions (workflow or job)\nenv:\n  PIP_INDEX_URL: " ~ pypi_index ~ "\n  UV_DEFAULT_INDEX: " ~ pypi_index ~ "\n  npm_config_registry: " ~ npm_registry, "CI") }}
-    {{ snippet("ENV PIP_INDEX_URL=" ~ pypi_index ~ " \\\n    UV_DEFAULT_INDEX=" ~ pypi_index ~ " \\\n    npm_config_registry=" ~ npm_registry, "Dockerfile") }}
+    {{ snippet("# GitHub Actions (workflow or job)\nenv:\n  PIP_INDEX_URL: " ~ pypi_index ~ "\n  UV_DEFAULT_INDEX: " ~ pypi_index ~ "\n  npm_config_registry: " ~ npm_registry ~ "\n  GOPROXY: " ~ go_proxy, "CI") }}
+    {{ snippet("ENV PIP_INDEX_URL=" ~ pypi_index ~ " \\\n    UV_DEFAULT_INDEX=" ~ pypi_index ~ " \\\n    npm_config_registry=" ~ npm_registry ~ " \\\n    GOPROXY=" ~ go_proxy, "Dockerfile") }}
   </div>
   <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
-    the container itself. Block direct access to pypi.org and registry.npmjs.org at the firewall so nothing
-    bypasses SlowShield.</p>
+    the container itself. Block direct access to pypi.org, files.pythonhosted.org, registry.npmjs.org,
+    proxy.golang.org and sum.golang.org at the firewall so nothing bypasses SlowShield (the go command reaches the
+    checksum database through SlowShield too).</p>
 </section>
 <section class="card">
   <header class="card-head"><h2>What to expect</h2></header>
   <ul>
     <li><strong>Too new:</strong> versions younger than the delay are hidden from indexes; downloading one directly (e.g. from a lockfile) returns <code>403</code> with a <code>Retry-After</code> header.</li>
     <li><strong>Malware:</strong> packages or versions on the blocklist return <code>451 Unavailable For Legal Reasons</code> with the advisory in the body.</li>
+    <li><strong>Go:</strong> Go builds the exact versions <code>go.mod</code> requires, so a requirement that is too new
+      fails with <code>403</code> instead of picking an older version. Leave <code>,direct</code> and <code>|</code>
+      out of <code>GOPROXY</code>: with them, the go command goes around SlowShield when it says no.</li>
     <li><strong>Brand-new packages:</strong> if <em>no</em> version is old enough yet, SlowShield fails open and serves them, recording a fail-open event.</li>
     <li><strong>Tampering:</strong> every artifact is fingerprinted on first download; if the bytes ever change, the download is aborted and the event recorded.</li>
   </ul>

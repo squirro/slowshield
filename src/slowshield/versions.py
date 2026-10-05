@@ -1,4 +1,4 @@
-"""Version parsing/ordering for PyPI (PEP 440) and npm (SemVer 2.0), plus advisory range matching.
+"""Version parsing/ordering for PyPI (PEP 440), npm and Go (SemVer 2.0), plus advisory range matching.
 
 Ranges use the comma-separated comparator form shared by GitHub advisories and our blocklist table,
 e.g. ``">= 1.0.0, < 1.4.2"`` or ``"= 0.30.4"``. Each comma part must hold (logical AND).
@@ -79,7 +79,12 @@ def canonical(ecosystem: str, version: str) -> str:
     if ecosystem == "pypi":
         v = parse_pep440(version)
         return str(v) if v is not None else version.strip()
-    return version.strip().removeprefix("v") if parse_semver(version) else version.strip()
+    if not parse_semver(version):
+        return version.strip()
+    out = version.strip().removeprefix("v")
+    # Go: OSV and GitHub write versions without the `v`, and `+incompatible` (the only build metadata Go allows)
+    # names the same module version as the plain one.
+    return out.split("+", 1)[0] if ecosystem == "go" else out
 
 
 def sort_key(ecosystem: str, version: str) -> tuple[int, Any]:

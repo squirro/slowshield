@@ -47,7 +47,12 @@ SPRITE_MARKER = "<!-- @sprite -->"
 # Client snippets come from the same file as the product's Setup page, filled in for the laptop quick start.
 SNIPPETS = HERE.parent / "src" / "slowshield" / "ui" / "snippets.toml"
 SNIPPET_MARKER = re.compile(r"<!-- @snippet ([a-z]+)\.([a-z-]+) -->")
-SITE_URLS = {"pypi": "http://localhost:8080/pypi/simple/", "npm": "http://localhost:8080/npm/", "py_pkg": "requests"}
+SITE_URLS = {
+    "pypi": "http://localhost:8080/pypi/simple/",
+    "npm": "http://localhost:8080/npm/",
+    "go": "http://localhost:8080/go",
+    "py_pkg": "requests",
+}
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # html + css + js, uncompressed
 HEADERS = HERE / "_headers"

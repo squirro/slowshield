@@ -9,7 +9,7 @@
     {{ m.kpi("Data served", kpis.bytes.value|bytes, kpis.bytes.delta) }}
     {# Row 2: traffic kept off the upstream registries #}
     {{ m.kpi("Upstream traffic saved", kpis.upstream_saved.value|bytes, kpis.upstream_saved.delta, hint="Artifact bytes served from SlowShield's verified cache instead of being downloaded from the registry again.") }}
-    {{ m.kpi("Fetched from upstream", kpis.upstream_fetched.value|bytes, kpis.upstream_fetched.delta, invert=True, hint="Artifact bytes SlowShield had to download from pypi.org, files.pythonhosted.org or registry.npmjs.org.") }}
+    {{ m.kpi("Fetched from upstream", kpis.upstream_fetched.value|bytes, kpis.upstream_fetched.delta, invert=True, hint="Artifact bytes SlowShield had to download from the public registries (pypi.org, registry.npmjs.org, proxy.golang.org).") }}
     {{ m.kpi("Upstream requests saved", kpis.upstream_requests_saved.value|num, kpis.upstream_requests_saved.delta, hint="Downloads and metadata lookups answered from the cache without contacting the registry.") }}
     {{ m.kpi("Cache hit ratio", kpis.hit_ratio.value|pct, None if not kpis.hit_ratio.previous else (kpis.hit_ratio.value - kpis.hit_ratio.previous)) }}
     {# Row 3: protection #}
@@ -22,7 +22,7 @@
   <div class="grid-2">
     <section class="card">
       <header class="card-head"><h2>Downloads</h2>
-        <span class="legend"><i class="s-pypi"></i>PyPI <i class="s-npm"></i>npm</span></header>
+        <span class="legend">{% for e in ecosystems.values() %}<i class="s-{{ e.id }}"></i>{{ e.label }} {% endfor %}</span></header>
       {{ traffic_chart }}
     </section>
     <section class="card">
@@ -46,7 +46,7 @@
         {% endfor %}
         </tbody>
       </table>
-      {% else %}<p class="empty">No installs in this period yet. <a href="/ui/setup">Point pip, uv or npm at SlowShield →</a></p>{% endif %}
+      {% else %}<p class="empty">No installs in this period yet. <a href="/ui/setup">Point pip, uv, npm or go at SlowShield →</a></p>{% endif %}
     </section>
     <section class="card">
       <header class="card-head"><h2>Recent security events</h2><a href="/ui/security">Timeline →</a></header>

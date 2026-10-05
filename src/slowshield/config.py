@@ -20,12 +20,12 @@ from typing import Any, Literal
 
 import msgspec
 
-from slowshield.names import normalize_npm, normalize_pypi
+from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm")
+Ecosystem = Literal["pypi", "npm", "go"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -73,9 +73,22 @@ class NpmUpstream(msgspec.Struct, forbid_unknown_fields=True):
     audit_passthrough: bool = True
 
 
+class GoUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # GOPROXY-protocol mirrors. Publish times are the `Last-Modified` of each version's .mod, which on
+    # proxy.golang.org is when the mirror first stored the version (docs/design/go.md).
+    mirrors: list[str] = msgspec.field(default_factory=lambda: ["https://proxy.golang.org"])
+    # The checksum database (GOSUMDB name sum.golang.org), proxied at /go/sumdb/sum.golang.org/.
+    sumdb_url: str = "https://sum.golang.org"
+    # Hosts the mirrors may redirect downloads to: proxy.golang.org sends large zips to signed Cloud Storage URLs.
+    # Every zip is checked against the checksum database wherever it comes from.
+    download_hosts: list[str] = msgspec.field(default_factory=lambda: ["storage.googleapis.com"])
+
+
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
     npm: NpmUpstream = msgspec.field(default_factory=NpmUpstream)
+    go: GoUpstream = msgspec.field(default_factory=GoUpstream)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):
@@ -284,6 +297,7 @@ def _apply_env(cfg: Config) -> None:
     for name, setter in (
         ("SLOWSHIELD_PYPI_ENABLED", lambda b: setattr(cfg.upstreams.pypi, "enabled", b)),
         ("SLOWSHIELD_NPM_ENABLED", lambda b: setattr(cfg.upstreams.npm, "enabled", b)),
+        ("SLOWSHIELD_GO_ENABLED", lambda b: setattr(cfg.upstreams.go, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
@@ -329,12 +343,18 @@ def _validate(cfg: Config) -> None:
                 f"{name} must be a plain http(s)://host[:port][/path] URL (no query, credentials or special "
                 f"characters: it appears in copy-paste shell snippets), got {url!r}"
             )
-    for eco, mirrors in (("pypi", cfg.upstreams.pypi.mirrors), ("npm", cfg.upstreams.npm.mirrors)):
+    for eco in ECOSYSTEMS:
+        mirrors = getattr(cfg.upstreams, eco).mirrors
         if not mirrors:
             raise ConfigError(f"upstreams.{eco}.mirrors must not be empty")
         for m in mirrors:
             if not m.startswith(("https://", "http://")):
                 raise ConfigError(f"upstreams.{eco}.mirrors entries must be http(s) URLs, got {m!r}")
+    if not cfg.upstreams.go.sumdb_url.startswith(("https://", "http://")):
+        raise ConfigError(f"upstreams.go.sumdb_url must be an http(s) URL, got {cfg.upstreams.go.sumdb_url!r}")
+    for host in cfg.upstreams.go.download_hosts:
+        if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", host):
+            raise ConfigError(f"upstreams.go.download_hosts entries must be host names, got {host!r}")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
@@ -359,9 +379,12 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
     pkg_rules: dict[tuple[str, str], float] = {}
     ver_rules: dict[tuple[str, str, str], float] = {}
     for rule in cfg.exceptions:
-        name = normalize_pypi(rule.package) if rule.ecosystem == "pypi" else normalize_npm(rule.package)
+        name = normalize(rule.ecosystem, rule.package)
         if rule.version:
-            key = (rule.ecosystem, name, rule.version)
+            version = rule.version.strip()
+            if rule.ecosystem == "go" and not version.startswith("v"):
+                version = "v" + version  # Go versions always carry the `v`; accept "1.2.3" as well
+            key = (rule.ecosystem, name, version)
             ver_rules.setdefault(key, rule.delay_days)
         else:
             pkg_rules.setdefault((rule.ecosystem, name), rule.delay_days)
@@ -444,7 +467,7 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         o, n = getattr(old.upstreams, eco), getattr(new.upstreams, eco)
         if o.enabled != n.enabled:
             changed.append(f"upstreams.{eco}.enabled")
-        if o.hostnames != n.hostnames:
+        if getattr(o, "hostnames", None) != getattr(n, "hostnames", None):
             changed.append(f"upstreams.{eco}.hostnames")
     if old.upstreams.npm.public_url != new.upstreams.npm.public_url:
         changed.append("upstreams.npm.public_url")

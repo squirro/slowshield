@@ -37,13 +37,19 @@ mirrors = ["https://registry.npmjs.org"]
 # public_url = "https://slowshield.example.com/npm"  # base for rewritten tarball URLs (defaults below)
 audit_passthrough = true               # forward `npm audit` bulk advisory queries
 
+[upstreams.go]                         # clients: GOPROXY=<public_url>/go (docs/design/go.md)
+enabled = true
+mirrors = ["https://proxy.golang.org"] # GOPROXY-protocol mirrors; publish time = Last-Modified of each .mod
+sumdb_url = "https://sum.golang.org"   # checksum database, proxied at /go/sumdb/sum.golang.org/
+download_hosts = ["storage.googleapis.com"]  # where the mirror may redirect large zips
+
 # --- caches -------------------------------------------------------------------------------------
 [cache]
 metadata_max_mb = 1024                 # upstream metadata + rendered responses: one SQLite file (data_dir/
                                        # metadata-cache.db) shared by all workers, kept in the OS page cache
 metadata_memory_mb = 64                # parsed metadata and small responses in process memory, in total
                                        # across all workers (each worker holds its share)
-artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs
+artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs/Go modules
 artifacts_max_gb = 20                  # LRU eviction above 90% of this
 scrub_interval_hours = 24              # re-hash cached files to detect disk corruption
 

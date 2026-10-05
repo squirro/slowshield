@@ -11,13 +11,14 @@ from typing import Any
 
 @dataclass(slots=True)
 class Expected:
-    """Digests the bytes must match. Hex for sha256/blake2b_256/sha1, raw bytes for sha512 (SRI)."""
+    """Digests the bytes must match. Hex for sha256/blake2b_256/sha1, raw bytes for sha512 (SRI), `h1:...` for Go."""
 
     sha256: str | None = None  # from the index (PyPI) or our TOFU record
     tofu_sha256: str | None = None
     blake2b_256: str | None = None  # PyPI path component
     sha512: bytes | None = None  # npm dist.integrity
     sha1: str | None = None  # npm dist.shasum (legacy)
+    go_mod_h1: str | None = None  # Go checksum database `h1:` of a go.mod file
     size: int | None = None
 
 
@@ -33,6 +34,13 @@ def parse_sri(integrity: str | None) -> bytes | None:
             except ValueError:
                 return None
     return None
+
+
+def go_mod_h1(sha256_hex: str) -> str:
+    """The Go checksum database's `h1:` hash of a go.mod file whose bytes have this sha256: dirhash Hash1 over
+    the single file name `go.mod` (golang.org/x/mod/sumdb/dirhash)."""
+    summary = f"{sha256_hex}  go.mod\n".encode()
+    return "h1:" + base64.b64encode(hashlib.sha256(summary).digest()).decode()
 
 
 @dataclass(slots=True)
@@ -86,6 +94,8 @@ class StreamVerifier:
             out.append("sha512 does not match dist.integrity")
         if self._sha1 is not None and e.sha1 and not hmac.compare_digest(self._sha1.hexdigest(), e.sha1.lower()):
             out.append("sha1 does not match dist.shasum")
+        if e.go_mod_h1 and not hmac.compare_digest(go_mod_h1(got), e.go_mod_h1):
+            out.append("h1 does not match the Go checksum database")
         return out
 
     def tofu_mismatch(self) -> bool:

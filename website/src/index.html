@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SlowShield — safety through patience</title>
-<meta name="description" content="SlowShield is a free, open-source proxy for PyPI and npm. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
+<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm and Go modules. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
 <meta name="theme-color" content="#060915">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://slowshield.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
 <meta property="og:title" content="SlowShield — safety through patience">
-<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI and npm — and soon everything that downloads.">
+<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm and Go — and soon everything that downloads.">
 <meta property="og:url" content="https://slowshield.org/">
 <meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -62,7 +62,7 @@
       <span data-hl data-fit="111" data-fit-sm="73" hidden>Stay up to date.<br><span class="grad">Just not that<br class="br-sm"> up to date.</span></span>
       <span data-hl data-fit="71" hidden>Safety through<br><span class="grad">patience.</span></span>
     </h1>
-    <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI and npm. It holds
+    <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm and Go. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
       download. Made for developers and small teams who want supply-chain security that just works, without buying
       and running an artifact repository manager.</p>
@@ -112,7 +112,7 @@
 <div class="code" role="tabpanel" id="sh-zsh" aria-labelledby="t-sh-zsh" hidden><pre><code><!-- @snippet shell.zsh --></code></pre><button class="copy" type="button" data-copy>Copy</button></div>
 <div class="code" role="tabpanel" id="sh-fish" aria-labelledby="t-sh-fish" hidden><pre><code><!-- @snippet shell.fish --></code></pre><button class="copy" type="button" data-copy>Copy</button></div>
         </div>
-        <p class="muted small">pip, uv and npm then go through SlowShield in every new terminal. Remove the lines to switch it off.</p>
+        <p class="muted small">pip, uv, npm and go then use SlowShield in every new terminal. Remove the lines to switch it off.</p>
       </li>
     </ol>
   </div>
@@ -176,7 +176,7 @@
           <circle class="dg-packet p1" r="5"/><circle class="dg-packet p2" r="5"/><circle class="dg-packet p3" r="5"/>
         </g>
         <!-- one caption per step, always in the same place -->
-        <text x="320" y="388" class="st st-1 dg-callout">one URL for pip · uv · Poetry · npm · pnpm · Yarn · Bun</text>
+        <text x="320" y="388" class="st st-1 dg-callout">one URL for pip · uv · Poetry · npm · pnpm · Yarn · Bun · go</text>
         <text x="320" y="388" class="st st-2 dg-callout held">held back · unlocks in 6 d 23 h</text>
         <text x="320" y="388" class="st st-3 dg-callout bad">HTTP 451 · known malware, refused</text>
         <text x="320" y="388" class="st st-4 dg-callout ok">sha256 ✓  registry digest ✓  first seen ✓</text>
@@ -187,7 +187,7 @@
       <li class="step" data-step="1">
         <span class="step-n">01</span>
         <h3>One URL. Every tool.</h3>
-        <p>Point pip, uv, Poetry, npm, pnpm, Yarn or Bun at SlowShield. Nothing else changes: the same packages, the
+        <p>Point pip, uv, Poetry, npm, pnpm, Yarn, Bun or go at SlowShield. Nothing else changes: the same packages, the
           same commands, the same lockfiles. Developers don't have to think about it — that's the point.</p>
       </li>
       <li class="step" data-step="2">
@@ -467,14 +467,15 @@ sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code><
       <div class="code"><pre><code># Dockerfile of the agent's sandbox, devcontainer or CI image
 ENV PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/ \
     UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/ \
-    npm_config_registry=https://slowshield.example.com/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-      <p class="muted small">pip, uv, npm, npx and uvx all read these, so the agent needs no instructions.</p>
+    npm_config_registry=https://slowshield.example.com/npm/ \
+    GOPROXY=https://slowshield.example.com/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">pip, uv, npm, npx, uvx and go all read these, so the agent needs no instructions.</p>
     </li>
     <li class="qbox reveal">
       <h3><span>2</span> Let only SlowShield out</h3>
       <div class="code"><pre><code># network allowlist of the sandbox (the syntax depends on the sandbox)
 slowshield.example.com
-# leave out pypi.org, files.pythonhosted.org and registry.npmjs.org</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+# leave out pypi.org, files.pythonhosted.org, registry.npmjs.org, proxy.golang.org and sum.golang.org</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted small">With the registries off the allowlist, an agent can't install around SlowShield, even
         when it passes its own <code>--index-url</code>.</p>
     </li>
@@ -485,14 +486,14 @@ slowshield.example.com
 <section class="ecosystems" id="ecosystems">
   <div class="section-head reveal">
     <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python and JavaScript today.<br>Everything under the sun tomorrow.</h2>
+    <h2>Python, JavaScript and Go today.<br>Everything under the sun tomorrow.</h2>
     <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
       same policy, same dashboard, same guarantees.</p>
   </div>
   <div class="sun reveal" aria-hidden="true">
     <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
     <div class="ring ring-1">
-      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco soon">Go modules</span>
+      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco live">Go modules</span>
       <span class="eco soon">Cargo</span><span class="eco soon">dnf / yum</span><span class="eco soon">apt / deb</span>
     </div>
     <div class="ring ring-2">
@@ -504,18 +505,18 @@ slowshield.example.com
   <div class="roadmap">
     <div class="phase now reveal">
       <span class="when">Available now</span>
-      <h3>Python &amp; JavaScript</h3>
+      <h3>Python, JavaScript &amp; Go</h3>
       <ul>
         <li>PyPI<span>pip, uv, Poetry, PDM, Pipenv</span></li>
         <li>npm<span>npm, pnpm, Yarn, Bun</span></li>
+        <li>Go modules<span>as your <code>GOPROXY</code></span></li>
         <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
       </ul>
     </div>
     <div class="phase next reveal">
       <span class="when">Next</span>
-      <h3>Go, Rust &amp; Linux packages</h3>
+      <h3>Rust &amp; Linux packages</h3>
       <ul>
-        <li>Go modules<span>as your <code>GOPROXY</code></span></li>
         <li>Cargo<span>the crates.io sparse index</span></li>
         <li>apt, dnf &amp; apk<span>Debian, Ubuntu, Fedora, RHEL, Amazon Linux, Alpine</span></li>
       </ul>
@@ -585,7 +586,8 @@ helm install slowshield slowshield/deploy/helm/slowshield \
       <h3><span>2</span> Point your tools at it</h3>
       <div class="code"><pre><code>pip config set global.index-url https://slowshield.example.com/pypi/simple/
 export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
-npm config set registry https://slowshield.example.com/npm/</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+npm config set registry https://slowshield.example.com/npm/
+go env -w GOPROXY=https://slowshield.example.com/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted">Poetry, PDM, Pipenv, pnpm, Yarn and Bun snippets are on the built-in setup page.</p>
     </li>
     <li class="reveal">
@@ -609,7 +611,7 @@ npm config set registry https://slowshield.example.com/npm/</code></pre><button 
     </header>
     <ul class="plan">
       <li>Every feature: release delay, malware blocking, integrity checks, verified cache, dashboard</li>
-      <li>PyPI and npm, with every tool that installs through them</li>
+      <li>PyPI, npm and Go modules, with every tool that installs through them</li>
       <li>Unlimited users, machines, packages and instances</li>
       <li>Self-hosted: Docker, rootless Podman or Kubernetes, your data stays with you</li>
       <li>Grafana dashboards and alerts included</li>

@@ -1,13 +1,17 @@
 # Integrity & tamper detection
 
-Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball) is checked on the way through:
+Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`) is checked on the way
+through:
 
-| Check | PyPI | npm |
-|---|---|---|
-| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity |
-| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — |
-| Size | `size` from the index | `Content-Length` |
-| Trust on first use | sha256 of the bytes first served, stored per artifact path | same |
+| Check | PyPI | npm | Go |
+|---|---|---|---|
+| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) |
+| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — |
+| Size | `size` from the index | `Content-Length` | `Content-Length` |
+| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same |
+
+The Go checksum lookup is cached and answers the go command's own lookup of the same version, so it costs no
+extra request. It also protects clients that set `GOSUMDB=off`.
 
 ## Streaming without trusting the stream
 
@@ -19,8 +23,8 @@ install fails), the temp file is discarded and an event is recorded:
 * `integrity_mismatch` — the bytes don't match the registry's own digest (CDN corruption, MITM, or a
   registry inconsistency); later requests retry upstream.
 * `tampered` — the bytes differ from the fingerprint recorded the first time this artifact was served.
-  Filenames on PyPI and `name@version` on npm are immutable, so this is definitive: the artifact is marked
-  and every later request gets `451 tamper_detected` until an operator investigates.
+  Filenames on PyPI, `name@version` on npm and module versions in Go are immutable, so this is definitive: the
+  artifact is marked and every later request gets `451 tamper_detected` until an operator investigates.
 
 Upstream error responses (non-2xx) are never hashed.
 

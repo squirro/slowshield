@@ -1,8 +1,8 @@
 # Routing: one host, one path per ecosystem
 
 Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract, the
-deprecation of per-ecosystem hostnames and the new Setup page are implemented; ecosystems beyond PyPI and npm
-are planned.
+deprecation of per-ecosystem hostnames and the new Setup page are implemented. Go is served at `/go/`
+([go.md](go.md)); the other ecosystems are planned.
 
 SlowShield serves every ecosystem from **one host**, each under a path named after its **protocol**. No
 ecosystem gets its own hostname. This document is the contract for those paths, so that new ecosystems never
@@ -45,8 +45,8 @@ them is added.
 | `/favicon.ico` | redirect to `/ui/static/brand/favicon.ico` (browsers ask for it) |
 | `/v2/` | OCI distribution API (mandated at the root by the spec) |
 | `/.well-known/` | RFC 8615 (e.g. Terraform service discovery, if ever needed) |
-| `/pypi/`, `/npm/` | served today |
-| `/go/`, `/cargo/`, `/maven/`, `/nuget/`, `/rubygems/`, `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
+| `/pypi/`, `/npm/`, `/go/` | served today |
+| `/cargo/`, `/maven/`, `/nuget/`, `/rubygems/`, `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
 | `/static/`, `/simple/`, `/packages/` | deprecated, removed in 0.1 |
 
 If two protocols ever need the same root path:
@@ -63,7 +63,7 @@ The internal host-routing code stays for that purpose after the PyPI and npm hos
 |---|---|---|---|---|---|
 | PyPI | `/pypi/` (shipped) | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX` | none (relative URLs) | `upload-time` (PEP 700) | OSV PyPI |
 | npm | `/npm/` (shipped) | `npm_config_registry` | tarball URLs | `time` | OSV npm |
-| Go | `/go/` | `go env -w GOPROXY=https://HOST/go` (without `,direct`) | none; checksum DB passed through unchanged | index.golang.org feed (module time can be backdated) | OSV Go |
+| Go | `/go/` (shipped, [go.md](go.md)) | `go env -w GOPROXY=https://HOST/go` (without `,direct`) | none; checksum DB passed through unchanged | `Last-Modified` of the `.mod` on proxy.golang.org (when the mirror stored it; the module time can be backdated) | OSV Go, GitHub go |
 | Cargo | `/cargo/` (trailing `/` required) | `~/.cargo/config.toml` source replacement | `dl` in `config.json` | `pubtime` | OSV crates.io |
 | Maven, Gradle | `/maven/<repo-id>/` (central, gradle-plugins, google) | `settings.xml` mirror; Gradle init script or 9.8 `org.gradle.mirror.maven.settings` | regenerate checksums of filtered metadata; follow Plugin Portal 303s on the server | `Last-Modified` per POM | OSV Maven (thin) |
 | NuGet | `/nuget/v3/index.json` | user/machine `NuGet.Config`, nuget.org disabled | every absolute `@id` | registration `published` / catalog feed | OSV NuGet |
@@ -88,7 +88,8 @@ policy and provides a linter.
 ## What the research changes in the design
 
 - **First-seen tracking is a core component.** Only PyPI, npm, Cargo, RubyGems, Composer and partly NuGet
-  publish trustworthy times. Go needs a feed; everything else needs SlowShield's own record.
+  publish trustworthy times. Go uses the mirror's storage time ([go.md](go.md)); everything else needs
+  SlowShield's own record.
 - **Three ways to hold back a release.** Which one applies depends on the ecosystem:
   - **Filter the version list.** This works for most language registries. Cargo uses *yanked*, which keeps
     lockfiles working.
@@ -145,5 +146,5 @@ How the deprecated forms behave until 0.1:
 
 ## Not decided yet
 
-- Which ecosystem comes after this work: Go and Cargo are first on the roadmap.
+- Which ecosystem comes next: Cargo is first on the roadmap (Go shipped, [go.md](go.md)).
 - Whether re-signing distribution indexes is ever offered (an opt-in mode); time travel needs no key.

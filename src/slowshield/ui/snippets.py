@@ -35,9 +35,9 @@ def safe(value: str) -> str:
     return value
 
 
-def render(code: str, *, pypi: str, npm: str, py_pkg: str = "requests") -> str:
+def render(code: str, *, pypi: str, npm: str, go: str, py_pkg: str = "requests") -> str:
     """Fill the placeholders. Plain replacement: the shell code itself may contain braces."""
-    for key, value in (("pypi", pypi), ("npm", npm), ("py_pkg", py_pkg)):
+    for key, value in (("pypi", pypi), ("npm", npm), ("go", go), ("py_pkg", py_pkg)):
         code = code.replace("{" + key + "}", safe(value))
     return code
 
@@ -54,14 +54,14 @@ class Tool:
     """One tool on the Setup page's finder: `keywords` is what typing matches (name, aliases, config files)."""
 
     name: str
-    ecosystem: str  # pypi | npm
+    ecosystem: str  # an id from slowshield.ecosystems
     keywords: str
     snippets: tuple[tuple[str, str], ...]  # (label, code)
 
 
-def tools(pypi: str, npm: str) -> tuple[Tool, ...]:
+def tools(pypi: str, npm: str, go: str) -> tuple[Tool, ...]:
     """Per-tool setup (Setup page only), with this instance's URLs."""
-    pypi, npm = safe(pypi), safe(npm)
+    pypi, npm, go = safe(pypi), safe(npm), safe(go)
     secure = "false" if pypi.startswith("http://") else "true"
     yarn_http = "\nunsafeHttpWhitelist:\n  - localhost" if npm.startswith("http://") else ""
     return (
@@ -107,11 +107,20 @@ def tools(pypi: str, npm: str) -> tuple[Tool, ...]:
             ((".yarnrc.yml (Yarn Berry)", f'npmRegistryServer: "{npm}"{yarn_http}'),),
         ),
         Tool("Bun", "npm", "bun bunfig node javascript", (("bunfig.toml", f'[install]\nregistry = "{npm}"'),)),
+        Tool(
+            "Go",
+            "go",
+            "go golang gomod go.mod goproxy modules",
+            (
+                ("command (writes go env)", f"go env -w GOPROXY={go}"),
+                ("private modules: fetched directly, not through SlowShield", "go env -w GOPRIVATE=git.example.com/*"),
+            ),
+        ),
     )
 
 
-def for_instance(pypi: str, npm: str) -> Snippets:
+def for_instance(pypi: str, npm: str, go: str) -> Snippets:
     """The snippets with this instance's URLs."""
     s = load()
-    shells = tuple(Shell(sh.id, sh.label, sh.os, render(sh.code, pypi=pypi, npm=npm)) for sh in s.shells)
-    return Snippets(shells, render(s.try_python, pypi=pypi, npm=npm))
+    shells = tuple(Shell(sh.id, sh.label, sh.os, render(sh.code, pypi=pypi, npm=npm, go=go)) for sh in s.shells)
+    return Snippets(shells, render(s.try_python, pypi=pypi, npm=npm, go=go))

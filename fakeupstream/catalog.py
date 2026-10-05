@@ -1,4 +1,4 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, OSV, GitHub advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, OSV, GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -172,6 +172,24 @@ def make_sdist(name: str, version: str, filename: str) -> bytes:
     return _zip(files) if filename.endswith(".zip") else _targz(files)
 
 
+def go_h1(files: dict[str, bytes]) -> str:
+    """The checksum database's h1 of a set of files (dirhash Hash1), computed from the files themselves."""
+    summary = "".join(f"{hashlib.sha256(files[n]).hexdigest()}  {n}\n" for n in sorted(files))
+    return "h1:" + base64.b64encode(hashlib.sha256(summary.encode()).digest()).decode()
+
+
+def make_go_module(path: str, version: str) -> tuple[bytes, bytes, str, str]:
+    """(zip, go.mod, zip h1, go.mod h1) for a module the go command can download and build."""
+    mod = f"module {path}\n\ngo 1.19\n".encode()
+    pkg = path.rsplit("/", 1)[-1].replace(".", "_").replace("-", "_").lower()
+    prefix = f"{path}@{version}/"
+    files = {
+        prefix + "go.mod": mod,
+        prefix + f"{pkg}.go": f'package {pkg}\n\n// Version is {version}.\nconst Version = "{version}"\n'.encode(),
+    }
+    return _zip(files), mod, go_h1(files), go_h1({"go.mod": mod})
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -224,9 +242,28 @@ class NpmPackage:
 
 
 @dataclass(slots=True)
+class GoVersion:
+    version: str
+    stored: float | None  # when the mirror stored it (its Last-Modified); None: not on the mirror yet
+    commit: float  # the `.info` Time: the commit time, which the author sets (and can backdate)
+    zip: Blob
+    mod: Blob
+    zip_h1: str
+    mod_h1: str
+    record: int  # checksum database record number
+
+
+@dataclass(slots=True)
+class GoModule:
+    path: str
+    versions: dict[str, GoVersion] = field(default_factory=dict)
+    head: str | None = None  # what @latest resolves the default branch to, for modules without tags
+
+
+@dataclass(slots=True)
 class Advisory:
     source: str  # osv | github
-    ecosystem: str  # PyPI | npm (OSV) / pip | npm (GitHub)
+    ecosystem: str  # PyPI | npm | Go (OSV) / pip | npm | go (GitHub)
     id: str
     package: str
     modified: float
@@ -244,6 +281,7 @@ class Catalog:
         self.perf = perf
         self.pypi: dict[str, PyProject] = {}
         self.npm: dict[str, NpmPackage] = {}
+        self.go: dict[str, GoModule] = {}
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -319,6 +357,33 @@ class Catalog:
             pkg.tags[tag] = version
         self.tarballs[f"/{name}/-/{pkg.basename}-{version}.tgz"] = (pkg, pkg.versions[version])
 
+    def add_go(
+        self,
+        path: str,
+        version: str,
+        age_days: float | None,
+        *,
+        commit_age_days: float | None = None,
+        head: bool = False,
+    ) -> None:
+        """`age_days` is how long ago the mirror stored the version (None: not on the mirror yet)."""
+        mod = self.go.setdefault(path, GoModule(path=path))
+        zip_bytes, mod_bytes, zip_h1, mod_h1 = make_go_module(path, version)
+        stored = None if age_days is None else self.now - age_days * DAY
+        commit = self.now - (commit_age_days if commit_age_days is not None else (age_days or 0) + 0.01) * DAY
+        mod.versions[version] = GoVersion(
+            version,
+            stored,
+            commit,
+            Blob(key=f"{path}@{version}.zip", data=zip_bytes),
+            Blob(key=f"{path}@{version}.mod", data=mod_bytes),
+            zip_h1,
+            mod_h1,
+            record=1_000_000 + sum(len(m.versions) for m in self.go.values()),
+        )
+        if head:
+            mod.head = version
+
     def _build(self) -> None:
         # PyPI
         self.add_pypi("alpha", "1.0.0", 60)
@@ -352,6 +417,24 @@ class Catalog:
         self.add_npm("ranged-npm", "1.0.0", 300)
         self.add_npm("ranged-npm", "1.1.0", 200)
         self.add_npm("ranged-npm", "1.2.0", 100, tag="latest")
+        # Go: the mirror's storage time is the publish time; commit times are the author's and may be backdated.
+        self.add_go("example.com/hello", "v1.0.0", 100)
+        self.add_go("example.com/hello", "v1.1.0", 30)
+        self.add_go("example.com/hello", "v1.2.0", 2, commit_age_days=2000)  # backdated commit
+        self.add_go("example.com/hello", "v1.3.0-rc.1", 1)
+        self.add_go("github.com/Acme/Widget", "v0.1.0", 40)
+        self.add_go("github.com/Acme/Widget", "v0.2.0", 10)
+        self.add_go("example.com/brandnew", "v0.1.0", 1 / 24)
+        self.add_go("example.com/untagged", "v0.0.0-20250101000000-0123456789ab", 300)
+        self.add_go("example.com/untagged", "v0.0.0-20260920120000-abcdef123456", 1, head=True)
+        self.add_go("example.com/unstored", "v0.9.0", 200)
+        self.add_go("example.com/unstored", "v1.0.0", None, commit_age_days=400)
+        self.add_go("example.com/malware", "v1.0.0", 40)
+        self.add_go("example.com/partly", "v1.0.0", 90)
+        self.add_go("example.com/partly", "v1.1.0", 60)
+        self.add_go("example.com/incompat", "v2.0.0+incompatible", 50)
+        self.add_go("example.com/redirected", "v1.0.0", 50)  # its zip is served from "storage" via a 302
+        self.add_go("example.com/nolm", "v1.0.0", 300)  # served without Last-Modified
         if self.perf:
             self.add_pypi("big-wheel", "1.0.0", 30, big=100 * 1024 * 1024)
             for i in range(500):
@@ -359,6 +442,8 @@ class Catalog:
             for i in range(5000):
                 self.add_npm("huge-packument", f"1.{i // 100}.{i % 100}", 6000 - i)
             self.npm["huge-packument"].tags["latest"] = "1.49.99"
+            for i in range(500):
+                self.add_go("example.com/many", f"v1.{i // 100}.{i % 100}", 600 - i)
         for pkg in self.npm.values():
             if "latest" not in pkg.tags:
                 pkg.tags["latest"] = list(pkg.versions)[-1]
@@ -451,6 +536,24 @@ class Catalog:
                 summary="malicious-npm",
             ),
             Advisory(
+                "osv",
+                "Go",
+                "MAL-2026-2001",
+                "example.com/malware",
+                n - 14 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in example.com/malware (Go)",
+            ),
+            Advisory(
+                "github",
+                "go",
+                "GHSA-aaaa-0005-0005",
+                "example.com/partly",
+                n - 13 * DAY,
+                gh_range="= 1.1.0",
+                summary="example.com/partly v1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -462,8 +565,11 @@ class Catalog:
             ),
         ]
 
-    def publish(self, ecosystem: str, name: str, version: str, age_days: float = 0.0) -> None:
+    def publish(self, ecosystem: str, name: str, version: str, age_days: float | None = 0.0) -> None:
+        """`age_days=None` (Go): tagged, but not on the mirror until someone asks for it."""
         if ecosystem == "pypi":
-            self.add_pypi(name, version, age_days)
+            self.add_pypi(name, version, age_days or 0.0)
+        elif ecosystem == "go":
+            self.add_go(name, version, age_days)
         else:
-            self.add_npm(name, version, age_days, tag="latest")
+            self.add_npm(name, version, age_days or 0.0, tag="latest")

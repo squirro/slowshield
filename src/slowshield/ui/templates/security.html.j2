@@ -20,7 +20,7 @@
   <label class="search"><span class="sr-only">Package</span><input type="search" name="q" value="{{ q }}" placeholder="Package…" autocomplete="off"></label>
   <label class="search"><span class="sr-only">Client IP</span><input type="search" name="ip" value="{{ ip }}" placeholder="Client IP…" autocomplete="off"></label>
   <label><span class="sr-only">Ecosystem</span><select name="eco"><option value="">All ecosystems</option>
-    <option value="pypi"{% if eco == "pypi" %} selected{% endif %}>PyPI</option><option value="npm"{% if eco == "npm" %} selected{% endif %}>npm</option></select></label>
+    {{ m.eco_options(eco) }}</select></label>
   <noscript><button type="submit">Apply</button></noscript>
 </form>
 {% include "partials/security_table.html.j2" %}

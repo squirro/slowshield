@@ -18,8 +18,10 @@
   --tamper-soft: #f4e0ef;
   --ok: #107445;
   --ok-soft: #deece5;
-  --pypi: #2f6fb3;
+  /* Ecosystems: their logos' primary colours, the same in both themes. */
+  --pypi: #3775a9;
   --npm: #cb3837;
+  --go: #00add8;
   --grid: #eaedf6;
   --radius: 10px;
   --shadow: 0 1px 2px rgb(10 15 36 / 6%), 0 1px 1px rgb(10 15 36 / 4%);
@@ -30,11 +32,11 @@
 /* Night Field (brand/tokens.css). Held is violet in this palette; the soft tints match the badge rule (14% / 22%). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
+    --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --grid: #181f35; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
+  --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --grid: #181f35; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -145,6 +147,7 @@ tr.withdrawn { opacity: 0.55; }
 
 .eco { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; color: #fff; vertical-align: 1px; }
 .eco-pypi { background: var(--pypi); } .eco-npm { background: var(--npm); }
+.eco-go { background: var(--go); color: #000; } /* white on Gopher Blue is unreadable; Go's brand pairs it with black */
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ev-blocked, .st-blocked, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
 .ev-tampered, .ev-integrity_mismatch, .st-tampered { background: var(--tamper-soft); color: var(--tamper); }
@@ -220,6 +223,7 @@ tr.withdrawn { opacity: 0.55; }
 .chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
 .chart .hover { fill: transparent; } .chart .hover:hover { fill: color-mix(in srgb, var(--text) 6%, transparent); }
 .s-pypi { fill: var(--pypi); background: var(--pypi); } .s-npm { fill: var(--npm); background: var(--npm); }
+.s-go { fill: var(--go); background: var(--go); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
 .s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }
 .s-age_gated { fill: var(--hold); background: var(--hold); } .s-blocked { fill: var(--danger); background: var(--danger); }

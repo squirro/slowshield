@@ -11,6 +11,10 @@ files_url = "http://fakeupstream:9000/files"
 [upstreams.npm]
 mirrors = ["http://fakeupstream:9000/npm"]
 
+[upstreams.go]
+mirrors = ["http://fakeupstream:9000/go"]
+sumdb_url = "http://fakeupstream:9000/sumdb"
+
 [cache]
 artifacts_enabled = true
 artifacts_max_gb = 1

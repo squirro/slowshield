@@ -39,6 +39,11 @@ security_events = meter.create_counter(
 artifact_bytes = meter.create_counter(
     "slowshield.artifact.bytes", unit="By", description="Artifact bytes served, by source (cache/upstream)."
 )
+publish_time_lookups = meter.create_counter(
+    "slowshield.publish_time.lookups",
+    unit="{request}",
+    description="Upstream requests made to learn a version's publish time (Go: Last-Modified of the .mod), by result.",
+)
 cache_requests = meter.create_counter(
     "slowshield.cache.requests", unit="{request}", description="Cache lookups by cache and result."
 )

@@ -3,11 +3,14 @@
 ## The rule
 
 A release becomes installable `delay_days` after it was published (default 7). The publish time is
-taken from the registry: PyPI's per-file `upload-time` (PEP 700) and npm's `time[<version>]`.
+taken from the registry: PyPI's per-file `upload-time` (PEP 700), npm's `time[<version>]`, and for Go the
+`Last-Modified` of the version's `.mod` on proxy.golang.org, which is when the mirror first stored it. Go's own
+`.info` `Time` is the commit time, which the author sets, and is never used ([design/go.md](design/go.md)).
 
 * **PyPI is evaluated per file.** Uploading a new wheel to an old release does not make it
   installable early — each file waits for its own delay.
-* **npm is evaluated per version.**
+* **npm and Go are evaluated per version.** Go builds the exact versions go.mod requires, so a requirement that
+  is too new fails with `403` instead of picking an older version.
 * A file or version **without a publish time is treated as too new.**
 
 ## What clients see

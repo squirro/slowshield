@@ -8,7 +8,7 @@
     <h1 class="pkg-title">{{ name }}</h1>
     <p class="muted">
       Delay policy: <strong>{{ delay|round(1)|replace(".0", "") }} days</strong>{% if delay != default_delay %} (exception; default is {{ default_delay|round(1)|replace(".0", "") }}){% endif %}
-      · <a href="{{ upstream_url }}" rel="noopener noreferrer" target="_blank">View on {{ eco_label[eco] }} ↗</a>
+      · <a href="{{ upstream_url }}" rel="noopener noreferrer" target="_blank">View on {{ upstream_site }} ↗</a>
     </p>
   </div>
   <div class="controls">{{ m.range_picker(w.key, request.url.path) }}</div>

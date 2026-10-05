@@ -23,8 +23,8 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
-from slowshield import names as N
 from slowshield.context import AppContext
+from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
@@ -34,7 +34,7 @@ from slowshield.web import is_loopback_host, local_http_origin
 TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
 HTMX_VERSION = "4.0.0"
-ECO_LABEL = {"pypi": "PyPI", "npm": "npm"}
+ECO_LABEL = LABELS
 EVENT_LABEL = {
     "blocked": "Blocked",
     "tampered": "Tampered",
@@ -133,6 +133,7 @@ class UI:
             build=build_info(),
             htmx_version=HTMX_VERSION,
             eco_label=ECO_LABEL,
+            ecosystems=ECOSYSTEMS,
             event_label=EVENT_LABEL,
             decision_label=DECISION_LABEL,
             sparkline=svg.sparkline,
@@ -188,8 +189,7 @@ class UI:
             "feeds": self.ctx.feeds,
             "feed_warnings": [f for f in self.ctx.feeds.values() if f.reason in ("missing_token", "error")],
             "cfg": cfg.raw,
-            "pypi_enabled": cfg.raw.upstreams.pypi.enabled,
-            "npm_enabled": cfg.raw.upstreams.npm.enabled,
+            "enabled": {eco: getattr(cfg.raw.upstreams, eco).enabled for eco in IDS},
             "now": self.ctx.clock.now(),
         }
         base.update(context)
@@ -206,7 +206,7 @@ class UI:
     @staticmethod
     def _eco(request: Request) -> str | None:
         e = request.query_params.get("eco")
-        return e if e in ("pypi", "npm") else None
+        return e if e in ECOSYSTEMS else None
 
     @staticmethod
     def _page(request: Request) -> int:
@@ -235,9 +235,9 @@ class UI:
 
         data = await self._q(collect)
         buckets = w.buckets()
-        dl_series = {k: v for k, v in data["dl"].items() if k in ("pypi", "npm")}
+        dl_series = {k: v for k, v in data["dl"].items() if k in ECOSYSTEMS}
         traffic = svg.stacked_bars(
-            buckets, dl_series, step=w.step, order=["pypi", "npm"], labels=ECO_LABEL, title="Downloads per ecosystem"
+            buckets, dl_series, step=w.step, order=list(IDS), labels=ECO_LABEL, title="Downloads per ecosystem"
         )
         decisions = svg.stacked_bars(
             buckets,
@@ -299,9 +299,10 @@ class UI:
     async def package_detail(self, request: Request) -> Response:
         eco = request.path_params["eco"]
         raw_name = request.path_params["name"]
-        if eco not in ("pypi", "npm"):
+        info = ECOSYSTEMS.get(eco)
+        if info is None:
             return self._render("not_found.html.j2", request, what="ecosystem")
-        name = N.normalize_pypi(raw_name) if eco == "pypi" else N.normalize_npm(raw_name)
+        name = info.normalize(raw_name)
         w = Q.window(request.query_params.get("range") or "90d", self.ctx.clock.now())
         cfg = self.ctx.cfg
         blocks = self.ctx.blocklist.for_package(eco, name)
@@ -348,7 +349,6 @@ class UI:
             height=160,
         )
         held = sum(1 for v in versions if v["status"] == "held")
-        upstream_url = f"https://pypi.org/project/{name}/" if eco == "pypi" else f"https://www.npmjs.com/package/{name}"
         return self._render(
             "package.html.j2",
             request,
@@ -363,7 +363,8 @@ class UI:
             package_block=blocks.package_block,
             delay=cfg.delay_days_for(eco, name),
             default_delay=cfg.raw.default_delay_days,
-            upstream_url=upstream_url,
+            upstream_url=info.page_url(name),
+            upstream_site=info.registry_site,
             w=w,
         )
 
@@ -495,6 +496,7 @@ class UI:
         # Path URLs only: per-ecosystem hostnames are deprecated (removed in 0.1) and only get a notice.
         pypi_index = f"{base}/pypi/simple/"
         npm_registry = cfg.npm_public_base() + "/"
+        go_proxy = f"{base}/go"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
@@ -504,11 +506,12 @@ class UI:
                 local = f"http://{'[' + host + ']' if ':' in host else host}"
         secure = None
         if local:
-            secure = {"pypi": pypi_index, "npm": npm_registry}
+            secure = {"pypi": pypi_index, "npm": npm_registry, "go": go_proxy}
             pypi_index = f"{local}/pypi/simple/"
+            go_proxy = f"{local}/go"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
-        snippets = S.for_instance(pypi_index, npm_registry)
+        snippets = S.for_instance(pypi_index, npm_registry, go_proxy)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
@@ -516,10 +519,11 @@ class UI:
             request,
             pypi_index=pypi_index,
             npm_registry=npm_registry,
+            go_proxy=go_proxy,
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
-            tools=S.tools(pypi_index, npm_registry),
+            tools=S.tools(pypi_index, npm_registry, go_proxy),
             shell=shell,
             os=os_name,
         )

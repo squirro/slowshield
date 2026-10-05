@@ -136,14 +136,16 @@ class Upstream:
         max_bytes: int,
         kind: str = "metadata",
         attempts_per_mirror: int = 2,
+        method: str = "GET",
     ) -> FetchResult:
-        """GET with mirror failover. 2xx/304/404/410 are returned; other outcomes try the next mirror."""
+        """GET (or HEAD, with an empty body) with mirror failover. 2xx/304/404/410 are returned; other outcomes
+        try the next mirror."""
         candidates = [urls] if isinstance(urls, str) else list(urls)
         last: UpstreamError | None = None
         for url in candidates:
             for attempt in range(attempts_per_mirror):
                 try:
-                    res = await self._get_once(url, headers or {}, max_bytes, kind)
+                    res = await self._get_once(url, headers or {}, max_bytes, kind, method)
                 except TooLargeError:
                     raise
                 except UpstreamError as exc:
@@ -158,7 +160,9 @@ class Upstream:
                     await asyncio.sleep(0.2 * (attempt + 1))
         raise last or UpstreamError(",".join(candidates), "no upstream configured")
 
-    async def _get_once(self, url: str, headers: dict[str, str], max_bytes: int, kind: str) -> FetchResult:
+    async def _get_once(
+        self, url: str, headers: dict[str, str], max_bytes: int, kind: str, method: str = "GET"
+    ) -> FetchResult:
         for _hop in range(4):
             if not self._allowed(url):
                 raise UpstreamError(url, "redirect to a host that is not a configured upstream")
@@ -166,17 +170,18 @@ class Upstream:
             host = urlsplit(url).hostname or ""
             status_code = 0
             with instruments.tracer.start_as_current_span(
-                "GET", kind=SpanKind.CLIENT, attributes={"url.full": url, "server.address": host}
+                method, kind=SpanKind.CLIENT, attributes={"url.full": url, "server.address": host}
             ) as span:
                 try:
-                    req = self.meta.get(url).headers(headers).timeout(self._metadata_timeout).build_streamed()
+                    builder = self.meta.head(url) if method == "HEAD" else self.meta.get(url)
+                    req = builder.headers(headers).timeout(self._metadata_timeout).build_streamed()
                     async with req as resp:
                         status_code = resp.status
                         hdrs = _headers(resp)
                         if status_code in _REDIRECTS and "location" in hdrs:
                             url = urljoin(url, hdrs["location"])
                             continue
-                        body = await _read_limited(resp, max_bytes, url)
+                        body = b"" if method == "HEAD" else await _read_limited(resp, max_bytes, url)
                         span.set_attribute("http.response.status_code", status_code)
                         span.set_attribute("network.protocol.version", resp.version)
                         if status_code >= 500:
@@ -191,7 +196,7 @@ class Upstream:
                         time.perf_counter() - started,
                         {
                             "server.address": host,
-                            "http.request.method": "GET",
+                            "http.request.method": method,
                             "http.response.status_code": status_code,
                             "slowshield.kind": kind,
                         },

@@ -257,3 +257,32 @@ def test_npm_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     assert lock["packages"]["node_modules/left-pad-ng"]["version"] == "1.0.0"
     # 0.2.0 is ten days old (latest); 0.3.0-beta.1 (`next`) is held back.
     assert lock["packages"]["node_modules/@acme/widget"]["version"] == "0.2.0"
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="go not installed")
+def test_go_downloads_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    env = {
+        **os.environ,
+        "SSL_CERT_FILE": str(stack.ca_file),
+        "GOPROXY": f"{stack.base}/go",
+        "GOSUMDB": "off",  # the fake checksum database is not signed by sum.golang.org's key
+        "GOPATH": str(tmp_path / "gopath"),
+        "GOMODCACHE": str(tmp_path / "modcache"),
+        "GOFLAGS": "-modcacherw",
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+    }
+    ok = subprocess.run(
+        ["go", "mod", "download", "-json", "example.com/hello@latest"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert ok.returncode == 0, ok.stderr
+    assert json.loads(ok.stdout)["Version"] == "v1.1.0"  # v1.2.0 was stored by the mirror two days ago
+    held = subprocess.run(
+        ["go", "mod", "download", "example.com/hello@v1.2.0"], env=env, capture_output=True, text=True, check=False
+    )
+    assert held.returncode != 0
+    assert "403 Forbidden" in held.stderr and "is too new" in held.stderr  # our text/plain body, printed by go

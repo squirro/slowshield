@@ -45,7 +45,7 @@ async def test_osv_full_snapshot_and_serving_effects(running: Running) -> None:
     assert ("npm", "@evil/thing", "1.0.0", None) in osv
     assert not any(name in ("alpha", "withdrawn-pkg", "left-pad-ng") for _, name, _, _ in osv)  # non-MAL / withdrawn
     st = running.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'osv:%' ORDER BY source")
-    assert [s for s, _ in st] == ["osv:PyPI", "osv:npm"] and all(w for _, w in st)
+    assert [s for s, _ in st] == ["osv:Go", "osv:PyPI", "osv:npm"] and all(w for _, w in st)
     assert running.ctx.feeds["osv"].entries == len(osv)
 
     r = await running.client.get("/pypi/simple/malware-pkg/", headers={"Accept": JSON_V1})
@@ -138,7 +138,7 @@ async def test_github_feed_with_token(start_app, monkeypatch) -> None:
     assert not any(n == "withdrawn-npm" for _, n, _, _ in gh)
     assert run.fake.control("hits", prefix="/github/").get("/github/advisories", 0) > 3
     state = run.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'github:%'")
-    assert len(state) == 2
+    assert len(state) == 3  # pip, npm, go
 
     doc = (await run.client.get("/pypi/simple/partly-bad/", headers={"Accept": JSON_V1})).json()
     assert doc["versions"] == ["1.0.0", "1.3.0"]

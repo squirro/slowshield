@@ -55,42 +55,49 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 }
 
-// Scrollytelling: the step at the reading line drives the pinned diagram. data-step picks that step's layers and --p
-// (0 to 1: how far the reading line is through the step) plays it, so the diagram follows the scroll in both
-// directions. With reduced motion, --p stays 1 and every step shows how it ends.
-const figure = document.querySelector(".story-figure");
-const steps = [...document.querySelectorAll(".step")];
-if (figure && steps.length) {
-  // On narrow screens the diagram is pinned at the top, so the text is read further down.
+// Scrollytelling: each chapter of How it works has its own pinned diagram, driven by the step at the reading line.
+// data-step picks that step's layers and --p (0 to 1: how far the reading line is through the step) plays it, so the
+// diagram follows the scroll in both directions. Before a chapter's first step its diagram rests (data-rest, --p 0);
+// after its last it keeps that step's end. With reduced motion, --p stays 1 and every step shows how it ends.
+const chapters = [...document.querySelectorAll(".story")].map((story) => ({
+  figure: story.querySelector(".story-figure"),
+  steps: [...story.querySelectorAll(".step")],
+})).filter((c) => c.figure && c.steps.length);
+if (chapters.length) {
+  // On narrow screens the diagram is pinned at the top, so the text is read between it and the bottom.
   const narrow = window.matchMedia("(max-width: 900px)");
+  const clamp = (v) => Math.min(1, Math.max(0, v));
   let frame = 0;
   const update = () => {
     frame = 0;
-    const line = window.innerHeight * (narrow.matches ? 0.72 : 0.5);
-    let step = "0";
-    let progress = 0;
-    let active = null;
-    for (const s of steps) {
-      const r = s.getBoundingClientRect();
-      if (r.top > line) break;
-      step = s.dataset.step;
-      active = s;
-      progress = Math.min(1, (line - r.top) / r.height);
-    }
-    figure.dataset.step = step;
-    figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
-    steps.forEach((s) => s.classList.toggle("active", s === active));
-    if (narrow.matches) return;
-    // Wide screens: each step's text by its distance from the reading line, in viewport heights. Within 0.2 it is
-    // fully shown; below, it fades in and rises over the 0.3 before that; above, it dims to a quarter.
-    const clamp = (v) => Math.min(1, Math.max(0, v));
-    for (const s of steps) {
-      const r = s.getBoundingClientRect();
-      const d = (r.top + r.height / 2 - line) / window.innerHeight;
-      const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
-      const above = d < 0 ? 0.25 + 0.75 * clamp((0.45 + d) / 0.25) : 1;
-      s.style.setProperty("--in", (below * above).toFixed(3));
-      s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
+    const vh = window.innerHeight;
+    for (const { figure, steps } of chapters) {
+      const pinnedTop = parseFloat(getComputedStyle(figure).top) || 0;  // also where the pinned title ends
+      const pinnedBottom = pinnedTop + figure.offsetHeight;
+      const line = narrow.matches ? (pinnedBottom + vh) / 2 : vh / 2;
+      let step = figure.dataset.rest;
+      let progress = 0;
+      for (const s of steps) {
+        const r = s.getBoundingClientRect();
+        const inside = r.top <= line && r.bottom > line;
+        s.classList.toggle("active", inside);
+        if (r.top > line) continue;
+        step = s.dataset.step;
+        progress = Math.min(1, (line - r.top) / r.height);
+      }
+      figure.dataset.step = step;
+      figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
+      if (narrow.matches) continue;
+      // Wide screens: below the reading line, a step's text fades in and rises as it comes within 0.5 to 0.2
+      // viewport heights of it; above, it fades out over the 0.15 before its top reaches the pinned title.
+      for (const s of steps) {
+        const r = s.getBoundingClientRect();
+        const d = (r.top + r.height / 2 - line) / vh;
+        const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
+        const above = clamp((s.firstElementChild.getBoundingClientRect().top - pinnedTop) / (0.15 * vh));
+        s.style.setProperty("--in", (below * above).toFixed(3));
+        s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
+      }
     }
   };
   const queue = () => { if (!frame) frame = requestAnimationFrame(update); };

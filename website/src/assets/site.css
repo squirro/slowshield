@@ -174,13 +174,23 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 @media (max-width: 860px) { .why-grid { grid-template-columns: 1fr; } }
 
 /* ---- how: scrollytelling -------------------------------------------------------------------------------- */
-.how-head { margin-bottom: 2rem; }
+.how { --nav-h: 64px; --fig-top: calc(var(--nav-h) + 5.6rem); }
+/* "How it works" and the chapter titles pin at the same place, on one line */
+.how-title, .chapter-title { position: sticky; top: var(--nav-h); margin: 0; padding: 1.5rem 0 1.4rem;
+  font: 750 clamp(1.5rem, 2.6vw, 2.15rem)/1.2 var(--display); letter-spacing: -0.015em; }
+.how-title { z-index: 3; color: var(--ink); background: linear-gradient(var(--ground) 80%, transparent); }
+/* A chapter's title pins inside a track that ends 60vh (the diagram's height) before the chapter does, so the title
+   and the diagram scroll away together. The chapter's top padding stands in for the title in the flow. */
+.chapter { position: relative; padding-top: calc(14vh + 5.6rem); }
+.chapter-track { position: absolute; inset: 14vh 0 60vh; z-index: 4; pointer-events: none; }
+.chapter-title .ghost { visibility: hidden; }
+.chapter-without .tag { color: var(--bad); } .chapter-with .tag { color: var(--ok); }
 .story { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 2.5rem; }
-.story-figure { position: sticky; top: 20vh; height: 60vh; display: flex; align-items: center; order: 2; }
+.story-figure { position: sticky; top: var(--fig-top); height: 60vh; display: flex; align-items: center; order: 2; }
 .diagram { width: 100%; height: auto; overflow: visible; }
-/* Room before the first step and after the last, so the diagram is pinned for the whole story: the reading line
-   (site.js, 50vh) minus the figure's top, and the figure's bottom minus the reading line. */
-.steps { list-style: none; margin: 0; padding: 30vh 0; order: 1; }
+/* Room before a chapter's first step and after its last, so its diagram is pinned while the chapter plays: the
+   reading line (site.js, 50vh) minus the figure's top, and the figure's bottom minus the reading line. */
+.steps { list-style: none; margin: 0; padding: calc(50vh - var(--fig-top)) 0 calc(var(--fig-top) + 10vh); order: 1; }
 .step { min-height: 38vh; display: flex; flex-direction: column; justify-content: center; padding: 1.5rem 0; opacity: 0.3; transition: opacity 0.3s; }
 .step.active { opacity: 1; }
 /* Wide screens: the next step fades in and rises from below as it nears the reading line, earlier ones dim (--in and
@@ -193,9 +203,10 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .step p { color: var(--muted); font-size: 1.12rem; max-width: 46ch; margin: 0; }
 @media (max-width: 900px) {
   .story { grid-template-columns: 1fr; gap: 0; }
-  .story-figure { order: 0; top: 64px; height: auto; padding: 0.4rem 0 1rem; z-index: 2; background: linear-gradient(var(--ground) 80%, transparent); }
+  .story-figure { order: 0; top: var(--fig-top); height: auto; padding: 0.4rem 0 1rem; z-index: 2; background: linear-gradient(var(--ground) 80%, transparent); }
   .diagram { max-height: 46vh; }
-  .steps { padding: 24vh 0 8vh; }
+  .steps { padding: 22vh 0 8vh; }
+  .chapter-track { bottom: 50vh; }
   .step { min-height: 44vh; }
 }
 
@@ -244,6 +255,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .story-figure[data-step="0"] .s0, .story-figure[data-step="1"] .s1, .story-figure[data-step="2"] .s2, .story-figure[data-step="3"] .s3, .story-figure[data-step="4"] .s4, .story-figure[data-step="5"] .s5, .story-figure[data-step="6"] .s6, .story-figure[data-step="7"] .s7, .story-figure[data-step="8"] .s8, .story-figure[data-step="9"] .s9, .story-figure[data-step="10"] .s10, .story-figure[data-step="11"] .s11, .story-figure[data-step="12"] .s12, .story-figure[data-step="13"] .s13 { opacity: 1; }
 /* scrubbing: --t runs 0 to 1 over its part of the step (rules below); outside its step it is 1, the end state */
 .sg { --t: 1; }
+.sg.gone { --t: 0; }
 .mv { offset-rotate: 0deg; offset-distance: calc(var(--t) * 100%); opacity: clamp(0, min(var(--t), 1 - var(--t)) * 30, 1); }
 .stay { offset-rotate: 0deg; offset-distance: calc(var(--t) * 100%); opacity: clamp(0, var(--t) * 12, 1); }
 .pop { opacity: var(--t); scale: calc(0.4 + 0.6 * var(--t)); transform-box: fill-box; transform-origin: center; }
@@ -265,7 +277,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .q-k6-2 { offset-path: path("M608 316 C632 316 648 328 648 350 V454 C648 468 640 476 626 476 H380"); }
 .q-k7-loot { offset-path: path("M240 476 C140 476 98 346 70 318"); }
 .q-k7-pub { offset-path: path("M70 296 C120 292 170 278 190 244"); }
-.q-k7-ship { offset-path: path("M232 240 C330 240 380 404 488 404"); }
+.q-k7-ship { offset-path: path("M232 196 H488"); }
 .q-k9 { offset-path: path("M70 296 C140 292 200 276 204 219"); }
 .q-held { offset-path: path("M236 196 H276"); }
 .q-k10-0 { offset-path: path("M406 196 C447 196 447 76 488 76"); }
@@ -276,12 +288,15 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .q-hit { offset-path: path("M236 196 H310"); }
 .story-figure[data-step="1"] .q-m-line { --t: clamp(0, (var(--p, 1) - 0.08) / 0.42, 1); }
 .story-figure[data-step="3"] .q-theft { --t: clamp(0, (var(--p, 1) - 0.2) / 0.35, 1); }
+.story-figure[data-step="4"] .q-theft-out { --t: clamp(0, (var(--p, 1) - 0) / 0.15, 1); }
 .story-figure[data-step="4"] .q-a-line { --t: clamp(0, (var(--p, 1) - 0.08) / 0.37, 1); }
 .story-figure[data-step="3"] .q-atk { --t: clamp(0, (var(--p, 1) - 0.04) / 0.14, 1); }
 .story-figure[data-step="1"] .q-slot0 { --t: clamp(0, (var(--p, 1) - 0.48) / 0.08, 1); }
 .story-figure[data-step="4"] .q-slot1 { --t: clamp(0, (var(--p, 1) - 0.43) / 0.07, 1); }
 .story-figure[data-step="9"] .q-slot1b { --t: clamp(0, (var(--p, 1) - 0.28) / 0.06, 1); }
 .story-figure[data-step="12"] .q-alt { --t: clamp(0, (var(--p, 1) - 0.26) / 0.06, 1); }
+.story-figure[data-step="8"] .q-d-gone { --t: clamp(0, (var(--p, 1) - 0.15) / 0.25, 1); }
+.story-figure[data-step="7"] .q-clear7 { --t: clamp(0, (var(--p, 1) - 0.02) / 0.14, 1); }
 .story-figure[data-step="2"] .q-d-ok { --t: clamp(0, (var(--p, 1) - 0.1) / 0.45, 1); }
 .story-figure[data-step="5"] .q-d-bad { --t: clamp(0, (var(--p, 1) - 0.1) / 0.4, 1); }
 .story-figure[data-step="8"] .q-via-in { --t: clamp(0, (var(--p, 1) - 0.2) / 0.25, 1); }
@@ -293,6 +308,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .story-figure[data-step="5"] .q-sick { --t: clamp(0, (var(--p, 1) - 0.5) / 0.08, 1); }
 .story-figure[data-step="2"] .q-ok { --t: clamp(0, (var(--p, 1) - 0.55) / 0.07, 1); }
 .story-figure[data-step="5"] .q-bad { --t: clamp(0, (var(--p, 1) - 0.52) / 0.08, 1); }
+.story-figure[data-step="7"] .q-users-in { --t: clamp(0, (var(--p, 1) - 0.12) / 0.12, 1); }
 .story-figure[data-step="7"] .q-u-sick { --t: clamp(0, (var(--p, 1) - 0.72) / 0.06, 1); }
 .story-figure[data-step="7"] .q-u-bad { --t: clamp(0, (var(--p, 1) - 0.72) / 0.08, 1); }
 .story-figure[data-step="6"] .q-exl { --t: clamp(0, (var(--p, 1) - 0.08) / 0.32, 1); }

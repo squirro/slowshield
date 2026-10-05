@@ -139,129 +139,151 @@
 
 <!-- ============================== HOW (scrollytelling) ============================== -->
 <section class="how" id="how" aria-labelledby="how-title">
-  <div class="how-head">
-    <p class="eyebrow">How it works</p>
-    <h2 id="how-title">From a maintainer's laptop to yours.</h2>
-  </div>
-  <div class="story">
-    <div class="story-figure" data-step="1" aria-hidden="true">
-      <!-- site.js sets data-step (which layers .st.sN show) and --p (0 to 1: how far the reading line is through that
-           step), so the diagram is played by the scroll. Without JavaScript or with reduced motion, --p is 1: each
-           step shows how it ends. -->
-      <svg viewBox="0 0 680 520" class="diagram">
-        <path class="dg-line" d="M72 86 C112 88 140 110 150 136"/>
-        <g class="st s1 s2"><path class="dg-line dg-ok-line sg draw q-m-line" pathLength="1" d="M72 86 C112 88 140 110 150 136"/></g>
-        <g class="dg-actor" transform="translate(44 80)"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text x="44" y="128" class="dg-title">maintainer</text>
-        <g class="st s3 s4 s5 s6 s7"><path class="dg-line dg-atk sg draw q-theft" pathLength="1" d="M30 138 C4 190 4 240 28 282"/></g>
-        <g class="st s4 s5 s6 s7 s9 s10 s11 s12"><path class="dg-line dg-atk sg draw q-a-line" pathLength="1" d="M70 296 C110 290 140 276 150 256"/></g>
-        <g class="st s3 s4 s5 s6 s7 s9 s10 s11 s12"><g transform="translate(44 306)"><g class="sg pop q-atk"><g class="dg-actor bad"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text y="48" class="dg-title dg-bad">attacker</text></g></g></g>
-        <g class="dg-box" transform="translate(92 136)"><rect width="140" height="120" rx="16"/><text x="70" y="36" class="dg-title">registry</text><text x="70" y="55" class="dg-sub">PyPI · npm · Go · Maven</text><g class="dg-stock"><rect x="19" y="74" width="18" height="18" rx="4"/><rect x="47" y="74" width="18" height="18" rx="4"/></g><g class="st s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13"><rect class="dg-pkg ok sg pop q-slot0" x="75" y="74" width="18" height="18" rx="4"/></g><g class="st s4 s5 s6 s7 s9 s10 s11 s12"><rect class="dg-pkg bad sg pop q-slot1 q-slot1b" x="103" y="74" width="18" height="18" rx="4"/></g><g class="st s12"><rect class="dg-altered sg pop q-alt" x="72" y="71" width="24" height="24" rx="6"/></g></g>
-        <g class="st s0 s1 s2 s3 s4 s5 s6 s7"><path class="dg-line" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line" d="M232 196 H488"/><path class="dg-line" d="M232 196 C360 196 360 316 488 316"/></g>
-        <g class="st s2 s3 s4"><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 H488"/><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 C360 196 360 316 488 316"/></g>
-        <g class="st s5 s6 s7"><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 H488"/><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 C360 196 360 316 488 316"/></g>
-        <g class="st s8 s9 s10 s11 s12 s13"><path class="dg-line dg-in sg draw q-via-in" pathLength="1" d="M232 196 H318"/></g>
-        <g class="st s12"><path class="dg-line dg-bad-line sg draw q-in-bad" pathLength="1" d="M232 196 H318"/></g>
-        <g class="st s8 s9 s10 s11 s12"><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 C447 196 447 76 488 76"/><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 H488"/><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 C447 196 447 316 488 316"/></g>
-        <g class="st s10 s11 s12"><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 C447 196 447 76 488 76"/><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 H488"/><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 C447 196 447 316 488 316"/></g>
-        <g class="st s8 s9 s10 s11 s12 s13"><g class="sg pop q-ss"><g transform="translate(318 152) scale(1.375)"><path class="dg-ripple sg q-ripple" d="M32 4 L10 11 L10 30 C10 45 19 55 32 60 Z"/></g><use href="#ss-mark" class="dg-mark" x="318" y="152" width="88" height="88"/><text x="362" y="262" class="dg-label">SlowShield</text></g></g>
-        <g class="st s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12"><g class="dg-box" transform="translate(488 52)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">laptop</text></g><g class="dg-box" transform="translate(488 172)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">CI runner</text></g><g class="dg-box" transform="translate(488 292)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">prod build</text></g></g>
-        <g class="st s5 s6 s7"><rect class="dg-sick sg fade q-sick" x="488" y="52" width="120" height="48" rx="12"/><rect class="dg-sick sg fade q-sick" x="488" y="172" width="120" height="48" rx="12"/><rect class="dg-sick sg fade q-sick" x="488" y="292" width="120" height="48" rx="12"/></g>
-        <g class="st s2 s3 s4 s8 s9 s10 s11 s12"><g transform="translate(606 54)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 174)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 294)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
-        <g class="st s5 s6 s7"><g transform="translate(606 54)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(606 174)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(606 294)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g></g>
-        <g class="st s7 s8 s9 s10 s11 s12"><g class="dg-box" transform="translate(488 380)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">your users</text></g></g>
-        <g class="st s7"><rect class="dg-sick sg fade q-u-sick" x="488" y="380" width="120" height="48" rx="12"/><g transform="translate(606 382)"><g class="dg-badge bad sg pop q-u-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g></g>
-        <g class="st s8 s9 s10 s11 s12"><g transform="translate(606 382)"><g class="dg-badge ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
-        <g class="st s6 s7"><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 76 C632 76 648 88 648 110 V454 C648 468 640 476 626 476 H380"/><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 196 C632 196 648 208 648 230 V454 C648 468 640 476 626 476 H380"/><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 316 C632 316 648 328 648 350 V454 C648 468 640 476 626 476 H380"/></g>
-        <g class="st s6 s7"><g class="sg pop q-server"><g class="dg-box dg-server" transform="translate(240 456)"><rect width="140" height="40" rx="10"/><text x="70" y="25" class="dg-title">attacker's server</text></g></g></g>
-        <g class="st s9 s10 s11 s12"><g class="dg-box dg-server dg-dim" transform="translate(240 456)"><rect width="140" height="40" rx="10"/><text x="70" y="25" class="dg-title">attacker's server</text></g></g>
-        <g class="st s7"><path class="dg-line dg-atk sg draw q-ret" pathLength="1" d="M240 476 C140 476 98 346 70 318"/><path class="dg-line dg-bad-line dg-thin sg draw q-to-users" pathLength="1" d="M232 240 C330 240 380 404 488 404"/></g>
-        <g class="st s1"><rect class="dg-pkg ok sg mv q-k1" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s2"><rect class="dg-pkg ok sg mv q-k2-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k2-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k2-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s3"><g class="dg-key sg mv q-k3"><circle r="5.5"/><path d="M5.5 0 H15 M11 0 V4.5 M15 0 V3.5"/></g></g>
-        <g class="st s4"><rect class="dg-pkg bad sg mv q-k4" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s5"><rect class="dg-pkg bad sg mv q-k5-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k5-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k5-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s6"><circle class="dg-dot bad sg mv q-k6-0" r="4.5"/><circle class="dg-dot bad sg mv q-k6-1" r="4.5"/><circle class="dg-dot bad sg mv q-k6-2" r="4.5"/></g>
-        <g class="st s7"><g class="dg-key sg mv q-k7-loot"><circle r="5.5"/><path d="M5.5 0 H15 M11 0 V4.5 M15 0 V3.5"/></g><rect class="dg-pkg bad sg mv q-k7-pub" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k7-ship" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s9"><rect class="dg-pkg bad sg mv q-k9" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s9 s10 s11"><g transform="translate(276 196)"><circle class="dg-wait sg fade q-ring" r="19"/></g></g>
-        <g class="st s11"><g transform="translate(276 196)"><circle class="dg-wait bad sg fade q-ring-bad" r="19"/></g></g>
-        <g class="st s11"><text x="276" y="166" class="dg-code sg pop q-code">451</text></g>
-        <g class="st s9 s10 s11"><rect class="dg-pkg bad sg stay q-held" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s11"><g transform="translate(276 196)"><path class="dg-cross sg pop q-cross" d="M-5 -5 L5 5 M5 -5 L-5 5"/></g></g>
-        <g class="st s10"><rect class="dg-pkg ok sg mv q-k10-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k10-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k10-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
-        <g class="st s11"><g class="sg pop q-feeds"><g class="dg-box dg-feeds" transform="translate(302 84)"><rect width="120" height="30" rx="9"/><text x="60" y="19" class="dg-sub">advisory feeds</text></g></g><path class="dg-line dg-bad-line dg-thin sg draw q-feed-line" pathLength="1" d="M362 114 V150"/><circle class="dg-dot bad sg mv q-k11" r="4.5"/></g>
-        <g class="st s12"><rect class="dg-pkg bad sg mv q-k12" x="-9" y="-9" width="18" height="18" rx="4"/><g class="sg gone q-cut"><rect class="dg-pkg bad sg stay q-hit" x="-9" y="-9" width="18" height="18" rx="4"/></g></g>
-        <g class="st s13"><text x="275" y="182" class="dg-note sg fade q-note">1 download</text><g class="sg pop q-cache"><g class="dg-cache" transform="translate(314 276)"><rect width="96" height="38" rx="10"/><rect class="dg-pkg ok" x="17" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="39" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="61" y="10" width="18" height="18" rx="4"/></g></g><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 46 454 46"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 76 454 76"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 106 454 106"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 136 454 136"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 166 454 166"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 196 454 196"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 226 454 226"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 256 454 256"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 286 454 286"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 316 454 316"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 346 454 346"/><rect class="dg-dev sg pop q-d0" x="462" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d1" x="496" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="530" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="564" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="598" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="632" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d1" x="462" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="496" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="530" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="564" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="598" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="632" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="462" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="496" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="530" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="564" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="598" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="632" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="462" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="496" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="530" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="564" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="598" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="632" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="462" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="496" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="530" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="564" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="598" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="632" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="462" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="496" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="530" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="564" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="598" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="632" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="462" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="496" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="530" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="564" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="598" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="632" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="462" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="496" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="530" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="564" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="598" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="632" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="462" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="496" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="530" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="564" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="598" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="632" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="462" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="496" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="530" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="564" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="598" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d14" x="632" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="462" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="496" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="530" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="564" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d14" x="598" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d15" x="632" y="338.5" width="24" height="15" rx="3"/><g class="sg fade q-flow"><circle class="dg-dot ok dg-flow g0" r="4"/><circle class="dg-dot ok dg-flow g1" r="4"/><circle class="dg-dot ok dg-flow g2" r="4"/><circle class="dg-dot ok dg-flow g3" r="4"/><circle class="dg-dot ok dg-flow g4" r="4"/><circle class="dg-dot ok dg-flow g5" r="4"/></g></g>
-        <text x="340" y="22" class="st s1 dg-callout ok">2.4.0 published</text><text x="340" y="22" class="st s2 dg-callout ok">2.4.0 on every machine within minutes</text><text x="340" y="22" class="st s3 dg-callout bad">the maintainer's token, stolen</text><text x="340" y="22" class="st s4 dg-callout bad">2.4.1 published · with a payload</text><text x="340" y="22" class="st s5 dg-callout bad">2.4.1 on every machine · and running</text><text x="340" y="22" class="st s6 dg-callout bad">tokens, keys and passwords sent to the attacker</text><text x="340" y="22" class="st s7 dg-callout bad">your keys, used as you · your users install a poisoned release</text><text x="340" y="22" class="st s8 dg-callout ">every install goes through SlowShield</text><text x="340" y="22" class="st s9 dg-callout held">2.4.1 held back · unlocks in 6 d 23 h</text><text x="340" y="22" class="st s10 dg-callout ok">installs get 2.4.0, the newest release that's old enough</text><text x="340" y="22" class="st s11 dg-callout bad">reported as malware · refused for good, HTTP 451</text><text x="340" y="22" class="st s12 dg-callout bad">2.4.0 changed after release · fingerprint mismatch · cut off</text><text x="340" y="22" class="st s13 dg-callout ok">1 download from the registry · served to every machine from the cache</text>
-      </svg>
+  <!-- "How it works" stays pinned for the whole section. Each chapter's title pins next to it (an invisible copy
+       of "How it works" keeps it aligned) and its diagram pins below; both scroll away when the chapter ends. site.js
+       sets each diagram's data-step (which layers .st.sN show) and --p (0 to 1: how far the reading line is through
+       that step), so the diagram is played by the scroll. Without JavaScript or with reduced motion, --p is 1 and
+       each step shows how it ends. -->
+  <h2 class="how-title" id="how-title">How it works</h2>
+  <div class="chapter chapter-without">
+    <div class="chapter-track"><h3 class="chapter-title"><span class="ghost" aria-hidden="true">How it works</span> <span class="tag">— without SlowShield</span></h3></div>
+    <div class="story">
+      <div class="story-figure" data-step="1" data-rest="0" aria-hidden="true">
+        <svg viewBox="0 0 680 520" class="diagram">
+          <path class="dg-line" d="M72 86 C112 88 140 110 150 136"/>
+          <g class="st s1 s2"><path class="dg-line dg-ok-line sg draw q-m-line" pathLength="1" d="M72 86 C112 88 140 110 150 136"/></g>
+          <g class="dg-actor" transform="translate(44 80)"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text x="44" y="128" class="dg-title">maintainer</text>
+          <g class="st s3 s4"><g class="sg gone q-theft-out"><path class="dg-line dg-atk sg draw q-theft" pathLength="1" d="M30 138 C4 190 4 240 28 282"/></g></g>
+          <g class="st s4 s5 s6 s7 s9 s10 s11 s12"><path class="dg-line dg-atk sg draw q-a-line" pathLength="1" d="M70 296 C110 290 140 276 150 256"/></g>
+          <g class="st s3 s4 s5 s6 s7 s9 s10 s11 s12"><g transform="translate(44 306)"><g class="sg pop q-atk"><g class="dg-actor bad"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text y="48" class="dg-title dg-bad">attacker</text></g></g></g>
+          <g class="dg-box" transform="translate(92 136)"><rect width="140" height="120" rx="16"/><text x="70" y="36" class="dg-title">registry</text><text x="70" y="55" class="dg-sub">PyPI · npm · Go · Maven</text><g class="dg-stock"><rect x="19" y="74" width="18" height="18" rx="4"/><rect x="47" y="74" width="18" height="18" rx="4"/></g><g class="st s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13"><rect class="dg-pkg ok sg pop q-slot0" x="75" y="74" width="18" height="18" rx="4"/></g><g class="st s4 s5 s6 s7 s9 s10 s11 s12"><rect class="dg-pkg bad sg pop q-slot1 q-slot1b" x="103" y="74" width="18" height="18" rx="4"/></g><g class="st s12"><rect class="dg-altered sg pop q-alt" x="72" y="71" width="24" height="24" rx="6"/></g></g>
+          <g class="st s0 s1 s2 s3 s4 s5 s6 s7 s8"><g class="sg gone q-clear7"><g class="sg gone q-d-gone"><path class="dg-line" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line" d="M232 196 H488"/><path class="dg-line" d="M232 196 C360 196 360 316 488 316"/></g></g></g>
+          <g class="st s2 s3 s4"><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 H488"/><path class="dg-line dg-ok-line sg draw q-d-ok" pathLength="1" d="M232 196 C360 196 360 316 488 316"/></g>
+          <g class="st s5 s6 s7"><g class="sg gone q-clear7"><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 H488"/><path class="dg-line dg-bad-line sg draw q-d-bad" pathLength="1" d="M232 196 C360 196 360 316 488 316"/></g></g>
+          <g class="st s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12"><g class="sg gone q-clear7"><g class="dg-box" transform="translate(488 52)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">laptop</text></g><g class="dg-box" transform="translate(488 172)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">CI runner</text></g><g class="dg-box" transform="translate(488 292)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">prod build</text></g></g></g>
+          <g class="st s5 s6 s7"><g class="sg gone q-clear7"><rect class="dg-sick sg fade q-sick" x="488" y="52" width="120" height="48" rx="12"/><rect class="dg-sick sg fade q-sick" x="488" y="172" width="120" height="48" rx="12"/><rect class="dg-sick sg fade q-sick" x="488" y="292" width="120" height="48" rx="12"/></g></g>
+          <g class="st s2 s3 s4 s8 s9 s10 s11 s12"><g transform="translate(606 54)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 174)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 294)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
+          <g class="st s5 s6 s7"><g class="sg gone q-clear7"><g transform="translate(606 54)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(606 174)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g><g transform="translate(606 294)"><g class="dg-badge bad sg pop q-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g></g></g>
+          <g class="st s7"><g class="sg fade q-users-in"><g class="dg-box" transform="translate(488 172)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">your users</text></g></g><rect class="dg-sick sg fade q-u-sick" x="488" y="172" width="120" height="48" rx="12"/><g transform="translate(606 174)"><g class="dg-badge bad sg pop q-u-bad"><circle r="10"/><path d="M0 -5 V0.5 M0 4.2 V4.3"/></g></g></g>
+          <g class="st s6 s7"><g class="sg gone q-clear7"><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 76 C632 76 648 88 648 110 V454 C648 468 640 476 626 476 H380"/><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 196 C632 196 648 208 648 230 V454 C648 468 640 476 626 476 H380"/><path class="dg-line dg-exl sg draw q-exl" pathLength="1" d="M608 316 C632 316 648 328 648 350 V454 C648 468 640 476 626 476 H380"/></g></g>
+          <g class="st s6 s7"><g class="sg pop q-server"><g class="dg-box dg-server" transform="translate(240 456)"><rect width="140" height="40" rx="10"/><text x="70" y="25" class="dg-title">attacker's server</text></g></g></g>
+          <g class="st s7"><path class="dg-line dg-atk sg draw q-ret" pathLength="1" d="M240 476 C140 476 98 346 70 318"/><path class="dg-line dg-bad-line dg-thin sg draw q-to-users" pathLength="1" d="M232 196 H488"/></g>
+          <g class="st s1"><rect class="dg-pkg ok sg mv q-k1" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s2"><rect class="dg-pkg ok sg mv q-k2-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k2-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k2-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s3"><g class="dg-key sg mv q-k3"><circle r="5.5"/><path d="M5.5 0 H15 M11 0 V4.5 M15 0 V3.5"/></g></g>
+          <g class="st s4"><rect class="dg-pkg bad sg mv q-k4" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s5"><rect class="dg-pkg bad sg mv q-k5-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k5-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k5-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s6"><circle class="dg-dot bad sg mv q-k6-0" r="4.5"/><circle class="dg-dot bad sg mv q-k6-1" r="4.5"/><circle class="dg-dot bad sg mv q-k6-2" r="4.5"/></g>
+          <g class="st s7"><g class="dg-key sg mv q-k7-loot"><circle r="5.5"/><path d="M5.5 0 H15 M11 0 V4.5 M15 0 V3.5"/></g><rect class="dg-pkg bad sg mv q-k7-pub" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg bad sg mv q-k7-ship" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <text x="340" y="22" class="st s1 dg-callout ok">2.4.0 published</text><text x="340" y="22" class="st s2 dg-callout ok">2.4.0 on every machine within minutes</text><text x="340" y="22" class="st s3 dg-callout bad">the maintainer's token, stolen</text><text x="340" y="22" class="st s4 dg-callout bad">2.4.1 published · with a payload</text><text x="340" y="22" class="st s5 dg-callout bad">2.4.1 on every machine · and running</text><text x="340" y="22" class="st s6 dg-callout bad">tokens, keys and passwords sent to the attacker</text><text x="340" y="22" class="st s7 dg-callout bad">your keys, used as you · your users install a poisoned release</text><text x="340" y="22" class="st s8 dg-callout ">every install goes through SlowShield</text><text x="340" y="22" class="st s9 dg-callout held">2.4.1 held back · unlocks in 6 d 23 h</text><text x="340" y="22" class="st s10 dg-callout ok">installs get 2.4.0, the newest release that's old enough</text><text x="340" y="22" class="st s11 dg-callout bad">reported as malware · refused for good, HTTP 451</text><text x="340" y="22" class="st s12 dg-callout bad">2.4.0 changed after release · fingerprint mismatch · cut off</text><text x="340" y="22" class="st s13 dg-callout ok">1 download from the registry · served to every machine from the cache</text>
+        </svg>
+      </div>
+      <ol class="steps" start="1">
+        <li class="step" data-step="1">
+          <span class="step-n">01</span>
+          <h3>A maintainer publishes 2.4.0.</h3>
+          <p>A new release of a package you depend on goes up on the registry.</p>
+        </li>
+        <li class="step" data-step="2">
+          <span class="step-n">02</span>
+          <h3>Every machine installs it.</h3>
+          <p>Within minutes it is on every laptop, CI runner and build that installs or updates. That's how it should be: a real release from the real maintainer.</p>
+        </li>
+        <li class="step" data-step="3">
+          <span class="step-n">03</span>
+          <h3>Someone steals the maintainer's token.</h3>
+          <p>A phished password, a leaked CI secret or a malicious browser extension, and the attacker can publish as the maintainer.</p>
+        </li>
+        <li class="step" data-step="4">
+          <span class="step-n">04</span>
+          <h3>The attacker uploads 2.4.1.</h3>
+          <p>It looks like any other patch release. Inside is a payload that runs when it is installed.</p>
+        </li>
+        <li class="step" data-step="5">
+          <span class="step-n">05</span>
+          <h3>Every machine pulls it.</h3>
+          <p>It is the newest version, so the same machines install it just as fast as 2.4.0, and run it.</p>
+        </li>
+        <li class="step" data-step="6">
+          <span class="step-n">06</span>
+          <h3>Your secrets leave.</h3>
+          <p>The payload collects tokens, cloud keys and passwords from every machine and sends them to a server the attacker controls. Nobody on your side did anything wrong.</p>
+        </li>
+        <li class="step" data-step="7">
+          <span class="step-n">07</span>
+          <h3>Then your users are next.</h3>
+          <p>With your publish tokens and keys, the attacker releases a poisoned version of your own package or app, as you, and your users install it. That is how the Shai-Hulud worm spread through hundreds of npm packages, in 2025 and again in 2026.</p>
+        </li>
+      </ol>
     </div>
-    <ol class="steps">
-      <li class="step" data-step="1">
-        <span class="step-n">01 · without SlowShield</span>
-        <h3>A maintainer publishes 2.4.0.</h3>
-        <p>A new release of a package you depend on goes up on the registry.</p>
-      </li>
-      <li class="step" data-step="2">
-        <span class="step-n">02 · without SlowShield</span>
-        <h3>Every machine installs it.</h3>
-        <p>Within minutes it is on every laptop, CI runner and build that installs or updates. That's how it should be: a real release from the real maintainer.</p>
-      </li>
-      <li class="step" data-step="3">
-        <span class="step-n">03 · without SlowShield</span>
-        <h3>Someone steals the maintainer's token.</h3>
-        <p>A phished password, a leaked CI secret or a malicious browser extension, and the attacker can publish as the maintainer.</p>
-      </li>
-      <li class="step" data-step="4">
-        <span class="step-n">04 · without SlowShield</span>
-        <h3>The attacker uploads 2.4.1.</h3>
-        <p>It looks like any other patch release. Inside is a payload that runs when it is installed.</p>
-      </li>
-      <li class="step" data-step="5">
-        <span class="step-n">05 · without SlowShield</span>
-        <h3>Every machine pulls it.</h3>
-        <p>It is the newest version, so the same machines install it just as fast as 2.4.0, and run it.</p>
-      </li>
-      <li class="step" data-step="6">
-        <span class="step-n">06 · without SlowShield</span>
-        <h3>Your secrets leave.</h3>
-        <p>The payload collects tokens, cloud keys and passwords from every machine and sends them to a server the attacker controls. Nobody on your side did anything wrong.</p>
-      </li>
-      <li class="step" data-step="7">
-        <span class="step-n">07 · without SlowShield</span>
-        <h3>Then your users are next.</h3>
-        <p>With your publish tokens and keys, the attacker releases a poisoned version of your own package or app, as you, and your users install it. That is how the Shai-Hulud worm spread through hundreds of npm packages, in 2025 and again in 2026.</p>
-      </li>
-      <li class="step" data-step="8">
-        <span class="step-n">08 · with SlowShield</span>
-        <h3>Every install goes through SlowShield.</h3>
-        <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle and the rest at it. Same packages, same commands, same lockfiles.</p>
-      </li>
-      <li class="step" data-step="9">
-        <span class="step-n">09 · with SlowShield</span>
-        <h3>2.4.1 waits.</h3>
-        <p>A release younger than the delay (7 days by default) isn't offered yet. A lockfile pinned to it gets a clear answer: <em>try again in 6 days</em>.</p>
-      </li>
-      <li class="step" data-step="10">
-        <span class="step-n">10 · with SlowShield</span>
-        <h3>Installs get 2.4.0.</h3>
-        <p>Indexes show the newest release that is old enough, and <code>latest</code> moves back to it. Builds keep working.</p>
-      </li>
-      <li class="step" data-step="11">
-        <span class="step-n">11 · with SlowShield</span>
-        <h3>The malware is reported, and blocked for good.</h3>
-        <p>The advisory feeds (OSV and GitHub) usually flag an attack like this within days. From then on 2.4.1 is refused with HTTP 451, even after the delay.</p>
-      </li>
-      <li class="step" data-step="12">
-        <span class="step-n">12 · with SlowShield</span>
-        <h3>A swapped file is cut off.</h3>
-        <p>Say someone replaces the file behind 2.4.0. SlowShield checks every download against the registry's digest and the fingerprint it recorded the first time, cuts the transfer off and alerts your team.</p>
-      </li>
-      <li class="step" data-step="13">
-        <span class="step-n">13 · with SlowShield</span>
-        <h3>Fetched once, served to everyone.</h3>
-        <p>One SlowShield serves every laptop, runner and build. Each file comes from the registry once and from the cache after that: faster installs, calm during outages, and one download instead of hundreds.</p>
-      </li>
-    </ol>
+  </div>
+  <div class="chapter chapter-with">
+    <div class="chapter-track"><h3 class="chapter-title"><span class="ghost" aria-hidden="true">How it works</span> <span class="tag">— with SlowShield</span></h3></div>
+    <div class="story">
+      <div class="story-figure" data-step="8" data-rest="8" aria-hidden="true">
+        <svg viewBox="0 0 680 520" class="diagram">
+          <path class="dg-line" d="M72 86 C112 88 140 110 150 136"/>
+          <g class="dg-actor" transform="translate(44 80)"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text x="44" y="128" class="dg-title">maintainer</text>
+          <g class="st s4 s5 s6 s7 s9 s10 s11 s12"><path class="dg-line dg-atk sg draw q-a-line" pathLength="1" d="M70 296 C110 290 140 276 150 256"/></g>
+          <g class="st s3 s4 s5 s6 s7 s9 s10 s11 s12"><g transform="translate(44 306)"><g class="sg pop q-atk"><g class="dg-actor bad"><circle r="28"/><circle class="dg-person" cy="-7" r="8"/><path class="dg-person" d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z"/></g><text y="48" class="dg-title dg-bad">attacker</text></g></g></g>
+          <g class="dg-box" transform="translate(92 136)"><rect width="140" height="120" rx="16"/><text x="70" y="36" class="dg-title">registry</text><text x="70" y="55" class="dg-sub">PyPI · npm · Go · Maven</text><g class="dg-stock"><rect x="19" y="74" width="18" height="18" rx="4"/><rect x="47" y="74" width="18" height="18" rx="4"/></g><g class="st s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13"><rect class="dg-pkg ok sg pop q-slot0" x="75" y="74" width="18" height="18" rx="4"/></g><g class="st s4 s5 s6 s7 s9 s10 s11 s12"><rect class="dg-pkg bad sg pop q-slot1 q-slot1b" x="103" y="74" width="18" height="18" rx="4"/></g><g class="st s12"><rect class="dg-altered sg pop q-alt" x="72" y="71" width="24" height="24" rx="6"/></g></g>
+          <g class="st s0 s1 s2 s3 s4 s5 s6 s7 s8"><g class="sg gone q-clear7"><g class="sg gone q-d-gone"><path class="dg-line" d="M232 196 C360 196 360 76 488 76"/><path class="dg-line" d="M232 196 H488"/><path class="dg-line" d="M232 196 C360 196 360 316 488 316"/></g></g></g>
+          <g class="st s8 s9 s10 s11 s12 s13"><path class="dg-line dg-in sg draw q-via-in" pathLength="1" d="M232 196 H318"/></g>
+          <g class="st s12"><path class="dg-line dg-bad-line sg draw q-in-bad" pathLength="1" d="M232 196 H318"/></g>
+          <g class="st s8 s9 s10 s11 s12"><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 C447 196 447 76 488 76"/><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 H488"/><path class="dg-line  sg draw q-via-out" pathLength="1" d="M406 196 C447 196 447 316 488 316"/></g>
+          <g class="st s10 s11 s12"><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 C447 196 447 76 488 76"/><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 H488"/><path class="dg-line dg-ok-line sg draw q-o-ok" pathLength="1" d="M406 196 C447 196 447 316 488 316"/></g>
+          <g class="st s8 s9 s10 s11 s12 s13"><g class="sg pop q-ss"><g transform="translate(318 152) scale(1.375)"><path class="dg-ripple sg q-ripple" d="M32 4 L10 11 L10 30 C10 45 19 55 32 60 Z"/></g><use href="#ss-mark" class="dg-mark" x="318" y="152" width="88" height="88"/><text x="362" y="262" class="dg-label">SlowShield</text></g></g>
+          <g class="st s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12"><g class="sg gone q-clear7"><g class="dg-box" transform="translate(488 52)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">laptop</text></g><g class="dg-box" transform="translate(488 172)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">CI runner</text></g><g class="dg-box" transform="translate(488 292)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">prod build</text></g></g></g>
+          <g class="st s2 s3 s4 s8 s9 s10 s11 s12"><g transform="translate(606 54)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 174)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g><g transform="translate(606 294)"><g class="dg-badge ok sg pop q-ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
+          <g class="st s8 s9 s10 s11 s12"><g class="dg-box" transform="translate(488 380)"><rect width="120" height="48" rx="12"/><text x="60" y="29" class="dg-title">your users</text></g></g>
+          <g class="st s8 s9 s10 s11 s12"><g transform="translate(606 382)"><g class="dg-badge ok"><circle r="10"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3"/></g></g></g>
+          <g class="st s9 s10 s11 s12"><g class="dg-box dg-server dg-dim" transform="translate(240 456)"><rect width="140" height="40" rx="10"/><text x="70" y="25" class="dg-title">attacker's server</text></g></g>
+          <g class="st s9"><rect class="dg-pkg bad sg mv q-k9" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s9 s10 s11"><g transform="translate(276 196)"><circle class="dg-wait sg fade q-ring" r="19"/></g></g>
+          <g class="st s11"><g transform="translate(276 196)"><circle class="dg-wait bad sg fade q-ring-bad" r="19"/></g></g>
+          <g class="st s11"><text x="276" y="166" class="dg-code sg pop q-code">451</text></g>
+          <g class="st s9 s10 s11"><rect class="dg-pkg bad sg stay q-held" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s11"><g transform="translate(276 196)"><path class="dg-cross sg pop q-cross" d="M-5 -5 L5 5 M5 -5 L-5 5"/></g></g>
+          <g class="st s10"><rect class="dg-pkg ok sg mv q-k10-0" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k10-1" x="-9" y="-9" width="18" height="18" rx="4"/><rect class="dg-pkg ok sg mv q-k10-2" x="-9" y="-9" width="18" height="18" rx="4"/></g>
+          <g class="st s11"><g class="sg pop q-feeds"><g class="dg-box dg-feeds" transform="translate(302 84)"><rect width="120" height="30" rx="9"/><text x="60" y="19" class="dg-sub">advisory feeds</text></g></g><path class="dg-line dg-bad-line dg-thin sg draw q-feed-line" pathLength="1" d="M362 114 V150"/><circle class="dg-dot bad sg mv q-k11" r="4.5"/></g>
+          <g class="st s12"><rect class="dg-pkg bad sg mv q-k12" x="-9" y="-9" width="18" height="18" rx="4"/><g class="sg gone q-cut"><rect class="dg-pkg bad sg stay q-hit" x="-9" y="-9" width="18" height="18" rx="4"/></g></g>
+          <g class="st s13"><text x="275" y="182" class="dg-note sg fade q-note">1 download</text><g class="sg pop q-cache"><g class="dg-cache" transform="translate(314 276)"><rect width="96" height="38" rx="10"/><rect class="dg-pkg ok" x="17" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="39" y="10" width="18" height="18" rx="4"/><rect class="dg-pkg ok" x="61" y="10" width="18" height="18" rx="4"/></g></g><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 46 454 46"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 76 454 76"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 106 454 106"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 136 454 136"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 166 454 166"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 196 454 196"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 226 454 226"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 256 454 256"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 286 454 286"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 316 454 316"/><path class="dg-line dg-fan sg draw q-fan" pathLength="1" d="M406 196 C430 196 430 346 454 346"/><rect class="dg-dev sg pop q-d0" x="462" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d1" x="496" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="530" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="564" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="598" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="632" y="38.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d1" x="462" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="496" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="530" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="564" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="598" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="632" y="68.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d2" x="462" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="496" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="530" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="564" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="598" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="632" y="98.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d3" x="462" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="496" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="530" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="564" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="598" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="632" y="128.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d4" x="462" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="496" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="530" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="564" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="598" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="632" y="158.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d5" x="462" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="496" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="530" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="564" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="598" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="632" y="188.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d6" x="462" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="496" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="530" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="564" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="598" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="632" y="218.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d7" x="462" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="496" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="530" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="564" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="598" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="632" y="248.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d8" x="462" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="496" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="530" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="564" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="598" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="632" y="278.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d9" x="462" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="496" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="530" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="564" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="598" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d14" x="632" y="308.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d10" x="462" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d11" x="496" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d12" x="530" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d13" x="564" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d14" x="598" y="338.5" width="24" height="15" rx="3"/><rect class="dg-dev sg pop q-d15" x="632" y="338.5" width="24" height="15" rx="3"/><g class="sg fade q-flow"><circle class="dg-dot ok dg-flow g0" r="4"/><circle class="dg-dot ok dg-flow g1" r="4"/><circle class="dg-dot ok dg-flow g2" r="4"/><circle class="dg-dot ok dg-flow g3" r="4"/><circle class="dg-dot ok dg-flow g4" r="4"/><circle class="dg-dot ok dg-flow g5" r="4"/></g></g>
+          <text x="340" y="22" class="st s1 dg-callout ok">2.4.0 published</text><text x="340" y="22" class="st s2 dg-callout ok">2.4.0 on every machine within minutes</text><text x="340" y="22" class="st s3 dg-callout bad">the maintainer's token, stolen</text><text x="340" y="22" class="st s4 dg-callout bad">2.4.1 published · with a payload</text><text x="340" y="22" class="st s5 dg-callout bad">2.4.1 on every machine · and running</text><text x="340" y="22" class="st s6 dg-callout bad">tokens, keys and passwords sent to the attacker</text><text x="340" y="22" class="st s7 dg-callout bad">your keys, used as you · your users install a poisoned release</text><text x="340" y="22" class="st s8 dg-callout ">every install goes through SlowShield</text><text x="340" y="22" class="st s9 dg-callout held">2.4.1 held back · unlocks in 6 d 23 h</text><text x="340" y="22" class="st s10 dg-callout ok">installs get 2.4.0, the newest release that's old enough</text><text x="340" y="22" class="st s11 dg-callout bad">reported as malware · refused for good, HTTP 451</text><text x="340" y="22" class="st s12 dg-callout bad">2.4.0 changed after release · fingerprint mismatch · cut off</text><text x="340" y="22" class="st s13 dg-callout ok">1 download from the registry · served to every machine from the cache</text>
+        </svg>
+      </div>
+      <ol class="steps" start="8">
+        <li class="step" data-step="8">
+          <span class="step-n">08</span>
+          <h3>Every install goes through SlowShield.</h3>
+          <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle and the rest at it. Same packages, same commands, same lockfiles.</p>
+        </li>
+        <li class="step" data-step="9">
+          <span class="step-n">09</span>
+          <h3>2.4.1 waits.</h3>
+          <p>A release younger than the delay (7 days by default) isn't offered yet. A lockfile pinned to it gets a clear answer: <em>try again in 6 days</em>.</p>
+        </li>
+        <li class="step" data-step="10">
+          <span class="step-n">10</span>
+          <h3>Installs get 2.4.0.</h3>
+          <p>Indexes show the newest release that is old enough, and <code>latest</code> moves back to it. Builds keep working.</p>
+        </li>
+        <li class="step" data-step="11">
+          <span class="step-n">11</span>
+          <h3>The malware is reported, and blocked for good.</h3>
+          <p>The advisory feeds (OSV and GitHub) usually flag an attack like this within days. From then on 2.4.1 is refused with HTTP 451, even after the delay.</p>
+        </li>
+        <li class="step" data-step="12">
+          <span class="step-n">12</span>
+          <h3>A swapped file is cut off.</h3>
+          <p>Say someone replaces the file behind 2.4.0. SlowShield checks every download against the registry's digest and the fingerprint it recorded the first time, cuts the transfer off and alerts your team.</p>
+        </li>
+        <li class="step" data-step="13">
+          <span class="step-n">13</span>
+          <h3>Fetched once, served to everyone.</h3>
+          <p>One SlowShield serves every laptop, runner and build. Each file comes from the registry once and from the cache after that: faster installs, calm during outages, and one download instead of hundreds.</p>
+        </li>
+      </ol>
+    </div>
   </div>
 </section>
 

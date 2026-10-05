@@ -298,7 +298,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .ico-rocket { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 3c4 0 7 1 7 1s1 3 1 7c0 3-2 6-5 8l-1 4-3-3-4-4-3-3 4-1c2-3 5-5 8-5Zm1 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM5 15l4 4c-2 2-5 2-6 2 0-1 0-4 2-6Z'/%3E%3C/svg%3E"); }
 
 /* ---- ecosystems / roadmap ------------------------------------------------------------------------------- */
-.sun { position: relative; width: min(760px, 100%); aspect-ratio: 1; margin: 0 auto 2.5rem; --rot: 0deg; }
+.sun { position: relative; --sun: min(860px, 92vw); width: min(var(--sun), 100%); aspect-ratio: 1; margin: 0 auto 2.5rem; --rot: 0deg; }
 @supports (animation-timeline: view()) {
   .sun { animation: sunturn linear both; animation-timeline: view(); animation-range: cover 0% cover 100%; }
 }
@@ -308,26 +308,31 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .sun-core::after { content: ""; position: absolute; inset: -40%; border-radius: 50%;
   background: conic-gradient(from 0deg, transparent, color-mix(in srgb, var(--amber) 18%, transparent), transparent 30%); animation: orbit 14s linear infinite; }
 .ring { position: absolute; inset: 0; border-radius: 50%; rotate: var(--rot); }
-.ring-1 { inset: 20%; border: 1px solid color-mix(in srgb, var(--line) 90%, transparent); --count: 6; --r: calc(min(760px, 92vw) * 0.3); }
-.ring-2 { inset: 2%; border: 1px dashed color-mix(in srgb, var(--line) 80%, transparent); --count: 10; --r: calc(min(760px, 92vw) * 0.48); rotate: calc(var(--rot) * -0.6); }
+/* --count must match the number of entries in each ring, or the extra ones land on top of the first. */
+.ring-1 { inset: 17%; border: 1px solid color-mix(in srgb, var(--line) 90%, transparent); --count: 17; --r: calc(var(--sun) * 0.33); }
+.ring-2 { inset: 1%; border: 1px dashed color-mix(in srgb, var(--line) 80%, transparent); --count: 7; --r: calc(var(--sun) * 0.49); rotate: calc(var(--rot) * -0.6); }
+/* Pill text scales with the sun, so nothing touches at any angle; below 760px the rings become plain rows. */
+.ring-1 .eco { font-size: clamp(0.6rem, calc(var(--sun) * 0.0145), 0.78rem); padding: 0.36em 0.83em; }
 .ring .eco { position: absolute; top: 50%; left: 50%; translate: -50% -50%; white-space: nowrap;
   transform: rotate(calc(var(--i) * 360deg / var(--count))) translate(var(--r)) rotate(calc(var(--i) * -360deg / var(--count)));
-  padding: 0.35rem 0.8rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+  padding: 0.41em 0.94em; border-radius: 999px; font-size: clamp(0.65rem, calc(var(--sun) * 0.0158), 0.85rem); font-weight: 600; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
 .ring .eco > * { rotate: calc(var(--rot) * -1); }
 .eco.live { color: var(--on-fill); background: var(--ok); border-color: var(--ok); box-shadow: 0 0 24px color-mix(in srgb, var(--ok) 50%, transparent); }
 .eco.soon { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 60%, var(--line)); }
 .ring .eco:nth-child(1) { --i: 0; } .ring .eco:nth-child(2) { --i: 1; } .ring .eco:nth-child(3) { --i: 2; } .ring .eco:nth-child(4) { --i: 3; }
 .ring .eco:nth-child(5) { --i: 4; } .ring .eco:nth-child(6) { --i: 5; } .ring .eco:nth-child(7) { --i: 6; } .ring .eco:nth-child(8) { --i: 7; }
-.ring .eco:nth-child(9) { --i: 8; } .ring .eco:nth-child(10) { --i: 9; }
+.ring .eco:nth-child(9) { --i: 8; } .ring .eco:nth-child(10) { --i: 9; } .ring .eco:nth-child(11) { --i: 10; }
+.ring .eco:nth-child(12) { --i: 11; } .ring .eco:nth-child(13) { --i: 12; } .ring .eco:nth-child(14) { --i: 13; }
+.ring .eco:nth-child(15) { --i: 14; } .ring .eco:nth-child(16) { --i: 15; } .ring .eco:nth-child(17) { --i: 16; }
 .eco-legend { list-style: none; padding: 0; margin: 0 auto; max-width: 900px; display: grid; gap: 0.7rem; color: var(--muted); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin-right: 0.6rem; }
 .dot.live { background: var(--ok); } .dot.soon { background: var(--amber); }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .sun { aspect-ratio: auto; }
   .sun-core, .ring-1, .ring-2 { position: static; inset: auto; border: 0; rotate: none; }
   .sun-core { display: none; }
   .ring { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-bottom: 0.5rem; }
-  .ring .eco { position: static; transform: none; translate: none; }
+  .ring .eco { position: static; transform: none; translate: none; font-size: 0.8rem; }
 }
 
 /* ---- roadmap (filled from research) --------------------------------------------------------------------- */

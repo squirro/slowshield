@@ -492,14 +492,17 @@ slowshield.example.com
   </div>
   <div class="sun reveal" aria-hidden="true">
     <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
+    <!-- Inner ring: the programming languages' package registries (one entry per registry: npm also serves
+         TypeScript, Maven also Kotlin and Scala). Outer ring: everything else that downloads. -->
     <div class="ring ring-1">
       <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco live">Go modules</span><span class="eco live">Maven</span>
-      <span class="eco soon">Cargo</span><span class="eco soon">dnf / yum</span><span class="eco soon">apt / deb</span>
+      <span class="eco soon">Cargo</span><span class="eco">NuGet</span><span class="eco">Composer</span><span class="eco">RubyGems</span>
+      <span class="eco">Conan / vcpkg</span><span class="eco">SwiftPM</span><span class="eco">pub.dev</span><span class="eco">CRAN</span>
+      <span class="eco">Hex</span><span class="eco">Hackage</span><span class="eco">LuaRocks</span><span class="eco">Julia</span><span class="eco">CPAN</span>
     </div>
     <div class="ring ring-2">
-      <span class="eco">Container images</span><span class="eco">RubyGems</span><span class="eco">Composer</span>
-      <span class="eco">Helm charts</span><span class="eco">NuGet</span><span class="eco">Terraform</span><span class="eco">Hugging Face</span>
-      <span class="eco">Homebrew</span><span class="eco">GitHub Releases</span>
+      <span class="eco soon">Linux packages</span><span class="eco">Container images</span><span class="eco">Homebrew</span>
+      <span class="eco">GitHub Releases</span><span class="eco">Hugging Face</span><span class="eco">Terraform</span><span class="eco">Helm charts</span>
     </div>
   </div>
   <div class="roadmap">

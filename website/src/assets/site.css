@@ -174,39 +174,41 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 @media (max-width: 860px) { .why-grid { grid-template-columns: 1fr; } }
 
 /* ---- how: scrollytelling -------------------------------------------------------------------------------- */
-.how { --nav-h: 64px; --fig-top: calc(var(--nav-h) + 5.6rem); }
-/* "How it works" and the chapter titles pin at the same place, on one line */
-.how-title, .chapter-title { position: sticky; top: var(--nav-h); margin: 0; padding: 1.5rem 0 1.4rem;
-  font: 750 clamp(1.5rem, 2.6vw, 2.15rem)/1.2 var(--display); letter-spacing: -0.015em; }
-.how-title { z-index: 3; color: var(--ink); background: linear-gradient(var(--ground) 80%, transparent); }
-/* A chapter's title pins inside a track that ends 60vh (the diagram's height) before the chapter does, so the title
-   and the diagram scroll away together. The chapter's top padding stands in for the title in the flow. */
-.chapter { position: relative; padding-top: calc(14vh + 5.6rem); }
-.chapter-track { position: absolute; inset: 14vh 0 60vh; z-index: 4; pointer-events: none; }
-.chapter-title .ghost { visibility: hidden; }
-.chapter-without .tag { color: var(--bad); } .chapter-with .tag { color: var(--ok); }
+.how { --nav-h: 64px; --fig-top: calc(var(--nav-h) + 5.6rem); --fig-h: min(60vh, 560px); }
+/* "How it works" pins for the whole section, and each chapter's tag beside it fades in while that chapter's diagram
+   is pinned (--show, site.js). The tags share one place. */
+.how-title { position: sticky; top: var(--nav-h); z-index: 3; margin: 0; padding: 1.5rem 0 1.4rem; color: var(--ink); max-width: none;
+  font: 750 clamp(1.5rem, 2.6vw, 2.15rem)/1.2 var(--display); letter-spacing: -0.015em;
+  background: linear-gradient(var(--ground) 80%, transparent); }
+.how-title .tags { display: inline-grid; margin-left: 0.3em; }
+.how-title .tag { grid-area: 1 / 1; opacity: var(--show, 0); white-space: nowrap; }
+.how-title [data-for="without"] { color: var(--bad); } .how-title [data-for="with"] { color: var(--ok); }
+.no-js .how-title .tags { display: none; }
+/* the tags show the chapters; the headings are for screen readers (and show without JavaScript) */
+.js .chapter-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.chapter + .chapter { margin-top: 12vh; }
 .story { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 2.5rem; }
-.story-figure { position: sticky; top: var(--fig-top); height: 60vh; display: flex; align-items: center; order: 2; }
+.story-figure { position: sticky; top: var(--fig-top); height: var(--fig-h); display: flex; align-items: center; order: 2; }
 .diagram { width: 100%; height: auto; overflow: visible; }
 /* Room before a chapter's first step and after its last, so its diagram is pinned while the chapter plays: the
-   reading line (site.js, 50vh) minus the figure's top, and the figure's bottom minus the reading line. */
-.steps { list-style: none; margin: 0; padding: calc(50vh - var(--fig-top)) 0 calc(var(--fig-top) + 10vh); order: 1; }
-.step { min-height: 38vh; display: flex; flex-direction: column; justify-content: center; padding: 1.5rem 0; opacity: 0.3; transition: opacity 0.3s; }
+   reading line (site.js) is the middle of the pinned diagram, half its height from either end. */
+.steps { list-style: none; margin: 0; padding: calc(var(--fig-h) / 2) 0; order: 1; }
+.step { min-height: min(34vh, 340px); display: flex; flex-direction: column; justify-content: center; padding: 1.5rem 0; opacity: 0.3; transition: opacity 0.3s; }
 .step.active { opacity: 1; }
 /* Wide screens: the next step fades in and rises from below as it nears the reading line, earlier ones dim (--in and
    --rise from site.js). */
 @media (min-width: 901px) {
   .story .step { opacity: var(--in, 1); translate: 0 calc(var(--rise, 0) * 2.5rem); transition: none; }
 }
-.step-n { font-family: var(--mono); color: var(--brand); font-size: 0.9rem; letter-spacing: 0.1em; }
-.step h3 { font-size: clamp(1.6rem, 3vw, 2.3rem); margin: 0.6rem 0 1rem; }
+.step h3 { font-size: clamp(1.6rem, 3vw, 2.3rem); margin: 0 0 1rem; }
 .step p { color: var(--muted); font-size: 1.12rem; max-width: 46ch; margin: 0; }
 @media (max-width: 900px) {
+  .how { --fig-top: calc(var(--nav-h) + 6.6rem); }
+  .how-title .tags { display: grid; margin: 0.2rem 0 0; font-size: 0.8em; }
   .story { grid-template-columns: 1fr; gap: 0; }
   .story-figure { order: 0; top: var(--fig-top); height: auto; padding: 0.4rem 0 1rem; z-index: 2; background: linear-gradient(var(--ground) 80%, transparent); }
   .diagram { max-height: 46vh; }
   .steps { padding: 22vh 0 8vh; }
-  .chapter-track { bottom: 50vh; }
   .step { min-height: 44vh; }
 }
 

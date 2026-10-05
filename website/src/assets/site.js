@@ -59,22 +59,27 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
 // data-step picks that step's layers and --p (0 to 1: how far the reading line is through the step) plays it, so the
 // diagram follows the scroll in both directions. Before a chapter's first step its diagram rests (data-rest, --p 0);
 // after its last it keeps that step's end. With reduced motion, --p stays 1 and every step shows how it ends.
-const chapters = [...document.querySelectorAll(".story")].map((story) => ({
-  figure: story.querySelector(".story-figure"),
-  steps: [...story.querySelectorAll(".step")],
+const chapters = [...document.querySelectorAll(".chapter")].map((chapter) => ({
+  figure: chapter.querySelector(".story-figure"),
+  steps: [...chapter.querySelectorAll(".step")],
+  tag: document.querySelector(`.how-title .tag[data-for="${chapter.dataset.chapter}"]`),
 })).filter((c) => c.figure && c.steps.length);
 if (chapters.length) {
-  // On narrow screens the diagram is pinned at the top, so the text is read between it and the bottom.
+  // The reading line: the middle of the pinned diagram, or on narrow screens (diagram pinned at the top) halfway
+  // between it and the bottom.
   const narrow = window.matchMedia("(max-width: 900px)");
   const clamp = (v) => Math.min(1, Math.max(0, v));
   let frame = 0;
   const update = () => {
     frame = 0;
     const vh = window.innerHeight;
-    for (const { figure, steps } of chapters) {
+    for (const { figure, steps, tag } of chapters) {
       const pinnedTop = parseFloat(getComputedStyle(figure).top) || 0;  // also where the pinned title ends
       const pinnedBottom = pinnedTop + figure.offsetHeight;
-      const line = narrow.matches ? (pinnedBottom + vh) / 2 : vh / 2;
+      const line = narrow.matches ? (pinnedBottom + vh) / 2 : pinnedTop + figure.offsetHeight / 2;
+      // The chapter's tag fades in over the last 12% of a screen before its diagram pins, and out as it leaves.
+      const off = Math.abs(figure.getBoundingClientRect().top - pinnedTop) / (0.12 * vh);
+      if (tag) tag.style.setProperty("--show", clamp(1 - off).toFixed(3));
       let step = figure.dataset.rest;
       let progress = 0;
       for (const s of steps) {
@@ -89,12 +94,12 @@ if (chapters.length) {
       figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
       if (narrow.matches) continue;
       // Wide screens: below the reading line, a step's text fades in and rises as it comes within 0.5 to 0.2
-      // viewport heights of it; above, it fades out over the 0.15 before its top reaches the pinned title.
+      // viewport heights of it; above, it fades out over the last 80 px before its top reaches the pinned title.
       for (const s of steps) {
         const r = s.getBoundingClientRect();
         const d = (r.top + r.height / 2 - line) / vh;
         const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
-        const above = clamp((s.firstElementChild.getBoundingClientRect().top - pinnedTop) / (0.15 * vh));
+        const above = clamp((s.firstElementChild.getBoundingClientRect().top - pinnedTop) / 80);
         s.style.setProperty("--in", (below * above).toFixed(3));
         s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
       }

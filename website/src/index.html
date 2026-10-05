@@ -139,14 +139,14 @@
 
 <!-- ============================== HOW (scrollytelling) ============================== -->
 <section class="how" id="how" aria-labelledby="how-title">
-  <!-- "How it works" stays pinned for the whole section. Each chapter's title pins next to it (an invisible copy
-       of "How it works" keeps it aligned) and its diagram pins below; both scroll away when the chapter ends. site.js
-       sets each diagram's data-step (which layers .st.sN show) and --p (0 to 1: how far the reading line is through
-       that step), so the diagram is played by the scroll. Without JavaScript or with reduced motion, --p is 1 and
-       each step shows how it ends. -->
-  <h2 class="how-title" id="how-title">How it works</h2>
-  <div class="chapter chapter-without">
-    <div class="chapter-track"><h3 class="chapter-title"><span class="ghost" aria-hidden="true">How it works</span> <span class="tag">— without SlowShield</span></h3></div>
+  <!-- "How it works" stays pinned for the whole section, and each chapter's tag beside it fades in while that
+       chapter's diagram is pinned (the chapter headings below are for screen readers, and show without JavaScript).
+       site.js sets each diagram's data-step (which layers .st.sN show) and --p (0 to 1: how far the reading line is
+       through that step), so the diagram is played by the scroll. Without JavaScript or with reduced motion, --p is 1
+       and each step shows how it ends. -->
+  <h2 class="how-title" id="how-title">How it works<span class="tags" aria-hidden="true"><span class="tag" data-for="without">— without SlowShield</span><span class="tag" data-for="with">— with SlowShield</span></span></h2>
+  <div class="chapter" data-chapter="without">
+    <h3 class="chapter-heading">Without SlowShield</h3>
     <div class="story">
       <div class="story-figure" data-step="1" data-rest="0" aria-hidden="true">
         <svg viewBox="0 0 680 520" class="diagram">
@@ -180,45 +180,38 @@
       </div>
       <ol class="steps" start="1">
         <li class="step" data-step="1">
-          <span class="step-n">01</span>
           <h3>A maintainer publishes 2.4.0.</h3>
           <p>A new release of a package you depend on goes up on the registry.</p>
         </li>
         <li class="step" data-step="2">
-          <span class="step-n">02</span>
           <h3>Every machine installs it.</h3>
           <p>Within minutes it is on every laptop, CI runner and build that installs or updates. That's how it should be: a real release from the real maintainer.</p>
         </li>
         <li class="step" data-step="3">
-          <span class="step-n">03</span>
           <h3>Someone steals the maintainer's token.</h3>
           <p>A phished password, a leaked CI secret or a malicious browser extension, and the attacker can publish as the maintainer.</p>
         </li>
         <li class="step" data-step="4">
-          <span class="step-n">04</span>
           <h3>The attacker uploads 2.4.1.</h3>
           <p>It looks like any other patch release. Inside is a payload that runs when it is installed.</p>
         </li>
         <li class="step" data-step="5">
-          <span class="step-n">05</span>
           <h3>Every machine pulls it.</h3>
           <p>It is the newest version, so the same machines install it just as fast as 2.4.0, and run it.</p>
         </li>
         <li class="step" data-step="6">
-          <span class="step-n">06</span>
           <h3>Your secrets leave.</h3>
           <p>The payload collects tokens, cloud keys and passwords from every machine and sends them to a server the attacker controls. Nobody on your side did anything wrong.</p>
         </li>
         <li class="step" data-step="7">
-          <span class="step-n">07</span>
           <h3>Then your users are next.</h3>
           <p>With your publish tokens and keys, the attacker releases a poisoned version of your own package or app, as you, and your users install it. That is how the Shai-Hulud worm spread through hundreds of npm packages, in 2025 and again in 2026.</p>
         </li>
       </ol>
     </div>
   </div>
-  <div class="chapter chapter-with">
-    <div class="chapter-track"><h3 class="chapter-title"><span class="ghost" aria-hidden="true">How it works</span> <span class="tag">— with SlowShield</span></h3></div>
+  <div class="chapter" data-chapter="with">
+    <h3 class="chapter-heading">With SlowShield</h3>
     <div class="story">
       <div class="story-figure" data-step="8" data-rest="8" aria-hidden="true">
         <svg viewBox="0 0 680 520" class="diagram">
@@ -253,32 +246,26 @@
       </div>
       <ol class="steps" start="8">
         <li class="step" data-step="8">
-          <span class="step-n">08</span>
           <h3>Every install goes through SlowShield.</h3>
           <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle and the rest at it. Same packages, same commands, same lockfiles.</p>
         </li>
         <li class="step" data-step="9">
-          <span class="step-n">09</span>
           <h3>2.4.1 waits.</h3>
           <p>A release younger than the delay (7 days by default) isn't offered yet. A lockfile pinned to it gets a clear answer: <em>try again in 6 days</em>.</p>
         </li>
         <li class="step" data-step="10">
-          <span class="step-n">10</span>
           <h3>Installs get 2.4.0.</h3>
           <p>Indexes show the newest release that is old enough, and <code>latest</code> moves back to it. Builds keep working.</p>
         </li>
         <li class="step" data-step="11">
-          <span class="step-n">11</span>
           <h3>The malware is reported, and blocked for good.</h3>
           <p>The advisory feeds (OSV and GitHub) usually flag an attack like this within days. From then on 2.4.1 is refused with HTTP 451, even after the delay.</p>
         </li>
         <li class="step" data-step="12">
-          <span class="step-n">12</span>
           <h3>A swapped file is cut off.</h3>
           <p>Say someone replaces the file behind 2.4.0. SlowShield checks every download against the registry's digest and the fingerprint it recorded the first time, cuts the transfer off and alerts your team.</p>
         </li>
         <li class="step" data-step="13">
-          <span class="step-n">13</span>
           <h3>Fetched once, served to everyone.</h3>
           <p>One SlowShield serves every laptop, runner and build. Each file comes from the registry once and from the cache after that: faster installs, calm during outages, and one download instead of hundreds.</p>
         </li>

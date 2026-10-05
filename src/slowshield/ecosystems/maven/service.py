@@ -16,12 +16,13 @@ import hashlib
 import logging
 import math
 import re
-import xml.etree.ElementTree as ET  # only Google's group index, with DOCTYPE refused
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
+from defusedxml import DefusedXmlException
+from defusedxml import ElementTree as SafeET
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import Receive, Scope, Send
@@ -218,10 +219,10 @@ class MavenService:
             if body is None and stored is not None:
                 body = stored.value  # stale beats routing Google's groups to Central
         groups: frozenset[str] = frozenset()
-        if body and b"<!DOCTYPE" not in body.upper():
+        if body:
             try:
-                groups = frozenset(_local(el.tag) for el in ET.fromstring(body))  # noqa: S314 - no DOCTYPE
-            except ET.ParseError:
+                groups = frozenset(_local(el.tag) for el in SafeET.fromstring(body, forbid_dtd=True))
+            except SafeET.ParseError, DefusedXmlException:
                 log.warning("Google Maven group index unreadable")
         ctx.metadata_cache.put(("maven:google-groups",), groups, 64 * len(groups) + 256, now + (3600 if groups else 60))
         return groups
@@ -554,6 +555,9 @@ class MavenService:
             if refusal is not None:
                 return refusal
         key = f"/{repo.id}/{mreq.rel}"
+        refusal = await self._cached_gate(request, repo, mreq, key, known)
+        if refusal is not None:
+            return refusal
         art = ArtifactRequest(
             ecosystem=ECO,
             key=key,
@@ -586,6 +590,25 @@ class MavenService:
             headers_in=dict(request.headers),
             client_ip=client_ip(request.scope, ctx.cfg.trusted_networks),
         )
+
+    async def _cached_gate(
+        self, request: Request, repo: Repo, mreq: L.MavenRequest, key: str, known: float | None
+    ) -> Response | None:
+        """A file SlowShield already has is served without asking upstream, so its own Last-Modified is not at hand.
+        When the version's .pom date isn't known either, look it up (one HEAD, once per version) and judge by it, so a
+        cached file is held again if the policy got stricter since it was first downloaded."""
+        if known is not None:
+            return None
+        rec = self.ctx.artifacts.record_for(ECO, key)
+        if rec is None or rec.tampered or self.ctx.artifact_cache.lookup(rec.sha256) is None:
+            return None  # not served from the cache: the upstream response is judged instead
+        listed = self._times(mreq.name).get(mreq.version or "", [None, None])[1]
+        try:
+            published = await self._pom_time(repo, mreq, mreq.version or "")
+        except UpstreamError:
+            return None  # the file passed the check when it was first downloaded; don't fail it on an outage
+        pom = None if isinstance(published, _Absent) else published
+        return await self._judge(request, repo, mreq, _earliest(pom, listed), kind="artifact")
 
     async def _expect(
         self, repo: Repo, mreq: L.MavenRequest, art: ArtifactRequest, url: str, headers: dict[str, str]
@@ -675,6 +698,9 @@ class MavenService:
             refusal = await self._judge(request, repo, mreq, known, kind="artifact")
             if refusal is not None:
                 return refusal
+        refusal = await self._cached_gate(request, repo, mreq, f"/{repo.id}/{mreq.base}", known)
+        if refusal is not None:
+            return refusal
         if mreq.algo == "sha1":
             rec: ArtifactRecord | None = ctx.artifacts.record_for(ECO, f"/{repo.id}/{mreq.base}")
             if rec is not None and rec.upstream_digest and _SHA1.match(rec.upstream_digest) and not rec.tampered:

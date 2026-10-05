@@ -228,3 +228,14 @@ async def test_upstream_requests_per_new_version(running: Running) -> None:
     await running.drain()
     rows = running.rows("SELECT version, published FROM package_versions WHERE name = 'org.example:hello' ORDER BY 1")
     assert dict(rows)["1.1.0"] == NOW - 30 * DAY
+
+
+async def test_a_cached_file_is_held_again_when_the_policy_gets_stricter(start_app) -> None:
+    first = await start_app()
+    jar = f"{HELLO}/1.1.0/hello-1.1.0.jar"  # downloaded on its own: SlowShield never saw its .pom
+    assert (await first.client.get(jar)).status_code == 200
+    await first.drain()
+    stricter = await start_app("default_delay_days = 60\n")  # same data directory, so the jar is cached
+    r = await stricter.client.get(jar)
+    assert r.status_code == 425  # the .pom (30 days old) is looked up before the cache hit is served
+    assert (await stricter.client.get(f"{jar}.sha1")).status_code == 425

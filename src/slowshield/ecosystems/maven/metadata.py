@@ -4,8 +4,14 @@ holds. Only the `<version>` entries and `<latest>`/`<release>` change; everythin
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET  # DOCTYPE is refused below, so no entities are ever expanded
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from defusedxml import DefusedXmlException
+from defusedxml import ElementTree as SafeET
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element
 
 _VERSIONS = re.compile(r"<versions>(.*?)</versions>", re.S)
 _VERSION = re.compile(r"[ \t]*<version>\s*([^<]*?)\s*</version>[ \t]*\r?\n?")
@@ -25,23 +31,22 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _child(el: ET.Element | None, name: str) -> ET.Element | None:
+def _child(el: Element | None, name: str) -> Element | None:
     if el is None:
         return None
     return next((c for c in el if _local(c.tag) == name), None)
 
 
-def _text(el: ET.Element | None) -> str | None:
+def _text(el: Element | None) -> str | None:
     return el.text.strip() if el is not None and el.text and el.text.strip() else None
 
 
 def parse(body: bytes) -> Metadata | None:
     """The metadata of one artifact, or None for anything else (group-level plugin lists, snapshot metadata)."""
-    if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
-        return None
     try:
-        root = ET.fromstring(body)  # noqa: S314 - no DOCTYPE, see above
-    except ET.ParseError:
+        # defusedxml, and no DTD at all: Maven metadata never has one, so no entity can ever be expanded.
+        root = SafeET.fromstring(body, forbid_dtd=True)
+    except SafeET.ParseError, DefusedXmlException:
         return None
     versioning = _child(root, "versioning")
     versions_el = _child(versioning, "versions")

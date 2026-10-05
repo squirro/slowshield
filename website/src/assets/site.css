@@ -176,12 +176,18 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 /* ---- how: scrollytelling -------------------------------------------------------------------------------- */
 .how-head { margin-bottom: 2rem; }
 .story { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 2.5rem; }
-.story-figure { position: sticky; top: 14vh; height: 72vh; display: flex; align-items: center; order: 2; }
+.story-figure { position: sticky; top: 20vh; height: 60vh; display: flex; align-items: center; order: 2; }
 .diagram { width: 100%; height: auto; overflow: visible; }
-/* room before the first step and after the last, so the diagram is pinned for the whole story */
-.steps { list-style: none; margin: 0; padding: 36vh 0; order: 1; }
-.step { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; padding: 2rem 0; opacity: 0.3; transition: opacity 0.3s; }
+/* Room before the first step and after the last, so the diagram is pinned for the whole story: the reading line
+   (site.js, 50vh) minus the figure's top, and the figure's bottom minus the reading line. */
+.steps { list-style: none; margin: 0; padding: 30vh 0; order: 1; }
+.step { min-height: 38vh; display: flex; flex-direction: column; justify-content: center; padding: 1.5rem 0; opacity: 0.3; transition: opacity 0.3s; }
 .step.active { opacity: 1; }
+/* Wide screens: the next step fades in and rises from below as it nears the reading line, earlier ones dim (--in and
+   --rise from site.js). */
+@media (min-width: 901px) {
+  .story .step { opacity: var(--in, 1); translate: 0 calc(var(--rise, 0) * 2.5rem); transition: none; }
+}
 .step-n { font-family: var(--mono); color: var(--brand); font-size: 0.9rem; letter-spacing: 0.1em; }
 .step h3 { font-size: clamp(1.6rem, 3vw, 2.3rem); margin: 0.6rem 0 1rem; }
 .step p { color: var(--muted); font-size: 1.12rem; max-width: 46ch; margin: 0; }
@@ -190,7 +196,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
   .story-figure { order: 0; top: 64px; height: auto; padding: 0.4rem 0 1rem; z-index: 2; background: linear-gradient(var(--ground) 80%, transparent); }
   .diagram { max-height: 46vh; }
   .steps { padding: 24vh 0 8vh; }
-  .step { min-height: 58vh; }
+  .step { min-height: 44vh; }
 }
 
 .diagram text { fill: var(--muted); font: 13px var(--font); text-anchor: middle; }
@@ -500,7 +506,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .reveal, .no-sda .reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
   .count { font-size: inherit !important; } .count::after { content: none !important; }
-  .step { opacity: 1 !important; }
+  .step { opacity: 1 !important; translate: none !important; }
   .packet { display: none; }
   .ripple { display: none; }
   /* the headline keeps a plain fade (no movement) */

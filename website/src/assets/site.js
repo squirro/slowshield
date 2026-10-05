@@ -80,6 +80,18 @@ if (figure && steps.length) {
     figure.dataset.step = step;
     figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
     steps.forEach((s) => s.classList.toggle("active", s === active));
+    if (narrow.matches) return;
+    // Wide screens: each step's text by its distance from the reading line, in viewport heights. Within 0.2 it is
+    // fully shown; below, it fades in and rises over the 0.3 before that; above, it dims to a quarter.
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    for (const s of steps) {
+      const r = s.getBoundingClientRect();
+      const d = (r.top + r.height / 2 - line) / window.innerHeight;
+      const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
+      const above = d < 0 ? 0.25 + 0.75 * clamp((0.45 + d) / 0.25) : 1;
+      s.style.setProperty("--in", (below * above).toFixed(3));
+      s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
+    }
   };
   const queue = () => { if (!frame) frame = requestAnimationFrame(update); };
   window.addEventListener("scroll", queue, { passive: true });

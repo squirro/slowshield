@@ -167,12 +167,24 @@ async def test_untagged_module_latest_and_queries(running: Running) -> None:
     assert r.status_code == 200 and r.json()["Version"] == head
     r = await running.client.get("/go/example.com/untagged/@v/main.info")
     assert r.status_code == 200 and r.json()["Version"] == head
-    # Once an old commit is known, the module has a version old enough: the one-day-old head is held.
-    old = await running.client.get("/go/example.com/untagged/@v/v0.0.0-20250101000000-0123456789ab.info")
+    # Once an old commit is known, the module has a version old enough: the one-day-old head is held. @latest then
+    # answers with the newest commit known to be old enough, as a version list leaves out the newest entries; an
+    # explicit branch query and the head itself are refused.
+    old_version = "v0.0.0-20250101000000-0123456789ab"
+    old = await running.client.get(f"/go/example.com/untagged/@v/{old_version}.info")
     assert old.status_code == 200
-    assert (await running.client.get("/go/example.com/untagged/@latest")).status_code == 403
+    latest = await running.client.get("/go/example.com/untagged/@latest")
+    assert latest.status_code == 200 and latest.json()["Version"] == old_version
     assert (await running.client.get("/go/example.com/untagged/@v/main.info")).status_code == 403
     assert (await running.client.get(f"/go/example.com/untagged/@v/{head}.zip")).status_code == 403
+    await running.drain()
+    gated = running.rows("SELECT sum(count) FROM events WHERE type = 'age_gate' AND package = 'example.com/untagged'")
+    assert gated == [(2,)]  # main.info and the zip; @latest's older answer is not a refusal
+
+
+async def test_latest_of_an_untagged_module_without_an_older_commit_is_refused(start_app) -> None:
+    run = await start_app("fail_open = false\n")
+    assert (await run.client.get("/go/example.com/untagged/@latest")).status_code == 403
 
 
 async def test_incompatible_versions(running: Running) -> None:

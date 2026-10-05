@@ -23,7 +23,7 @@ SlowShield and clients need no other route out. Private modules keep bypassing t
 | `<module>/@v/list` | Versions that are too new or blocked are left out. Header: `X-SlowShield-Held-Versions` |
 | `<module>/@v/<version>.info` | Age-checked. Branch and commit queries are resolved by the mirror first; the resolved version is then checked |
 | `<module>/@v/<version>.mod`, `.zip` | Age-checked, verified against the `h1:` hashes from `sum.golang.org` and the first-seen fingerprint, then cached |
-| `<module>/@latest` | The newest allowed listed version. For modules without tags, the mirror's answer, age-checked |
+| `<module>/@latest` | The newest allowed listed version. For modules without tags, the mirror's answer (the default branch's newest commit) if it is old enough, else the newest commit SlowShield knows to be old enough. The go command asks every module in a build for `@latest` to check for retractions |
 | `sumdb/sum.golang.org/{supported,latest,lookup/…,tile/…}` | Passed through unchanged; lookups and tiles are cached |
 
 Module paths and versions arrive case-encoded (`!a` for `A`); SlowShield stores them decoded, which is how OSV,

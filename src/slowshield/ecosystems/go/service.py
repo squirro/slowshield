@@ -591,10 +591,42 @@ class GoService:
                 return self._blocked(request, req.module, None, v.package_block, kind="metadata")
             if v.latest is not None:
                 return await self._info_body(req, v.latest)
-        # Nothing tagged to offer: the mirror resolves the default branch to a pseudo-version.
-        return await self._resolved(request, req, f"/{req.escaped}/@latest")
+        # Nothing tagged to offer: the mirror resolves the default branch to a pseudo-version. If that commit is too
+        # new, the answer is the newest commit SlowShield knows to be old enough, as a version list leaves out the
+        # newest entries. (The go command asks every module in a build for @latest to check retractions.)
+        return await self._resolved(request, req, f"/{req.escaped}/@latest", older_ok=True)
 
-    async def _resolved(self, request: Request, req: M.ProxyRequest, path: str) -> Response:
+    async def _allowed(self, req: M.ProxyRequest, version: str) -> bool:
+        """Whether `version` would be served now, without recording a decision."""
+        cfg = self.ctx.cfg
+        blocks = self.ctx.blocklist.for_package(ECO, req.module)
+        if (blocks.package_block or blocks.match(ECO, version)) is not None:
+            return False
+        published = await self.published(req, version, fetch=True)
+        if isinstance(published, _Absent):
+            return False
+        if not cfg.raw.enforce_age_on_download:
+            return True
+        if is_old_enough(published, cfg.delay_days_for(ECO, req.module, version), self.ctx.clock.now()):
+            return True
+        return cfg.raw.fail_open and await self._fails_open(req)
+
+    def _newest_known_allowed(self, req: M.ProxyRequest) -> str | None:
+        """The newest version of the module, among those SlowShield has looked up, that is old enough and not
+        blocked."""
+        cfg = self.ctx.cfg
+        now = self.ctx.clock.now()
+        blocks = self.ctx.blocklist.for_package(ECO, req.module)
+        allowed = [
+            ver
+            for ver, t in self._times(req.module).items()
+            if blocks.match(ECO, ver) is None and is_old_enough(t, cfg.delay_days_for(ECO, req.module, ver), now)
+        ]
+        if not allowed:
+            return None
+        return max(allowed, key=lambda ver: V.sort_key(ECO, ver))
+
+    async def _resolved(self, request: Request, req: M.ProxyRequest, path: str, *, older_ok: bool = False) -> Response:
         ctx = self.ctx
         try:
             res = await ctx.upstream.fetch(self._urls(path), max_bytes=MAX_INFO_BYTES)
@@ -608,6 +640,10 @@ class GoService:
         if version is None or not M.is_canonical(version):
             ctx.recorder.decision(ECO, "metadata", "upstream_error")
             return text_error(502, f"slowshield: upstream returned an unusable answer ({res.status})")
+        if older_ok and not await self._allowed(req, version):
+            older = self._newest_known_allowed(req)
+            if older is not None:
+                return await self._info_body(req, older)
         refusal = await self._gate(request, req, version, "metadata")
         if refusal is not None:
             return refusal

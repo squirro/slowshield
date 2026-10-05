@@ -15,7 +15,9 @@ All notable changes to this project are documented here. The format is based on
   route out. A version's publish time is when proxy.golang.org first stored it (the `Last-Modified` of its `.mod`),
   never the commit time, which authors can backdate. It is looked up once per version, at no extra load on the
   upstreams beyond one `HEAD` ([docs/design/go.md](docs/design/go.md),
-  https://github.com/squirro/slowshield/issues/15). OSV and GitHub malware advisories for Go feed the blocklist.
+  https://github.com/squirro/slowshield/issues/15). `@latest` of a module without tags answers with the newest
+  commit known to be old enough when the newest one is too new. OSV and GitHub malware advisories for Go feed the
+  blocklist.
   Configuration: `[upstreams.go]`, `SLOWSHIELD_GO_ENABLED`, Helm `ecosystems.go.enabled`.
 - The Setup page and slowshield.org set `GOPROXY` in the shell setup, and the tool finder has Go.
 - A nightly check that proxy.golang.org's `Last-Modified` still matches index.golang.org, and Go perf scenarios

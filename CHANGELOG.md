@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-06
+
 ### Added
 - Cargo at `/cargo/`: a sparse registry that replaces crates-io in `$CARGO_HOME/config.toml`
   ([docs/design/cargo.md](docs/design/cargo.md), https://github.com/squirro/slowshield/issues/16). Cargo.lock keeps

@@ -389,7 +389,8 @@ class OciService:
         blocks = ctx.blocklist.for_package(ECO, repo)
         entry = blocks.package_block or blocks.match(ECO, req.reference)
         if entry is not None:
-            return self._blocked(request, repo, req.reference if req.is_digest else None, entry, tag=None)
+            digest, tag = (req.reference, None) if req.is_digest else (None, req.reference)
+            return self._blocked(request, repo, digest, entry, tag=tag)
         if req.is_digest:
             verdict = await self.judge(request, reg, req, req.reference)
         else:
@@ -626,9 +627,9 @@ class OciService:
             details={**entry.as_json(), "tag": tag},
         )
         what = repo if entry.package_level or not digest else f"{repo}@{_short(digest)}"
-        reason = f" {entry.reason.splitlines()[0][:300]}" if entry.reason else ""
-        source = " ".join(p for p in (entry.advisory_id, f"({entry.source})") if p)
-        return oci_error(403, "DENIED", f"slowshield: {what} is blocked. {source}.{reason}".rstrip(), reason="blocked")
+        if tag and not entry.package_level and not digest:
+            what = f"{repo}:{tag}"
+        return oci_error(403, "DENIED", " ".join(entry.explain(what)), reason="blocked")
 
     def _taken_down(self, request: Request, repo: str, digest: str) -> Response:
         ctx = self.ctx

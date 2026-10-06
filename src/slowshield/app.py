@@ -23,7 +23,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from slowshield import __version__, telemetry
-from slowshield.blocklist import Blocklist
+from slowshield.blocklist import Blocklist, sync_config_blocks
 from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
@@ -31,6 +31,7 @@ from slowshield.clock import Clock, SystemClock
 from slowshield.config import ConfigHolder, LoadedConfig, load
 from slowshield.context import AppContext
 from slowshield.db import Database
+from slowshield.ecosystems import normalize
 from slowshield.ecosystems.artifacts import ArtifactServer
 from slowshield.ecosystems.cargo.service import CargoService
 from slowshield.ecosystems.go.service import GoService
@@ -169,6 +170,7 @@ class SlowShield:
         ctx.started_at = self.clock.now()
         await asyncio.to_thread(ctx.db.open)
         await asyncio.to_thread(ctx.metadata_store.open)
+        await sync_blocks(ctx)
         for store in ctx.artifacts.stores.values():
             store.prepare()
         for w in self.cfg.warnings:
@@ -273,6 +275,7 @@ class SlowShield:
             await asyncio.sleep(5)
             if await asyncio.to_thread(ctx.config.maybe_reload):
                 ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
+                await sync_blocks(ctx)
 
     async def _leader_loop(self, ctx: AppContext) -> None:
         if self._scheduler is None:  # pragma: no cover - startup always creates it
@@ -541,6 +544,19 @@ def _route_label(path: str) -> str:
     if "/-/" in path:
         return "/{package}/-/{file}"
     return "/{package}"
+
+
+async def sync_blocks(ctx: AppContext) -> None:
+    """Write config.toml's [[blocks]] to the blocklist (rows with `source = 'config'`)."""
+    now = ctx.clock.now()
+    rules = [
+        (b.ecosystem, normalize(b.ecosystem, b.package), b.version.strip() if b.version else None, b.reason, b.url)
+        for b in ctx.cfg.raw.blocks
+    ]
+    changed = await ctx.db.writer.run(lambda c: sync_config_blocks(c, rules, now))
+    if changed:
+        ctx.blocklist.refresh_generation(force=True)
+        log.info("operator blocks applied", extra={"blocks": len(rules), "changed": changed})
 
 
 def create_app(

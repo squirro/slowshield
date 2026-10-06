@@ -466,8 +466,4 @@ class CargoService:
             details=entry.as_json(),
         )
         what = f"{crate}@{version}" if version and not entry.package_level else crate
-        lines = [f"slowshield: {what} is blocked as known malware."]
-        lines.append("Advisory: " + " ".join(p for p in (entry.advisory_id, f"({entry.source})", entry.url or "") if p))
-        if entry.reason:
-            lines.append(entry.reason.splitlines()[0][:300])
-        return text_error(451, "\n".join(lines))
+        return text_error(451, "\n".join(entry.explain(what)))

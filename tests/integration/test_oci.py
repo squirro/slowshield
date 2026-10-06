@@ -12,7 +12,7 @@ import json
 
 from fakeupstream.catalog import make_oci_image
 
-from tests.conftest import DAY, NOW, Running, asgi_get
+from tests.conftest import DAY, Running, asgi_get
 
 ACCEPT = {"Accept": "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json"}
 STRICT = "[upstreams.oci]\nfail_open = false\n"
@@ -179,18 +179,27 @@ async def test_a_registry_takedown_propagates(running: Running) -> None:
     assert (await get(running, "/v2/library/nginx/manifests/never-seen-tag")).status_code == 404
 
 
-async def test_blocked_images(running: Running) -> None:
-    await running.ctx.db.writer.run(
-        lambda c: c.execute(
-            "INSERT INTO blocklist (ecosystem, name, source, advisory_id, reason, first_seen, updated) "
-            "VALUES ('oci', 'docker.io/library/evil', 'config', 'blocks:1', 'cryptominer', ?, ?)",
-            (NOW, NOW),
-        )
+async def test_operator_blocks(start_app) -> None:
+    held_back = index_digest("prometheus/node-exporter", "1.8.1")
+    run = await start_app(
+        '[[blocks]]\necosystem = "oci"\npackage = "evil"\nreason = "cryptominer in the entrypoint"\n'
+        '[[blocks]]\necosystem = "oci"\npackage = "quay.io/prometheus/node-exporter"\n'
+        f'version = "{held_back}"\n'
+        '[[blocks]]\necosystem = "oci"\npackage = "nginx"\nversion = "1.27.0"\n'
     )
-    running.ctx.blocklist.refresh_generation(force=True)
-    r = await get(running, "/v2/library/evil/manifests/latest")
+    r = await get(run, "/v2/library/evil/manifests/latest")
     assert r.status_code == 403 and r.headers["x-slowshield-reason"] == "blocked"
-    assert errors(r) == "slowshield: docker.io/library/evil is blocked. blocks:1 (config). cryptominer"
+    assert errors(r) == (
+        "slowshield: docker.io/library/evil is blocked by the administrator of this proxy. "
+        "cryptominer in the entrypoint"
+    )
+    # A blocked digest is skipped: the tag goes back to the next old-enough one.
+    r = await get(run, "/v2/quay.io/prometheus/node-exporter/manifests/latest")
+    assert r.headers["docker-content-digest"] == index_digest("prometheus/node-exporter", "1.8.0")
+    r = await get(run, "/v2/library/nginx/manifests/1.27.0")  # a blocked tag
+    assert r.status_code == 403 and "docker.io/library/nginx:1.27.0 is blocked" in errors(r)
+    rows = run.rows("SELECT ecosystem, name, version, source FROM blocklist ORDER BY name")
+    assert ("oci", "docker.io/library/evil", None, "config") in rows
 
 
 async def test_exceptions_for_a_repository_or_digest(start_app) -> None:

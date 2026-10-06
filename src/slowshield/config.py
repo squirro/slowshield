@@ -56,6 +56,17 @@ class ExceptionRule(msgspec.Struct, forbid_unknown_fields=True):
     note: str | None = None
 
 
+class BlockRule(msgspec.Struct, forbid_unknown_fields=True):
+    """A block the operator sets: a whole package (or image repository), or one version (or image tag or digest).
+    Applied like an advisory, for the ecosystems no feed covers (container images) or before a feed catches up."""
+
+    ecosystem: Ecosystem
+    package: str
+    version: str | None = None
+    reason: str | None = None
+    url: str | None = None
+
+
 class PypiUpstream(msgspec.Struct, forbid_unknown_fields=True):
     enabled: bool = True
     fail_open: bool | None = None  # None: the top-level `fail_open`
@@ -259,6 +270,7 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     feeds: Feeds = msgspec.field(default_factory=Feeds)
     cache: CacheConfig = msgspec.field(default_factory=CacheConfig)
     exceptions: list[ExceptionRule] = []
+    blocks: list[BlockRule] = []
 
 
 @dataclass(frozen=True, slots=True)
@@ -534,6 +546,11 @@ def _validate(cfg: Config) -> None:
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
+    for block in cfg.blocks:
+        if not block.package.strip() or (block.version is not None and not block.version.strip()):
+            raise ConfigError(f"blocks: {block.ecosystem}/{block.package!r} needs a package (and a non-empty version)")
+        if block.url and not block.url.startswith(("https://", "http://")):
+            raise ConfigError(f"blocks: {block.ecosystem}/{block.package}: url must be an http(s) URL")
     for rule in cfg.exceptions:
         if rule.delay_days < 0:
             raise ConfigError(f"exception for {rule.ecosystem}/{rule.package}: delay_days must be >= 0")

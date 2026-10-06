@@ -61,7 +61,7 @@ def parse(path: str, ns: str | None = None) -> Request | None:
         if not _REGISTRY.fullmatch(ns):
             return None
         name = f"{ns}/{name}"
-    if not names.is_valid_oci(name):
-        return None
+    if name != name.lower() or not names.is_valid_oci(name):
+        return None  # the distribution spec allows lower-case repository names only: no silent renaming
     registry, repo = names.oci_split(name)
     return Request(registry, repo, kind, ref)

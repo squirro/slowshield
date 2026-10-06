@@ -525,12 +525,7 @@ class GoService:
             details=entry.as_json(),
         )
         what = f"{module}@{version}" if version and not entry.package_level else module
-        lines = [f"slowshield: {what} is blocked as known malware."]
-        advisory = " ".join(p for p in (entry.advisory_id, f"({entry.source})", entry.url or "") if p)
-        lines.append(f"Advisory: {advisory}")
-        if entry.reason:
-            lines.append(entry.reason.splitlines()[0][:300])
-        return text_error(451, "\n".join(lines))
+        return text_error(451, "\n".join(entry.explain(what)))
 
     # ---- handlers ---------------------------------------------------------------------------------------
 

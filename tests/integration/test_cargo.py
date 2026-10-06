@@ -241,3 +241,10 @@ async def test_an_index_file_without_a_usable_line_is_an_upstream_failure(runnin
     running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="200")
     assert _yanked((await running.client.get("/cargo/fa/nc/fancy-name")).text) == {"1.0.0": False}
     running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="0")
+
+
+async def test_operator_blocks_from_the_config(start_app) -> None:
+    run = await start_app('[[blocks]]\necosystem = "cargo"\npackage = "Fancy-Name"\nreason = "internal policy"\n')
+    r = await run.client.get("/cargo/crates/Fancy-Name/1.0.0/download")
+    assert r.status_code == 451
+    assert r.text == "slowshield: fancy_name is blocked by the administrator of this proxy.\ninternal policy\n"

@@ -257,9 +257,7 @@ class ArtifactCache:
         """Re-hash the least recently verified objects; corrupt ones are removed. Returns bad digests."""
         if not self.enabled:
             return []
-        rows = await self.db.readers.aquery(
-            f"SELECT sha256, size FROM {self.table} ORDER BY verified ASC LIMIT 1000"
-        )
+        rows = await self.db.readers.aquery(f"SELECT sha256, size FROM {self.table} ORDER BY verified ASC LIMIT 1000")
         checked: list[str] = []
         bad: list[str] = []
         spent = 0

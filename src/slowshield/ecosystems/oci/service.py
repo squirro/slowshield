@@ -9,8 +9,9 @@
 - Every refusal is `403 DENIED` with the reason in the message, `Retry-After` and `X-SlowShield-Reason`: containerd
   only shows an error body after a 403, and a 404 would send containerd and classic Docker to the next host.
 - Manifests are checked against their digests and stored by digest; a stored one is re-checked with a free `HEAD` at
-  most every 5 minutes, so a registry takedown propagates. Blobs are streamed and checked: image configs and other
-  small blobs go to the main cache, layers to the separate layer store if it has a budget, else nowhere.
+  most every 5 minutes, so a registry takedown propagates. Blobs are streamed and checked: image configs (a few KB,
+  known from the manifests served) go to the main cache, layers to the separate layer store if it has a budget, else
+  nowhere.
 """
 
 from __future__ import annotations
@@ -49,7 +50,6 @@ TAG_TTL = 300.0  # a tag's upstream digest is asked for again after this long
 RECHECK = 300.0  # a stored manifest is checked to still exist upstream at most this often
 HISTORY_RETRY = 600.0  # a registry time that couldn't be read is asked for again after this long
 MANIFEST_TTL = 30 * DAY  # manifests are immutable: kept by digest
-SMALL_BLOB = 1 << 20  # image configs and other small blobs go to the main artifact cache
 API = {"Docker-Distribution-API-Version": "registry/2.0"}
 
 
@@ -490,6 +490,9 @@ class OciService:
         return m is not None
 
     async def _record_manifest(self, repo: str, m: Manifest, now: float) -> None:
+        config = m.config()
+        if config:  # a config is cached like a package file; layers are not (blob())
+            await self.ctx.metadata_store.aput(f"oci:config:{config}", b"1", expires=now + MANIFEST_TTL)
         children = m.children()
         rows = [(repo, child, m.digest) for child in children]
 
@@ -510,11 +513,6 @@ class OciService:
 
     # ---- blobs and listings ------------------------------------------------------------------------------
 
-    def _store(self, size: int | None) -> str | None:
-        if size is not None and size <= SMALL_BLOB:
-            return "main"
-        return "layers" if self.layer_store else None
-
     async def blob(self, request: Request, reg: Registry, req: R.Request) -> AsgiResponse:
         ctx = self.ctx
         digest = req.reference
@@ -523,6 +521,13 @@ class OciService:
         except UpstreamError as exc:
             ctx.recorder.decision(ECO, "artifact", "upstream_error")
             return self._unavailable(f"the registry {reg.name} is unavailable ({exc.detail})")
+
+        is_config = await ctx.metadata_store.aget(f"oci:config:{digest}") is not None
+
+        def store(_size: int | None) -> str | None:
+            if is_config:
+                return "main"
+            return "layers" if self.layer_store else None
 
         def hit_headers(_rec: ArtifactRecord) -> dict[str, str]:
             return {**API, "Docker-Content-Digest": digest}
@@ -543,7 +548,7 @@ class OciService:
             hit_headers=hit_headers,
             on_upstream=on_upstream,
             upstream_headers=headers,
-            store=self._store,
+            store=store,
         )
         return await ctx.artifacts.serve(
             art,

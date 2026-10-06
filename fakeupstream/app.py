@@ -1,5 +1,6 @@
 """Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), Maven, crates.io
-(sparse index and static downloads), OSV and GitHub endpoints, plus control hooks."""
+(sparse index and static downloads), OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub
+endpoints, plus control hooks."""
 
 from __future__ import annotations
 
@@ -480,6 +481,130 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
         return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
 
+    # ---- OCI registries -------------------------------------------------------------------------------
+    # /oci/<registry>/v2/...: docker.io, quay.io and ghcr.io want a token (from /oci/token); registry.k8s.io doesn't,
+    # and adds gcr.io's `manifest` map to tags/list. Blobs redirect to /oci-cdn/ on `localhost` (another host than
+    # the 127.0.0.1 SlowShield is configured with), which refuses requests that still carry the token.
+
+    open_registries = {"registry.k8s.io"}
+
+    def oci_repo(registry: str, path: str) -> Any:
+        return state.catalog.oci.get((registry, path))
+
+    def oci_err(status: int, code: str, headers: dict[str, str] | None = None) -> Response:
+        return JSONResponse({"errors": [{"code": code, "message": code.lower()}]}, status_code=status, headers=headers)
+
+    def oci_auth(request: Request, registry: str, path: str) -> Response | None:
+        if registry in open_registries:
+            return None
+        if request.headers.get("authorization") == f"Bearer tok:{registry}:{path}":
+            return None
+        challenge = f'Bearer realm="{base(request)}/oci/token",service="fake-{registry}",scope="repository:{path}:pull"'
+        return oci_err(401, "UNAUTHORIZED", {"WWW-Authenticate": challenge})
+
+    async def oci_token(request: Request) -> Response:
+        service = request.query_params.get("service", "").removeprefix("fake-")
+        scope = request.query_params.get("scope", "")
+        path = scope.removeprefix("repository:").removesuffix(":pull")
+        return JSONResponse({"token": f"tok:{service}:{path}", "expires_in": 300})
+
+    async def oci(request: Request) -> Response:
+        registry, rest = request.path_params["registry"], request.path_params["rest"]
+        if rest in ("", "/"):
+            if registry in open_registries:
+                return JSONResponse({})
+            challenge = f'Bearer realm="{base(request)}/oci/token",service="fake-{registry}"'
+            return oci_err(401, "UNAUTHORIZED", {"WWW-Authenticate": challenge})
+        if rest.endswith("/tags/list"):
+            path, kind, ref = rest[: -len("/tags/list")], "tags", ""
+        else:
+            for kind in ("manifests", "blobs"):
+                path, sep, ref = rest.rpartition(f"/{kind}/")
+                if sep:
+                    break
+            else:
+                return oci_err(404, "NAME_UNKNOWN")
+        denied = oci_auth(request, registry, path)
+        if denied is not None:
+            return denied
+        repo = oci_repo(registry, path)
+        if repo is None:
+            return oci_err(404, "NAME_UNKNOWN")
+        if kind == "tags":
+            doc: dict[str, Any] = {"name": path, "tags": sorted(repo.tags)}
+            if registry in open_registries:  # gcr.io / Artifact Registry: upload time per digest
+                current = {t: h[-1][0] for t, h in repo.tags.items()}
+                doc["manifest"] = {
+                    d: {"timeUploadedMs": str(int(ts * 1000)), "tag": [t for t, c in current.items() if c == d]}
+                    for h in repo.tags.values()
+                    for d, ts in h
+                }
+            return JSONResponse(doc)
+        if kind == "manifests":
+            digest = ref if ref.startswith("sha256:") else repo.current(ref)
+            if digest is None or digest not in repo.manifests or digest in repo.removed:
+                return oci_err(404, "MANIFEST_UNKNOWN")
+            mt, body = repo.manifests[digest]
+            headers = {"Docker-Content-Digest": digest}
+            if registry == "docker.io":
+                headers["ratelimit-remaining"] = "99;w=21600"
+            if request.method == "HEAD":
+                return Response(b"", media_type=mt, headers={**headers, "Content-Length": str(len(body))})
+            return Response(body, media_type=mt, headers=headers)
+        if ref not in repo.blobs:
+            return oci_err(404, "BLOB_UNKNOWN")
+        loc = f"http://localhost:{request.url.port}/oci-cdn/{registry}/{path}/{ref}"
+        return Response(status_code=307, headers={"Location": loc})
+
+    async def oci_cdn(request: Request) -> Response:
+        if "authorization" in request.headers:
+            return PlainTextResponse("a registry token was sent to the CDN", status_code=400)
+        registry, rest = request.path_params["registry"], request.path_params["rest"]
+        path, _, digest = rest.rpartition("/")
+        repo = oci_repo(registry, path)
+        blob = repo.blobs.get(digest) if repo is not None else None
+        if blob is None:
+            return PlainTextResponse("not found", status_code=404)
+        return _stream(blob, tampered=request.url.path in state.tampered)
+
+    async def hub_tag(request: Request) -> Response:
+        p = request.path_params
+        repo = oci_repo("docker.io", f"{p['ns']}/{p['repo']}")
+        history = repo.tags.get(p["tag"]) if repo is not None else None
+        if not history:
+            return JSONResponse({"message": "tag not found"}, status_code=404)
+        digest, ts = history[-1]
+        return JSONResponse({"name": p["tag"], "digest": digest, "tag_last_pushed": iso(ts)})
+
+    async def hub_tags(request: Request) -> Response:
+        p = request.path_params
+        repo = oci_repo("docker.io", f"{p['ns']}/{p['repo']}")
+        if repo is None:
+            return JSONResponse({"message": "not found"}, status_code=404)
+        results = [{"name": t, "digest": h[-1][0], "tag_last_pushed": iso(h[-1][1])} for t, h in repo.tags.items()]
+        return JSONResponse({"count": len(results), "next": None, "results": results})
+
+    async def quay_tags(request: Request) -> Response:
+        repo = oci_repo("quay.io", request.path_params["path"])
+        if repo is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        want = request.query_params.get("specificTag")
+        tags = []
+        for tag, history in repo.tags.items():
+            if want and tag != want:
+                continue
+            for i, (digest, ts) in enumerate(history):
+                end = history[i + 1][1] if i + 1 < len(history) else None
+                tags.append(
+                    {
+                        "name": tag,
+                        "manifest_digest": digest,
+                        "start_ts": int(ts),
+                        "end_ts": None if end is None else int(end),
+                    }
+                )
+        return JSONResponse({"tags": tags, "page": 1, "has_additional": False})
+
     # ---- OSV -----------------------------------------------------------------------------------------
 
     def osv_doc(a: Advisory) -> dict[str, Any]:
@@ -594,7 +719,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/", "/cargo-static/")):
+        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -618,6 +743,13 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         state.catalog.publish(
             q.get("ecosystem", "pypi"), q["name"], q["version"], None if age == "none" else float(age)
         )
+        return JSONResponse({"ok": True})
+
+    async def ctl_oci_remove(request: Request) -> Response:
+        """The registry takes a digest down (as Docker Hub did with the malicious Trivy images)."""
+        image, digest = request.query_params["image"], request.query_params["digest"]
+        registry, _, path = image.partition("/")
+        state.catalog.oci[(registry, path)].removed.add(digest)
         return JSONResponse({"ok": True})
 
     async def ctl_clock(request: Request) -> Response:
@@ -665,6 +797,10 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     path: {v: {"stored": gv.stored, "zip_h1": gv.zip_h1} for v, gv in m.versions.items()}
                     for path, m in cat.go.items()
                 },
+                "oci": {
+                    f"{r.registry}/{r.path}": {t: [[d, ts] for d, ts in h] for t, h in r.tags.items()}
+                    for r in cat.oci.values()
+                },
                 "cargo": {
                     name: {
                         v: {"name": cv.name, "pubtime": cv.pubtime, "cksum": cv.blob.digests()["sha256"]}
@@ -685,6 +821,14 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
         Route("/cargo-index/{rest:path}", cargo_index, methods=["GET", "HEAD"]),
         Route("/cargo-static/crates/{name}/{version}/download", cargo_static, methods=["GET", "HEAD"]),
+        Route("/oci/token", oci_token),
+        Route("/oci/{registry}/v2/{rest:path}", oci, methods=["GET", "HEAD"]),
+        Route("/oci/{registry}/v2", oci, methods=["GET", "HEAD"]),
+        Route("/oci-cdn/{registry}/{rest:path}", oci_cdn, methods=["GET", "HEAD"]),
+        Route("/hub/v2/namespaces/{ns}/repositories/{repo}/tags/{tag}", hub_tag),
+        Route("/hub/v2/namespaces/{ns}/repositories/{repo}/tags", hub_tags),
+        Route("/quay/api/v1/repository/{path:path}/tag/", quay_tags),
+        Route("/_control/oci-remove", ctl_oci_remove, methods=["POST"]),
         Route("/sumdb/{rest:path}", sumdb),
         Route("/storage/{rest:path}", storage),
         Route("/osv/{eco}/all.zip", osv_zip),

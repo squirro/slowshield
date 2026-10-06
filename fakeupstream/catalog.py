@@ -1,5 +1,5 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, OSV, GitHub
-advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, OCI images, OSV,
+GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -312,6 +312,73 @@ class CrateVersion:
     deps: tuple[tuple[str, str], ...] = ()  # (name, requirement)
 
 
+OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+
+
+def _json(doc: object) -> bytes:
+    return json.dumps(doc, separators=(",", ":"), sort_keys=True).encode()
+
+
+def _sha(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+@dataclass(slots=True)
+class OciRepo:
+    """An image repository: tags with their push history, and every manifest and blob ever pushed."""
+
+    registry: str  # the fake's registry key, e.g. docker.io
+    path: str  # library/nginx
+    tags: dict[str, list[tuple[str, float]]] = field(default_factory=dict)  # tag -> [(index digest, pushed at)]
+    manifests: dict[str, tuple[str, bytes]] = field(default_factory=dict)  # digest -> (media type, body)
+    blobs: dict[str, Blob] = field(default_factory=dict)
+    removed: set[str] = field(default_factory=set)  # digests the registry took down
+
+    def current(self, tag: str) -> str | None:
+        history = self.tags.get(tag)
+        return history[-1][0] if history else None
+
+
+def make_oci_image(path: str, version: str) -> tuple[str, dict[str, tuple[str, bytes]], dict[str, bytes]]:
+    """(index digest, manifests, blobs) for a two-platform image whose bytes depend only on `path` and `version`."""
+    manifests: dict[str, tuple[str, bytes]] = {}
+    blobs: dict[str, bytes] = {}
+    entries = []
+    for arch in ("amd64", "arm64"):
+        layer = _targz({f"etc/{path.replace('/', '-')}-release": f"{version} {arch}\n".encode()})
+        config = _json(
+            {
+                "architecture": arch,
+                "os": "linux",
+                "created": "1970-01-01T00:00:00Z",  # builder-set: SlowShield never uses it
+                "config": {"Labels": {"version": version}},
+                "rootfs": {"type": "layers", "diff_ids": [_sha(layer)]},
+            }
+        )
+        blobs[_sha(layer)] = layer
+        blobs[_sha(config)] = config
+        config_ref = {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": _sha(config),
+            "size": len(config),
+        }
+        layer_ref = {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+            "digest": _sha(layer),
+            "size": len(layer),
+        }
+        manifest = _json({"schemaVersion": 2, "mediaType": OCI_MANIFEST, "config": config_ref, "layers": [layer_ref]})
+        manifests[_sha(manifest)] = (OCI_MANIFEST, manifest)
+        platform = {"architecture": arch, "os": "linux"}
+        entries.append(
+            {"mediaType": OCI_MANIFEST, "digest": _sha(manifest), "size": len(manifest), "platform": platform}
+        )
+    index = _json({"schemaVersion": 2, "mediaType": OCI_INDEX, "manifests": entries})
+    manifests[_sha(index)] = (OCI_INDEX, index)
+    return _sha(index), manifests, blobs
+
+
 @dataclass(slots=True)
 class Advisory:
     source: str  # osv | github
@@ -338,6 +405,7 @@ class Catalog:
         self.go: dict[str, GoModule] = {}
         self.maven: dict[tuple[str, str], MavenArtifact] = {}  # (repo, "group/path/artifact") -> artifact
         self.crates: dict[str, dict[str, CrateVersion]] = {}  # lower-case name -> version -> line
+        self.oci: dict[tuple[str, str], OciRepo] = {}  # (registry, path) -> repository
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -513,6 +581,19 @@ class Catalog:
             line["pubtime"] = iso_s(cv.pubtime)
         return json.dumps(line, separators=(",", ":")).encode()
 
+    def add_oci(self, image: str, tag: str, version: str, age_days: float) -> str:
+        """Push `version` of `image` (registry/path) and point `tag` at it, `age_days` ago. Returns the index digest."""
+        registry, _, path = image.partition("/")
+        repo = self.oci.setdefault((registry, path), OciRepo(registry, path))
+        digest, manifests, blobs = make_oci_image(path, version)
+        repo.manifests.update(manifests)
+        for d, data in blobs.items():
+            repo.blobs[d] = Blob(key=f"{image}@{d}", data=data)
+        history = repo.tags.setdefault(tag, [])
+        history.append((digest, self.now - age_days * DAY))
+        history.sort(key=lambda h: h[1])
+        return digest
+
     def _build(self) -> None:
         # PyPI
         self.add_pypi("alpha", "1.0.0", 60)
@@ -604,6 +685,19 @@ class Catalog:
         self.add_crate("hijacked", "1.0.0", 300)
         self.add_crate("hijacked", "2.0.0", 200)
         self.add_crate("untimed", "1.0.0", 0, pubtime=False)
+        # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
+        # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
+        for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):
+            self.add_oci("docker.io/library/nginx", "latest", version, age)
+        self.add_oci("docker.io/library/nginx", "1.27.0", "1.27.0", 40)
+        self.add_oci("docker.io/library/brandnew", "latest", "0.1", 1 / 24)
+        self.add_oci("docker.io/library/evil", "latest", "6.6.6", 30)
+        for version, age in (("1.8.0", 60), ("1.8.1", 10), ("1.8.2", 2)):
+            self.add_oci("quay.io/prometheus/node-exporter", "latest", version, age)
+        self.add_oci("registry.k8s.io/pause", "3.10", "3.10", 100)
+        self.add_oci("registry.k8s.io/pause", "3.11", "3.11", 1)
+        self.add_oci("ghcr.io/squirro/slowshield", "0.0.7", "0.0.7", 1)
+        self.add_oci("ghcr.io/squirro/slowshield", "0.0.6", "0.0.6", 20)
         if self.perf:
             self.add_pypi("big-wheel", "1.0.0", 30, big=100 * 1024 * 1024)
             for i in range(500):
@@ -824,5 +918,8 @@ class Catalog:
             self.add_maven("central", name, version, age_days)
         elif ecosystem == "cargo":
             self.add_crate(name, version, age_days or 0.0)
+        elif ecosystem == "oci":  # name: registry/path:tag
+            image, _, tag = name.rpartition(":")
+            self.add_oci(image, tag, version, age_days or 0.0)
         else:
             self.add_npm(name, version, age_days or 0.0, tag="latest")

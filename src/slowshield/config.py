@@ -451,7 +451,7 @@ _PUBLIC_URL = re.compile(
 
 
 _HOSTNAME = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
-_HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)+")
+_HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)*")
 _OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 

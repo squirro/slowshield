@@ -72,6 +72,16 @@ class Manifest:
     def is_index(self) -> bool:
         return self.media_type in INDEX_TYPES
 
+    def config(self) -> str:
+        """The config blob of an image manifest ("" for an index)."""
+        if self.is_index or not self.body:
+            return ""
+        try:
+            digest = str(json.loads(self.body).get("config", {}).get("digest", ""))
+        except ValueError, AttributeError:
+            return ""
+        return digest if DIGEST.fullmatch(digest) else ""
+
     def children(self) -> list[str]:
         """The digests an index lists (its platform and attestation manifests)."""
         if not self.is_index or not self.body:

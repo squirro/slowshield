@@ -62,6 +62,7 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
                 "gradle_plugins": {"url": f"{fake_url}/maven/portal"},
                 "repos": {"snapshots": {"url": f"{fake_url}/maven/snapshots", "snapshots": True}},
             },
+            "cargo": {"index_url": f"{fake_url}/cargo-index", "download_url": f"{fake_url}/cargo-static/crates"},
         },
         "feeds": {"osv_base_url": f"{fake_url}/osv", "github_api_url": f"{fake_url}/github"},
     }

@@ -31,7 +31,8 @@ Noise controls:
 `artifact_big` (100 MB stream, MB/s), `blocked` (451 path), `dashboard` (UI render), `mixed`
 (45 % PyPI index, 30 % npm abbreviated, 20 % artifacts, 5 % full packuments), `go_list` (500-version Go module) and
 `go_mod` (cached go.mod files, which dominate `go mod download`), `maven_metadata` (filtered metadata of a
-500-version artifact) and `maven_jar` (a cached jar).
+500-version artifact), `maven_jar` (a cached jar), `cargo_index` (the index file of a 500-version crate) and
+`cargo_crate` (a cached .crate).
 
 Recorded per scenario: requests/s, p50/p95/p99, error rate, MB/s, CPU-ms per 1,000 requests (cgroup
 `cpu.stat`); per image: peak RSS (cgroup `memory.peak`), startup-to-ready time and image size.
@@ -39,9 +40,9 @@ Recorded per scenario: requests/s, p50/p95/p99, error rate, MB/s, CPU-ms per 1,0
 ## Baseline
 
 The first tagged release has no predecessor: its run *establishes* the baseline (report only, no gate). The same
-holds per scenario: when the baseline image does not serve one yet (the Go and Maven scenarios against a release from
-before their support), the scenario is reported without a comparison, and only its error rate is gated. Such a baseline also
-gets `perf/slowshield.toml` without the `[upstreams.go]` and `[upstreams.maven]` sections, which it would reject.
+holds per scenario: when the baseline image does not serve one yet (the Go, Maven or Cargo scenarios against a release
+from before their support), the scenario is reported without a comparison, and only its error rate is gated. Such a
+baseline also gets `perf/slowshield.toml` without the `[upstreams.*]` sections it would reject.
 In CI, every pull request compares its image against one built from its base branch (`--profile quick`,
 3 rounds, informational: the report goes to the job summary and the `perf-<arch>` artifact, and doesn't fail the
 build). It runs by default; the `skip-perf` label skips it and the micro benchmarks, for a change that can't affect

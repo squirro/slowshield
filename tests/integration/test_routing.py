@@ -168,6 +168,7 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "Gradle",
         "sbt",
         "Coursier",
+        "Cargo",
     ]
     assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
     assert re.findall(r'data-tool-pick="([^"]+)"', page) == names

@@ -59,10 +59,10 @@ class Tool:
     snippets: tuple[tuple[str, str], ...]  # (label, code)
 
 
-def tools(pypi: str, npm: str, go: str, maven: str) -> tuple[Tool, ...]:
+def tools(pypi: str, npm: str, go: str, maven: str, cargo: str) -> tuple[Tool, ...]:
     """Per-tool setup (Setup page only), with this instance's URLs. `maven` is the base of the Maven repositories
-    (`<public_url>/maven`)."""
-    pypi, npm, go, maven = safe(pypi), safe(npm), safe(go), safe(maven)
+    (`<public_url>/maven`), `cargo` the sparse index (`<public_url>/cargo/`)."""
+    pypi, npm, go, maven, cargo = safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo)
     sbt_insecure = ", allowInsecureProtocol" if maven.startswith("http://") else ""
     secure = "false" if pypi.startswith("http://") else "true"
     yarn_http = "\nunsafeHttpWhitelist:\n  - localhost" if npm.startswith("http://") else ""
@@ -142,6 +142,38 @@ def tools(pypi: str, npm: str, go: str, maven: str) -> tuple[Tool, ...]:
             "coursier cs scala-cli mill",
             (("environment", f'export COURSIER_REPOSITORIES="ivy2Local|{maven}/all/"'),),
         ),
+        Tool(
+            "Cargo",
+            "cargo",
+            "cargo rust crates crates.io config.toml cargo_home rustup",
+            (
+                ("~/.cargo/config.toml", cargo_config(cargo)),
+                # The official rust images set CARGO_HOME=/usr/local/cargo, where ~/.cargo is not read.
+                ("CI and Dockerfiles (appends to $CARGO_HOME/config.toml)", cargo_command(cargo)),
+            ),
+        ),
+    )
+
+
+def cargo_config(cargo: str) -> str:
+    """Source replacement: crates-io resolves through SlowShield, so Cargo.lock keeps crates.io's source and
+    checksums. A `[registries]` entry rather than `[source.slowshield] registry = ...`, with which `cargo info` won't
+    run. Cargo 1.68 or later (sparse protocol)."""
+    return f'[source.crates-io]\nreplace-with = "slowshield"\n\n[registries.slowshield]\nindex = "sparse+{cargo}"'
+
+
+def cargo_command(cargo: str) -> str:
+    """`cargo_config` as one shell command (source replacement can't be set through environment variables)."""
+    lines = (
+        "[source.crates-io]",
+        'replace-with = "slowshield"',
+        "[registries.slowshield]",
+        f'index = "sparse+{cargo}"',
+    )
+    return (
+        "mkdir -p \"${CARGO_HOME:-$HOME/.cargo}\" && printf '%s\\n' "
+        + " ".join(f"'{line}'" for line in lines)
+        + ' >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"'
     )
 
 

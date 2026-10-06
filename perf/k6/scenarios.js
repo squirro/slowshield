@@ -65,6 +65,9 @@ const SCENARIOS = {
   // Maven: filtered metadata of a 500-version artifact, and a cached jar (Maven builds fetch many small files).
   maven_metadata: () => http.get(`${TARGET}/maven/all/org/example/many/maven-metadata.xml`),
   maven_jar: () => http.get(`${TARGET}/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar`),
+  // Cargo: the index file of a 500-version crate (cargo asks for every crate in the graph), and a cached .crate.
+  cargo_index: () => http.get(`${TARGET}/cargo/ma/ny/many-crate`),
+  cargo_crate: () => http.get(`${TARGET}/cargo/crates/fake_hello/1.0.0/download`),
   dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();

@@ -1,5 +1,5 @@
-"""Version parsing/ordering for PyPI (PEP 440), npm and Go (SemVer 2.0), Maven (ComparableVersion), plus advisory
-range matching.
+"""Version parsing/ordering for PyPI (PEP 440), npm, Go and Cargo (SemVer 2.0), Maven (ComparableVersion), plus
+advisory range matching.
 
 Ranges use the comma-separated comparator form shared by GitHub advisories and our blocklist table,
 e.g. ``">= 1.0.0, < 1.4.2"`` or ``"= 0.30.4"``. Each comma part must hold (logical AND).
@@ -89,8 +89,9 @@ def canonical(ecosystem: str, version: str) -> str:
         return version.strip()
     out = version.strip().removeprefix("v")
     # Go: OSV and GitHub write versions without the `v`, and `+incompatible` (the only build metadata Go allows)
-    # names the same module version as the plain one.
-    return out.split("+", 1)[0] if ecosystem == "go" else out
+    # names the same module version as the plain one. Cargo: crates.io refuses a version that differs from a
+    # published one only in its build metadata, so `1.0.0+abc` is the same version as `1.0.0`.
+    return out.split("+", 1)[0] if ecosystem in ("go", "cargo") else out
 
 
 def sort_key(ecosystem: str, version: str) -> tuple[int, Any]:

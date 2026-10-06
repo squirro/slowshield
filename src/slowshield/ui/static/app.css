@@ -23,6 +23,7 @@
   --npm: #cb3837;
   --go: #00add8;
   --maven: #ed8b00; /* Java orange: Maven's own red is almost npm's */
+  --cargo: #dea584; /* GitHub's Rust colour: Rust's own logo is black */
   --grid: #eaedf6;
   --radius: 10px;
   --shadow: 0 1px 2px rgb(10 15 36 / 6%), 0 1px 1px rgb(10 15 36 / 4%);
@@ -150,6 +151,7 @@ tr.withdrawn { opacity: 0.55; }
 .eco-pypi { background: var(--pypi); } .eco-npm { background: var(--npm); }
 .eco-go { background: var(--go); color: #000; } /* white on Gopher Blue is unreadable; Go's brand pairs it with black */
 .eco-maven { background: var(--maven); color: #000; }
+.eco-cargo { background: var(--cargo); color: #000; }
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ev-blocked, .st-blocked, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
 .ev-tampered, .ev-integrity_mismatch, .st-tampered { background: var(--tamper-soft); color: var(--tamper); }
@@ -227,6 +229,7 @@ tr.withdrawn { opacity: 0.55; }
 .s-pypi { fill: var(--pypi); background: var(--pypi); } .s-npm { fill: var(--npm); background: var(--npm); }
 .s-go { fill: var(--go); background: var(--go); }
 .s-maven { fill: var(--maven); background: var(--maven); }
+.s-cargo { fill: var(--cargo); background: var(--cargo); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
 .s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }
 .s-age_gated { fill: var(--hold); background: var(--hold); } .s-blocked { fill: var(--danger); background: var(--danger); }

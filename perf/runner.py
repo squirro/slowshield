@@ -30,7 +30,12 @@ K6_SCRIPT = ROOT / "k6" / "scenarios.js"
 PORT = 18080
 UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
 CONFIG = ROOT / "slowshield.toml"
-_GO_SECTION = re.compile(r"(?ms)^# Releases before Go and Maven support.*?(?=^\[feeds\])")
+# Sections an older baseline image rejects, newest first. Each pattern runs up to [feeds], so it takes the later
+# sections too.
+_NEWER_SECTIONS = (
+    re.compile(r"(?ms)^# Releases before Cargo support.*?(?=^\[feeds\])"),
+    re.compile(r"(?ms)^# Releases before Go and Maven support.*?(?=^\[feeds\])"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +65,8 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("go_mod", "latency", rate=300),
         Scenario("maven_metadata", "throughput", vus=32),
         Scenario("maven_jar", "latency", rate=300),
+        Scenario("cargo_index", "throughput", vus=32),
+        Scenario("cargo_crate", "latency", rate=300),
     ],
     "quick": [
         Scenario("pypi_simple_json", "throughput", vus=32),
@@ -69,6 +76,7 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("blocked", "latency", rate=200),
         Scenario("go_mod", "throughput", vus=32),
         Scenario("maven_jar", "throughput", vus=32),
+        Scenario("cargo_index", "throughput", vus=32),
     ],
 }
 
@@ -242,18 +250,21 @@ class Harness:
         return ["--cpuset-cpus", cpus] if platform.system() == "Linux" and cpus else []
 
     def _config_for(self, image: str) -> Path:
-        """perf/slowshield.toml, without the Go upstream for an image that rejects it (a baseline from before Go
-        support). Its Go scenarios then fail and are reported as new, without a comparison."""
+        """perf/slowshield.toml, without the upstreams an image rejects (a baseline from before their support). Their
+        scenarios then fail and are reported as new, without a comparison."""
         if image not in self._configs:
-            probe = subprocess.run(
-                ["docker", "run", "--rm", "-v", f"{CONFIG}:/c.toml:ro", image, "check-config", "--config", "/c.toml"],
-                capture_output=True,
-                check=False,
-            )
             path = CONFIG
-            if probe.returncode != 0:
-                path = Path(tempfile.gettempdir()) / f"slowshield-perf-{os.getpid()}-nogo.toml"
-                path.write_text(_GO_SECTION.sub("", CONFIG.read_text()))
+            for i, section in enumerate((None, *_NEWER_SECTIONS)):
+                if section is not None:
+                    path = Path(tempfile.gettempdir()) / f"slowshield-perf-{os.getpid()}-older-{i}.toml"
+                    path.write_text(section.sub("", CONFIG.read_text()))
+                probe = subprocess.run(
+                    ["docker", "run", "--rm", "-v", f"{path}:/c.toml:ro", image, "check-config", "--config", "/c.toml"],
+                    capture_output=True,
+                    check=False,
+                )
+                if probe.returncode == 0:
+                    break
             self._configs[image] = path
         return self._configs[image]
 
@@ -304,6 +315,8 @@ class Harness:
             ("/go/example.com/hello/@v/v1.0.0.mod", "text/plain"),  # verified and cached on the first request
             ("/maven/all/org/example/many/maven-metadata.xml", "text/xml"),
             ("/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar", "*/*"),
+            ("/cargo/ma/ny/many-crate", "*/*"),
+            ("/cargo/crates/fake_hello/1.0.0/download", "*/*"),
             ("/", "text/html"),
         ):
             req = urllib.request.Request(base + path, headers={"Accept": accept})

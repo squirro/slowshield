@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SlowShield — safety through patience</title>
-<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm, Go modules, Maven and crates.io. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
+<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm, Go modules, Maven, crates.io and container images. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
 <meta name="theme-color" content="#060915">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://slowshield.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
 <meta property="og:title" content="SlowShield — safety through patience">
-<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go, Maven and crates.io — and soon everything that downloads.">
+<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go, Maven, crates.io and container images — and soon everything that downloads.">
 <meta property="og:url" content="https://slowshield.org/">
 <meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -63,7 +63,7 @@
       <span data-hl data-fit="71" hidden>Safety through<br><span class="grad">patience.</span></span>
     </h1>
     <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm, Go, Maven and
-      crates.io. It holds
+      crates.io, and between your container runtimes and Docker Hub, GHCR and Quay. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
       download. Made for developers and small teams who want supply-chain security that just works, without buying
       and running an artifact repository manager.</p>
@@ -168,7 +168,7 @@
 <section class="ecosystems" id="ecosystems">
   <div class="section-head reveal">
     <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python, JavaScript, Go, Java and Rust today.<br>Everything under the sun tomorrow.</h2>
+    <h2>Python, JavaScript, Go, Java, Rust and containers today.<br>Everything under the sun tomorrow.</h2>
     <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
       same policy, same dashboard, same guarantees.</p>
   </div>
@@ -184,7 +184,7 @@
       <span class="eco">Julia</span><span class="eco">Perl</span>
     </div>
     <div class="ring ring-2">
-      <span class="eco">Linux packages</span><span class="eco soon">Container images</span><span class="eco">Homebrew</span>
+      <span class="eco">Linux packages</span><span class="eco live">Container images</span><span class="eco">Homebrew</span>
       <span class="eco">GitHub Releases</span><span class="eco">Hugging Face</span><span class="eco">Terraform</span><span class="eco">Helm charts</span>
     </div>
   </div>
@@ -201,15 +201,16 @@
         <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
       </ul>
     </div>
-    <div class="phase next reveal">
-      <span class="when">Next</span>
+    <div class="phase now reveal">
+      <span class="when">Available now</span>
       <h3>Container images</h3>
       <ul>
-        <li>Docker, Podman &amp; Kubernetes<span>images from Docker Hub, GHCR, Quay and registry.k8s.io</span></li>
+        <li>Docker, Podman &amp; Kubernetes<span>images from Docker Hub, GHCR, Quay, registry.k8s.io and more</span></li>
+        <li>Tags that lag behind<span><code>FROM nginx:latest</code> keeps working, about a week behind</span></li>
       </ul>
     </div>
-    <div class="phase then reveal">
-      <span class="when">Then</span>
+    <div class="phase next reveal">
+      <span class="when">Next</span>
       <h3>The enterprise staples</h3>
       <ul>
         <li>C#, Ruby &amp; PHP<span>NuGet, RubyGems, Composer</span></li>
@@ -358,7 +359,7 @@
       <ol class="steps" start="8">
         <li class="step" data-step="8">
           <h3>Every install goes through SlowShield.</h3>
-          <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle, Cargo and the rest at it. Same packages, same commands, same lockfiles.</p>
+          <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle, Cargo, Docker, Podman and the rest at it. Same packages, same commands, same lockfiles.</p>
         </li>
         <li class="step" data-step="9">
           <h3>2.4.1 waits.</h3>
@@ -440,8 +441,8 @@
       <li>Bun <span>1.3</span></li><li>Deno <span>2.6</span></li><li>pip <span>26.1</span></li>
       <li>uv <span>0.9.17</span></li><li>Poetry <span>2.4</span></li><li>PDM <span>2.27</span></li>
     </ul>
-    <p class="muted">The minimum version for each. Go, Maven, Gradle and Cargo have no stable setting yet: there,
-      SlowShield is the only layer. The Setup page writes the settings for you, on by default, with one switch to
+    <p class="muted">The minimum version for each. Go, Maven, Gradle and Cargo have no stable setting yet, and container
+      runtimes have none: there, SlowShield is the only layer. The Setup page writes the settings for you, on by default, with one switch to
       turn them off.</p>
   </div>
 </section>
@@ -708,7 +709,8 @@ helm install slowshield slowshield/deploy/helm/slowshield \
         <strong>Setup</strong> in the dashboard's menu. It shows how to point each tool at your instance, with its address
         already filled in: four lines for your shell
         profile that cover pip, uv, npm and go; settings for Poetry, PDM, Pipenv, pnpm, Yarn, Bun, Maven, Gradle, sbt,
-        Coursier and Cargo; and what to use in CI and containers.</p>
+        Coursier and Cargo; the files for containerd and Kubernetes, Docker, Podman and BuildKit; and what to use in CI
+        and containers.</p>
     </li>
     <li class="reveal">
       <h3><span>3</span> Watch it work</h3>
@@ -731,7 +733,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     </header>
     <ul class="plan">
       <li>Every feature: release delay, malware blocking, integrity checks, verified cache, dashboard</li>
-      <li>PyPI, npm, Go modules, Maven and crates.io, with every tool that installs through them</li>
+      <li>PyPI, npm, Go modules, Maven, crates.io and container images, with every tool that installs through them</li>
       <li>Unlimited users, machines, packages and instances</li>
       <li>Self-hosted: Docker, rootless Podman or Kubernetes, your data stays with you</li>
       <li>Grafana dashboards and alerts included</li>

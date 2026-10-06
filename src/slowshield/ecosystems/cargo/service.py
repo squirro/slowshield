@@ -173,10 +173,7 @@ class CargoService:
             if stored is None:
                 raise
             log.warning("upstream unavailable; serving a stale Cargo index file", extra={"package": name})
-            idx = I.parse(name, stored.value)
-            ctx.metadata_cache.put(key, idx, idx.weight, now + 60)
-            instruments.cache_requests.add(1, {"cache": "metadata", "result": "stale"})
-            return idx
+            return self._stale(name, stored.value, now)
         if res.status == 304 and stored is not None:
             await ctx.metadata_store.atouch(skey, now + ttl, now + ttl + KEEP_STALE)
             idx = I.parse(name, stored.value)
@@ -190,12 +187,26 @@ class CargoService:
             return None
         if res.status != 200:
             raise UpstreamError(res.url, f"upstream returned {res.status}", res.status)
+        idx = I.parse(name, res.body)
+        if not idx.versions and res.body.strip():
+            # A 200 without one usable line (an error page, a broken mirror) is an upstream failure: caching it would
+            # make the crate look absent until the TTL ends.
+            log.warning("unusable Cargo index file from upstream", extra={"package": name, "bytes": len(res.body)})
+            if stored is None:
+                raise UpstreamError(res.url, "upstream sent an index file without a usable line")
+            return self._stale(name, stored.value, now)
         await ctx.metadata_store.aput(
             skey, res.body, expires=now + ttl, keep_until=now + ttl + KEEP_STALE, meta={"etag": res.etag}
         )
-        idx = I.parse(name, res.body)
         ctx.metadata_cache.put(key, idx, idx.weight, now + ttl)
         self._record(idx)
+        return idx
+
+    def _stale(self, name: str, body: bytes, now: float) -> I.IndexFile:
+        """The stored index file, while upstream can't provide a usable one (asked again in a minute)."""
+        idx = I.parse(name, body)
+        self.ctx.metadata_cache.put(("cargo:idx", name), idx, idx.weight, now + 60)
+        instruments.cache_requests.add(1, {"cache": "metadata", "result": "stale"})
         return idx
 
     # ---- publish times -----------------------------------------------------------------------------------

@@ -54,7 +54,7 @@ class _Range(msgspec.Struct):
 
 
 class _DatabaseSpecific(msgspec.Struct):
-    categories: list[Any] = []  # RustSec: "malicious", "code-execution", ...
+    categories: Any = None  # RustSec: ["malicious", "code-execution", ...]; anything else is ignored, not an error
 
 
 class _Affected(msgspec.Struct):
@@ -72,6 +72,7 @@ class OsvVuln(msgspec.Struct):
     summary: str | None = None
     details: str | None = None
     affected: list[_Affected] = []
+    database_specific: _DatabaseSpecific | None = None
 
 
 _decoder = msgspec.json.Decoder(OsvVuln)
@@ -103,10 +104,10 @@ def _ranges_to_specs(ranges: list[_Range]) -> list[str | None]:
 
 
 def _rustsec_malware(v: OsvVuln) -> bool:
-    """A RustSec advisory categorised "malicious" that no `MAL-*` advisory covers already."""
-    malicious = any(
-        a.database_specific is not None and "malicious" in a.database_specific.categories for a in v.affected
-    )
+    """A RustSec advisory categorised "malicious" that no `MAL-*` advisory covers already. RustSec puts categories on
+    each affected package; the advisory-level field is read too, should the export ever move them there."""
+    specifics = [v.database_specific, *(a.database_specific for a in v.affected)]
+    malicious = any(d is not None and isinstance(d.categories, list) and "malicious" in d.categories for d in specifics)
     return malicious and not any(alias.startswith("MAL-") for alias in v.aliases)
 
 

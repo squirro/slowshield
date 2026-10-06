@@ -137,3 +137,14 @@ def test_cargo_setup_snippets() -> None:
     assert command.startswith('mkdir -p "${CARGO_HOME:-$HOME/.cargo}" && printf ')
     with pytest.raises(ValueError, match="refusing"):
         S.tools("a", "b", "c", "d", "https://h/cargo/'$(id)'")
+
+
+def test_rustsec_categories_are_read_at_either_level() -> None:
+    doc = msgspec.json.decode(
+        b'{"id": "RUSTSEC-2026-0009", "summary": "malicious crate", "database_specific": {"categories": ["malicious"]},'
+        b' "affected": [{"package": {"ecosystem": "crates.io", "name": "evil"}, "ranges": [{"type": "SEMVER",'
+        b' "events": [{"introduced": "0.0.0-0"}]}], "database_specific": {"categories": "unexpected"}}]}',
+        type=OsvVuln,
+    )
+    adv = to_advisory(doc)
+    assert adv is not None and not adv.withdrawn and adv.specs == [BlockSpec("cargo", "evil")]

@@ -228,3 +228,16 @@ async def test_setup_page_shows_the_cargo_config(running: Running) -> None:
     page = (await running.client.get("/ui/setup")).text
     assert "sparse+https://slowshield.test/cargo/" in page
     assert "[source.crates-io]" in page and "replace-with = &#34;slowshield&#34;" in page
+
+
+async def test_an_index_file_without_a_usable_line_is_an_upstream_failure(running: Running) -> None:
+    running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="200")  # 200 "injected failure 200"
+    r = await running.client.get("/cargo/fa/nc/fancy-name")
+    assert r.status_code == 503 and "without a usable line" in r.text  # not cached as a crate without versions
+    running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="0")
+    assert _yanked((await running.client.get("/cargo/fa/nc/fancy-name")).text) == {"1.0.0": False}
+    # Once a good copy is stored, a broken answer serves that copy instead.
+    running.clock.advance(7 * 3600)
+    running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="200")
+    assert _yanked((await running.client.get("/cargo/fa/nc/fancy-name")).text) == {"1.0.0": False}
+    running.fake.control("fail", prefix="/cargo-index/fa/nc/", status="0")

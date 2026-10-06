@@ -236,3 +236,47 @@ async def test_the_package_page_shows_what_each_tag_pointed_to(running: Running)
     assert rows["1.8.2"].startswith("held") and "(registry)" in rows["1.8.2"]
     assert rows["1.8.1"].startswith("available") and "served for this tag" in rows["1.8.1"]
     assert rows["1.8.0"].startswith("available") and "served for this tag" not in rows["1.8.0"]
+
+
+async def test_a_new_instance_fails_open_for_tags_not_for_digests_dated_too_new(start_app) -> None:
+    run = await start_app()  # lenient: a new instance in its first delay days
+    fresh = index_digest("library/brandnew", "0.1")  # an hour old, and Docker Hub says so
+    r = await get(run, f"/v2/library/brandnew/manifests/{fresh}")
+    assert r.status_code == 403 and r.headers["x-slowshield-reason"] == "too_new"  # a pin is never let through
+    r = await get(run, "/v2/library/brandnew/manifests/latest")  # the tag has no history yet: served, recorded
+    assert r.status_code == 200 and r.headers["x-slowshield-fail-open"] == "1"
+    child = json.loads(r.content)["manifests"][0]["digest"]
+    r = await get(run, f"/v2/library/brandnew/manifests/{child}")  # its platform manifests follow the index
+    assert r.status_code == 200 and r.headers["x-slowshield-fail-open"] == "1"
+    # GHCR has no times: a pin it can't date is served on a new instance, and its platform manifests follow.
+    pinned = index_digest("squirro/slowshield", "0.0.7")
+    r = await get(run, f"/v2/ghcr.io/squirro/slowshield/manifests/{pinned}")
+    assert r.status_code == 200 and r.headers["x-slowshield-fail-open"] == "1"
+    child = json.loads(r.content)["manifests"][1]["digest"]
+    assert (await get(run, f"/v2/ghcr.io/squirro/slowshield/manifests/{child}")).status_code == 200
+
+
+async def test_an_alias_is_the_same_repository(start_app) -> None:
+    run = await start_app(
+        '[upstreams.oci.registries."quay.io"]\naliases = ["quay.example"]\n'
+        '[[blocks]]\necosystem = "oci"\npackage = "quay.io/prometheus/node-exporter"\n'
+    )
+    r = await get(run, "/v2/quay.example/prometheus/node-exporter/manifests/latest")
+    assert r.status_code == 403 and "quay.io/prometheus/node-exporter is blocked" in errors(r)
+    run = await start_app(
+        '[upstreams.oci.registries."quay.io"]\naliases = ["quay.example"]\n'
+        '[[blocks]]\necosystem = "oci"\npackage = "quay.example/prometheus/node-exporter"\n'  # named by the alias
+    )
+    assert (await get(run, "/v2/quay.io/prometheus/node-exporter/manifests/latest")).status_code == 403
+
+
+async def test_blobs_of_a_blocked_repository_are_refused(start_app) -> None:
+    _, manifests, _ = make_oci_image("library/evil", "6.6.6")
+    image = next(json.loads(body) for mt, body in manifests.values() if "manifest.v1" in mt)
+    layer = image["layers"][0]["digest"]
+    run = await start_app('[[blocks]]\necosystem = "oci"\npackage = "evil"\n')
+    r = await run.client.get(f"/v2/library/evil/blobs/{layer}")
+    assert r.status_code == 403 and r.headers["x-slowshield-reason"] == "blocked"
+    run = await start_app(f'[[blocks]]\necosystem = "oci"\npackage = "evil"\nversion = "{layer}"\n')  # one layer
+    assert (await run.client.get(f"/v2/library/evil/blobs/{layer}")).status_code == 403
+    assert (await run.client.get(f"/v2/library/evil/blobs/{image['config']['digest']}")).status_code == 200

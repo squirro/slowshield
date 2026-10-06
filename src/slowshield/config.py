@@ -211,6 +211,15 @@ class OciUpstream(msgspec.Struct, forbid_unknown_fields=True):
     def all_registries(self) -> dict[str, OciRegistry]:
         return {name: reg for name, reg in {**_oci_builtin(), **self.registries}.items() if reg.enabled}
 
+    def canonical(self, repository: str) -> str:
+        """A normalised repository with a configured alias of its registry replaced by the registry's own name, so
+        exceptions, blocks and history have one key whichever name a client uses."""
+        registry, sep, path = repository.partition("/")
+        for name, reg in self.all_registries().items():
+            if registry in {a.lower() for a in reg.aliases}:
+                return f"{name}{sep}{path}"
+        return repository
+
 
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
@@ -573,6 +582,8 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
     ver_rules: dict[tuple[str, str, str], float] = {}
     for rule in cfg.exceptions:
         name = normalize(rule.ecosystem, rule.package)
+        if rule.ecosystem == "oci":
+            name = cfg.upstreams.oci.canonical(name)
         if rule.version:
             version = rule.version.strip()
             if rule.ecosystem == "go" and not version.startswith("v"):

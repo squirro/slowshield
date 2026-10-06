@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -138,6 +138,7 @@ class OciService:
         self._checked: dict[tuple[str, str], float] = {}
         self._asked: dict[tuple[str, str], float] = {}  # (repository, tag) -> when its registry history was read
         self._recorded: set[tuple[str, str]] = set()  # manifests this worker has catalogued (or found catalogued)
+        self._admitted_here: set[tuple[str, str]] = set()  # digests this worker served fail-open for a tag
 
     @property
     def layer_store(self) -> bool:
@@ -163,6 +164,8 @@ class OciService:
         if req is None:
             return oci_error(404, "NAME_INVALID", "not a repository path this proxy serves")
         reg = self.registries.get(req.registry)
+        if reg is not None and reg.name != req.registry:
+            req = replace(req, registry=reg.name)  # an alias: one repository key for policy, history and caches
         if reg is None:
             return oci_error(
                 403,
@@ -320,6 +323,7 @@ class OciService:
             return self._taken_down(request, repo, current or rows[0].digest)
         latest = max(candidates, key=lambda c: c.time)
         if (latest.digest == current or current is None) and await self.fails_open():
+            await self._admit(repo, latest.digest)
             ctx.recorder.decision(ECO, "metadata", "fail_open")
             ctx.recorder.event(
                 "fail_open",
@@ -342,9 +346,10 @@ class OciService:
         times = [TagRow(digest, float(r[0]), None if r[1] is None else float(r[1])).time for r in rows]
         return min(times) if times else None
 
-    async def published(self, reg: Registry, req: R.Request, digest: str) -> float:
+    async def published(self, reg: Registry, req: R.Request, digest: str) -> tuple[float, bool]:
         """When `digest` was published, as far as anyone can tell: the earliest of the times a tag pointed to it, its
-        parent index's, the registry's own, and SlowShield's first sight."""
+        parent index's, the registry's own, and SlowShield's first sight. And whether anything but that first sight
+        of the digest itself dated it."""
         repo = req.repository
         clocks = [self.tagged_time(repo, digest)]
         for (parent,) in self.ctx.db.readers.query(
@@ -365,16 +370,20 @@ class OciService:
                 )
             )
             info = (now, stored, None, None)
+        dated = any(c is not None for c in clocks) or info[1] is not None
         clocks.extend(info[:2])
-        return min(float(c) for c in clocks if c is not None)
+        return min(float(c) for c in clocks if c is not None), dated
 
     async def judge(self, request: Request, reg: Registry, req: R.Request, digest: str) -> Resolved | Response:
         ctx = self.ctx
         repo = req.repository
-        published = await self.published(reg, req, digest)
+        published, dated = await self.published(reg, req, digest)
         if is_old_enough(published, self.delay(repo, digest), ctx.clock.now()):
             return Resolved(digest, published=published)
-        if await self.fails_open() and self.tagged_time(repo, digest) is None:
+        # A new instance serves what a tag served fail-open (the index and its platform manifests), and digests whose
+        # age it can't tell (GHCR has no times). A digest the registry or a tag dates as too new is refused.
+        if await self.fails_open() and (not dated or await self._admitted(repo, digest)):
+            await self._admit(repo, digest)  # its platform manifests follow it
             ctx.recorder.decision(ECO, "metadata", "fail_open")
             ctx.recorder.event(
                 "fail_open",
@@ -386,6 +395,24 @@ class OciService:
             )
             return Resolved(digest, fail_open=True, published=published)
         return self._too_new(request, repo, digest, published, self.delay(repo, digest))
+
+    async def _admit(self, repo: str, digest: str) -> None:
+        """Remember, for every worker, that a tag served `digest` fail-open, so its platform manifests follow."""
+        if (repo, digest) in self._admitted_here:
+            return
+        until = await self.since() + self.ctx.cfg.raw.default_delay_days * DAY
+        await self.ctx.metadata_store.aput(f"oci:admitted:{repo}@{digest}", b"1", expires=until)
+        self._admitted_here.add((repo, digest))
+
+    async def _admitted(self, repo: str, digest: str) -> bool:
+        """Whether a tag served `digest`, or an index that names it, fail-open."""
+        parents = [p for (p,) in self.ctx.db.readers.query(
+            "SELECT parent FROM oci_children WHERE repository = ? AND child = ?", (repo, digest)
+        )]  # fmt: skip
+        for d in (digest, *parents):
+            if (repo, d) in self._admitted_here or await self.ctx.metadata_store.aget(f"oci:admitted:{repo}@{d}"):
+                return True
+        return False
 
     # ---- manifests -----------------------------------------------------------------------------------
 
@@ -528,8 +555,14 @@ class OciService:
     # ---- blobs and listings ------------------------------------------------------------------------------
 
     async def blob(self, request: Request, reg: Registry, req: R.Request) -> AsgiResponse:
+        """A blob by digest. A blocked repository and a blocked blob digest (a known-bad layer) are refused; age is
+        judged on the manifests that name blobs, as blobs are shared between images and carry no time."""
         ctx = self.ctx
         digest = req.reference
+        blocks = ctx.blocklist.for_package(ECO, req.repository)
+        entry = blocks.package_block or blocks.match(ECO, digest)
+        if entry is not None:
+            return self._blocked(request, req.repository, digest, entry, tag=None)
         try:
             headers = await self.client.auth(reg, req.path)
         except UpstreamError as exc:

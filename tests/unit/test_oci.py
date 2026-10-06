@@ -103,6 +103,10 @@ def test_redirects_never_carry_credentials_to_another_host() -> None:
     assert url == "https://registry-1.docker.io/v2/y" and kept == headers
     url, kept = redirected("https://registry-1.docker.io/v2/x", "https://production.cloudfront.docker.com/b", headers)
     assert url == "https://production.cloudfront.docker.com/b" and kept == {"Accept": "x"}
+    # The same host over plain HTTP, or on another port, is another origin.
+    assert redirected("https://ghcr.io/v2/x", "http://ghcr.io/b", headers)[1] == {"Accept": "x"}
+    assert redirected("https://ghcr.io/v2/x", "https://ghcr.io:8443/b", headers)[1] == {"Accept": "x"}
+    assert redirected("https://ghcr.io/v2/x", "https://GHCR.io:443/b", headers)[1] == headers
 
 
 async def test_allowed_hosts_take_patterns() -> None:

@@ -28,7 +28,7 @@ from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock, SystemClock
-from slowshield.config import ConfigHolder, LoadedConfig, load
+from slowshield.config import BlockRule, ConfigHolder, LoadedConfig, load
 from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems import normalize
@@ -557,9 +557,14 @@ def _route_label(path: str) -> str:
 async def sync_blocks(ctx: AppContext) -> None:
     """Write config.toml's [[blocks]] to the blocklist (rows with `source = 'config'`)."""
     now = ctx.clock.now()
+    oci = ctx.cfg.raw.upstreams.oci
+
+    def name(b: BlockRule) -> str:
+        n = normalize(b.ecosystem, b.package)
+        return oci.canonical(n) if b.ecosystem == "oci" else n
+
     rules = [
-        (b.ecosystem, normalize(b.ecosystem, b.package), b.version.strip() if b.version else None, b.reason, b.url)
-        for b in ctx.cfg.raw.blocks
+        (b.ecosystem, name(b), b.version.strip() if b.version else None, b.reason, b.url) for b in ctx.cfg.raw.blocks
     ]
     changed = await ctx.db.writer.run(lambda c: sync_config_blocks(c, rules, now))
     if changed:

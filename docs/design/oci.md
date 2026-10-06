@@ -119,8 +119,10 @@ it is never used. No registry sends `Last-Modified` on manifests. What registrie
    storage time; and first sight in any case.
 5. **Nothing old enough:** `403`. Exception: during an instance's first `default_delay_days`, a tag it has no history
    for is served at its current digest and recorded as fail-open, so a new instance doesn't refuse half of Docker Hub
-   (on 2026-10-06, 11 of 15 popular Docker Hub tags had been pushed within the last 7 days). With
-   `upstreams.oci.fail_open = false` it is strict from day one.
+   (on 2026-10-06, 11 of 15 popular Docker Hub tags had been pushed within the last 7 days). Its platform
+   manifests follow it. A digest pin isn't served that way when a tag or the registry dates it as too new; only
+   one SlowShield can't date at all (GHCR, ECR Public) is. With `upstreams.oci.fail_open = false` it is strict
+   from day one.
 6. **Takedowns.** A cached manifest is re-checked with a `HEAD` (not counted as a Docker Hub pull) at most every
    5 minutes while it is being pulled. If the registry dropped it, as Docker Hub did with the malicious Trivy images,
    SlowShield refuses it too, and time travel skips it.
@@ -131,12 +133,16 @@ it is never used. No registry sends `Last-Modified` on manifests. What registrie
 ## Policy
 
 - **Names.** The ecosystem is `oci`, the package is the canonical repository (`docker.io/library/nginx`), and the
-  version is a digest or a tag. `nginx`, `index.docker.io/nginx` and `docker.io/library/nginx` are one repository.
+  version is a digest or a tag. `nginx`, `index.docker.io/nginx` and `docker.io/library/nginx` are one repository,
+  and a configured alias of a registry names the same repositories as the registry's own name.
 - **Delay and exceptions:** the usual ones (`ecosystem = "oci"`). An exception for a digest wins over one for a tag,
   which wins over one for the repository. Prefer digests: a tag exception follows the tag wherever it moves.
 - **Blocks.** No malware feed covers images: OSV and GitHub have no container ecosystem. Operators block a repository,
   tag or digest with `[[blocks]]` in config.toml (any ecosystem, see configuration.md). A blocked tag is refused; a
-  blocked digest is skipped by time travel and refused when pinned.
+  blocked digest is skipped by time travel and refused when pinned. A blocked repository's blobs are refused too,
+  and so is a blob whose digest is blocked (a known-bad layer).
+- **Blobs carry no time.** Age is judged on manifests, which is how clients find blobs; blobs are shared between
+  images. A client that already has a too-new manifest from elsewhere can fetch its blobs by digest.
 - **No image scanning.** The delay, operator blocks and registry takedowns are the protection.
 
 ## Integrity
@@ -146,7 +152,7 @@ it is never used. No registry sends `Last-Modified` on manifests. What registrie
 | Manifests | the sha256 of the body must equal the requested digest, or `Docker-Content-Digest` for a tag; at most 4 MB |
 | Blobs | the digest is the sha256 of the content: checked while streaming, the last chunk held back until it matches |
 | Tag moves | every digest a tag pointed to is kept, with both clocks |
-| Redirects | blob redirects are followed only to the registry's `download_hosts`; `Authorization` and cookies are never sent to another host |
+| Redirects | blob redirects are followed only to the registry's `download_hosts`; `Authorization` and cookies are never sent to another origin (scheme, host or port) |
 
 - **Tokens** are fetched per registry and repository (`repository:<path>:pull`), with Basic credentials when
   `token_file` is set, and kept until 30 seconds before they expire.

@@ -129,7 +129,7 @@ class Times:
             doc = await self._get_json(f"{self._hub_repo(reg, path)}/tags/{quote(tag, safe='')}")
             return [[doc.get("digest") or "", _ts(doc.get("tag_last_pushed"))]] if isinstance(doc, dict) else []
 
-        return [(d, t) for d, t in await self._cached(f"oci:times:hub:{path}:{tag}", load)]
+        return [(d, t) for d, t in await self._cached(f"oci:times:hub:{reg.name}/{path}:{tag}", load)]
 
     async def _hub_tags(self, reg: Registry, path: str) -> list[tuple[str, float | None]]:
         async def load() -> list[Any]:
@@ -146,7 +146,7 @@ class Times:
                 url = nxt if isinstance(nxt, str) and nxt.startswith(f"{reg.times_url}/") else None
             return rows
 
-        return [(d, t) for d, t in await self._cached(f"oci:times:hubtags:{path}", load)]
+        return [(d, t) for d, t in await self._cached(f"oci:times:hubtags:{reg.name}/{path}", load)]
 
     async def _quay_tag(self, reg: Registry, path: str, tag: str) -> list[tuple[str, float | None]]:
         async def load() -> list[Any]:
@@ -158,7 +158,7 @@ class Times:
             tags = doc.get("tags", []) if isinstance(doc, dict) else []
             return [[t.get("manifest_digest") or "", _ts(t.get("start_ts"))] for t in tags if t.get("name") == tag]
 
-        return [(d, t) for d, t in await self._cached(f"oci:times:quay:{path}:{tag}", load)]
+        return [(d, t) for d, t in await self._cached(f"oci:times:quay:{reg.name}/{path}:{tag}", load)]
 
     async def _gcr(self, reg: Registry, path: str) -> list[tuple[str, float | None, list[str]]]:
         async def load() -> list[Any]:
@@ -185,4 +185,4 @@ class Times:
             entries = doc if isinstance(doc, list) else []
             return [[e.get("digest") or "", _ts(e.get("lastModifiedDate")), e.get("name") or ""] for e in entries]
 
-        return [(d, t, n) for d, t, n in await self._cached(f"oci:times:mcr:{path}", load)]
+        return [(d, t, n) for d, t, n in await self._cached(f"oci:times:mcr:{reg.name}/{path}", load)]

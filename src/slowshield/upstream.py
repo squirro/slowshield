@@ -32,10 +32,21 @@ _REDIRECTS = {301, 302, 303, 307, 308}
 _CREDENTIALS = frozenset({"authorization", "cookie"})
 
 
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port
+    except ValueError:
+        port = -1  # malformed: never equal to a real origin
+    return scheme, (parts.hostname or "").lower(), port or {"https": 443, "http": 80}.get(scheme)
+
+
 def redirected(url: str, location: str, headers: dict[str, str]) -> tuple[str, dict[str, str]]:
-    """The redirect target, and the headers to send there: without credentials once the host changes."""
+    """The redirect target, and the headers to send there: without credentials once the origin (scheme, host or
+    port) changes, so a token never goes to another host, over plain HTTP, or to another service on the host."""
     target = urljoin(url, location)
-    if (urlsplit(target).hostname or "").lower() != (urlsplit(url).hostname or "").lower():
+    if _origin(target) != _origin(url):
         headers = {k: v for k, v in headers.items() if k.lower() not in _CREDENTIALS}
     return target, headers
 

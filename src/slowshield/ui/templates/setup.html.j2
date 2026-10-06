@@ -82,7 +82,7 @@
   <datalist id="tool-names">{% for t in tools %}<option value="{{ t.name }}"></option>{% endfor %}</datalist>
   <div class="tool-picks" data-tool-hint>
     {%- for e in ecosystems.values() %}
-    <div class="tool-group"><span class="tool-group-label">{{ e.language }}</span>
+    <div class="tool-group"><span class="tool-group-label">{{ e.label }}</span>
       {%- for t in tools if t.ecosystem == e.id %}<button type="button" class="tool-pick" data-tool-pick="{{ t.name }}">{{ t.name }}</button>{% endfor -%}
     </div>
     {%- endfor %}

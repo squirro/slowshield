@@ -31,6 +31,11 @@ All notable changes to this project are documented here. The format is based on
 - Operator blocks for every ecosystem: `[[blocks]]` in `config.toml` refuses a package, a version, or an image
   repository, tag or digest, like a malware advisory. They apply on reload and are listed with source `config`.
 
+### Changed
+- The UI names ecosystems by language, as slowshield.org does: Python, JavaScript, Go, Java, Rust and Containers
+  instead of PyPI, npm, Go, Maven, Cargo and OCI. URLs, config, metrics and CSV exports keep the ids (`pypi`, `npm`,
+  …).
+
 ## [0.0.7] - 2026-10-06
 
 ### Added

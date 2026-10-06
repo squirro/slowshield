@@ -15,8 +15,7 @@ from slowshield import names
 @dataclass(frozen=True, slots=True)
 class EcosystemInfo:
     id: str  # also the URL path segment, the `ecosystem` column and the metric label
-    label: str
-    language: str  # the Setup page groups tools by it
+    label: str  # what the UI calls it: the language, as on slowshield.org (the registry is `registry_site`)
     normalize: Callable[[str], str]
     is_valid: Callable[[str], bool]
     osv: str  # ecosystem name in OSV
@@ -48,28 +47,28 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
     e.id: e
     for e in (
         EcosystemInfo(
-            "pypi", "PyPI", "Python", names.normalize_pypi, names.is_valid_pypi, "PyPI", "pip",
+            "pypi", "Python", names.normalize_pypi, names.is_valid_pypi, "PyPI", "pip",
             "https://pypi.org/project/{name}/", "PyPI",
         ),
         EcosystemInfo(
-            "npm", "npm", "JavaScript", names.normalize_npm, names.is_valid_npm, "npm", "npm",
+            "npm", "JavaScript", names.normalize_npm, names.is_valid_npm, "npm", "npm",
             "https://www.npmjs.com/package/{name}", "npm",
         ),
         EcosystemInfo(
-            "go", "Go", "Go", names.normalize_go, names.is_valid_go, "Go", "go", "https://pkg.go.dev/{name}",
+            "go", "Go", names.normalize_go, names.is_valid_go, "Go", "go", "https://pkg.go.dev/{name}",
             "pkg.go.dev",
         ),
         EcosystemInfo(
-            "maven", "Maven", "Java", names.normalize_maven, names.is_valid_maven, "Maven", "maven",
+            "maven", "Java", names.normalize_maven, names.is_valid_maven, "Maven", "maven",
             "https://central.sonatype.com/artifact/{group}/{artifact}", "Maven Central",
         ),
         EcosystemInfo(
-            "cargo", "Cargo", "Rust", names.normalize_cargo, names.is_valid_cargo, "crates.io", "rust",
+            "cargo", "Rust", names.normalize_cargo, names.is_valid_cargo, "crates.io", "rust",
             "https://crates.io/crates/{name}", "crates.io",
         ),
         # No advisory database covers container images: OCI has no OSV or GitHub ecosystem name.
         EcosystemInfo(
-            "oci", "OCI", "Containers", names.normalize_oci, names.is_valid_oci, "", "", "https://{name}",
+            "oci", "Containers", names.normalize_oci, names.is_valid_oci, "", "", "https://{name}",
             "the registry",
         ),
     )

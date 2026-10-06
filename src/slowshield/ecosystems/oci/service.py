@@ -550,7 +550,8 @@ class OciService:
 
         # Written before answering: the client asks for the platform manifests next, maybe from another worker.
         await self.ctx.db.writer.run(op)
-        self._recorded.add((repo, m.digest))
+        if m.body:  # a HEAD has no body, so its children and config are still to be catalogued by the GET
+            self._recorded.add((repo, m.digest))
 
     # ---- blobs and listings ------------------------------------------------------------------------------
 

@@ -280,3 +280,15 @@ async def test_blobs_of_a_blocked_repository_are_refused(start_app) -> None:
     run = await start_app(f'[[blocks]]\necosystem = "oci"\npackage = "evil"\nversion = "{layer}"\n')  # one layer
     assert (await run.client.get(f"/v2/library/evil/blobs/{layer}")).status_code == 403
     assert (await run.client.get(f"/v2/library/evil/blobs/{image['config']['digest']}")).status_code == 200
+
+
+async def test_a_pull_resolves_with_head_then_follows_the_index(start_app) -> None:
+    # What containerd and Podman do: HEAD the tag, GET the index by digest, then a platform manifest by digest.
+    run = await start_app(STRICT)
+    repo = "/v2/quay.io/prometheus/node-exporter"
+    head = await get(run, f"{repo}/manifests/latest", "HEAD")
+    index = head.headers["docker-content-digest"]
+    r = await get(run, f"{repo}/manifests/{index}")
+    assert r.status_code == 200
+    for entry in json.loads(r.content)["manifests"]:
+        assert (await get(run, f"{repo}/manifests/{entry['digest']}")).status_code == 200

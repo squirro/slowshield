@@ -170,6 +170,9 @@ def test_registry_config() -> None:
         '[upstreams.oci.registries."x.example"]\nurl = "https://x.example"\ntimes = "hub"',
         '[upstreams.oci.registries."x.example"]\nurl = "https://x.example"\nusername = "u"',
         "[upstreams.oci]\nlayer_cache_gb = -1",
+        '[upstreams.oci.registries."ghcr.io"]\naliases = ["quay.io"]',  # another registry's name
+        '[upstreams.oci.registries."ghcr.io"]\naliases = ["index.docker.io"]',  # docker.io's alias
+        '[upstreams.oci.registries."ghcr.io"]\naliases = ["not a host"]',
     ],
 )
 def test_invalid_registry_config(toml: str) -> None:

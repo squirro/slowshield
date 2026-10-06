@@ -552,6 +552,17 @@ def _validate(cfg: Config) -> None:
             raise ConfigError(f"upstreams.oci.registries.{name}: times = {reg.times!r} needs times_url")
         if bool(reg.username) != bool(reg.token_file):
             raise ConfigError(f"upstreams.oci.registries.{name}: username and token_file go together")
+    # One registry per name: an alias shared by two registries, or one that is another registry's name, would route
+    # to one registry while exceptions and blocks resolve to the other.
+    owners: dict[str, str] = {name: name for name in oci.all_registries()}
+    for name, reg in oci.all_registries().items():
+        for alias in reg.aliases:
+            key = alias.lower()
+            if not _OCI_REGISTRY.fullmatch(key):
+                raise ConfigError(f"upstreams.oci.registries.{name}: alias {alias!r} must be a registry host name")
+            owner = owners.setdefault(key, name)
+            if owner != name:
+                raise ConfigError(f"upstreams.oci.registries: {alias!r} names both {owner!r} and {name!r}")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")

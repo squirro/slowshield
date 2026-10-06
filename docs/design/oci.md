@@ -58,6 +58,12 @@ capabilities = ["pull", "resolve"]
   were missing BuildKit went to the registries directly.
 - **Clients that go around a refusal** (BuildKit, Docker's classic store) are bound only by an egress firewall that
   blocks the registry hosts.
+- **Apple's `container` (macOS)** has no mirror setting *(from source, container 1.5.0; not run yet)*. Image names
+  with SlowShield's host (`HOST/docker.io/library/nginx:1.29`) go through SlowShield, and `[registry] domain = "HOST"`
+  in `~/.config/container/config.toml` sends short names (`nginx`) there; full names (`docker.io/…`) still go to
+  the registry. A refusal shows as `403 Forbidden` with "missing Bearer challenge", without the message. Its
+  vminit and builder images come from ghcr.io unless `[vminit] image` and `[build] image` name them through
+  SlowShield.
 
 ## What clients see
 

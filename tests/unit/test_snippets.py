@@ -87,6 +87,7 @@ def test_tools_name_the_version_their_release_age_needs() -> None:
     assert on["Go"].age == S.NO_AGE_DEFAULT and "min-publish-age" in on["Cargo"].age
     assert all(t.age == "" for t in off.values())
     codes = {name: "\n".join(code for _, code in t.snippets) for name, t in on.items()}
+    # npm counts days, pnpm minutes, Bun seconds: each says 3 days.
     assert "npm config set min-release-age 3" in codes["npm"] and "min-release-age=3" in codes["npm"]
     assert "minimumReleaseAge: 4320" in codes["pnpm"] and 'npmMinimalAgeGate: "3d"' in codes["Yarn"]
     assert (

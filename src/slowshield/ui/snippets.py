@@ -139,6 +139,9 @@ def tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int
 
 
 def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int) -> tuple[Tool, ...]:
+    # Units differ per tool: npm's min-release-age and Poetry's solver.min-release-age count days (npm 11.10 to 12.1:
+    # `before = now - 86400000 * min-release-age`), pnpm's minimumReleaseAge minutes, Bun's seconds; pip, uv, Yarn and
+    # PDM take a duration (P3D, 3d).
     d = age_days
 
     def aged(*parts: tuple[str, str]) -> tuple[tuple[str, str], ...]:

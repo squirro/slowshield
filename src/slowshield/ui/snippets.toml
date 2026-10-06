@@ -4,9 +4,10 @@
 # leave those lines out, see snippets.without_client_age).
 # tests/e2e/test_snippets.py runs every snippet below in bash, zsh and fish containers against the e2e stack.
 
-# Global setup: pip, uv, npm and go use SlowShield in every new terminal, and pip, uv and npm also refuse releases
-# younger than {age_days} days themselves (pip 26.1, uv 0.9.17, npm 11.10 or later). GOPROXY has no `,direct`: with
-# it, the go command fetches from the origin whenever the proxy says 404. `os` preselects the tab
+# Global setup: pip, uv, npm and go use SlowShield in every new terminal, and pip and npm also refuse releases
+# younger than {age_days} days themselves (pip 26.1, npm 11.10 or later). Not uv: it records exclude-newer in uv.lock,
+# so a value that differs between machines breaks `uv sync --locked`; it goes in pyproject.toml (Per tool). GOPROXY
+# has no `,direct`: with it, the go command fetches from the origin whenever the proxy says 404. `os` preselects the tab
 # (macOS defaults to zsh); the visitor's last choice wins.
 [[shell]]
 id = "bash"
@@ -19,7 +20,6 @@ export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
 export PIP_UPLOADED_PRIOR_TO=P{age_days}D
-export UV_EXCLUDE_NEWER=P{age_days}D
 export npm_config_min_release_age={age_days}
 EOF
 source ~/.bashrc"""
@@ -36,7 +36,6 @@ export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
 export PIP_UPLOADED_PRIOR_TO=P{age_days}D
-export UV_EXCLUDE_NEWER=P{age_days}D
 export npm_config_min_release_age={age_days}
 EOF
 source ~/.bash_profile"""
@@ -52,7 +51,6 @@ export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
 export PIP_UPLOADED_PRIOR_TO=P{age_days}D
-export UV_EXCLUDE_NEWER=P{age_days}D
 export npm_config_min_release_age={age_days}
 EOF
 source ~/.zshrc"""
@@ -67,7 +65,6 @@ set -Ux UV_DEFAULT_INDEX {pypi}
 set -Ux npm_config_registry {npm}
 set -Ux GOPROXY {go}
 set -Ux PIP_UPLOADED_PRIOR_TO P{age_days}D
-set -Ux UV_EXCLUDE_NEWER P{age_days}D
 set -Ux npm_config_min_release_age {age_days}"""
 
 # One install through SlowShield, in a throwaway virtualenv: Homebrew and current Linux Pythons refuse pip

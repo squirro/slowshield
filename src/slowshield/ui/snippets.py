@@ -17,7 +17,7 @@ _SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 # around SlowShield, or SlowShield serves a brand-new package because nothing is old enough yet (fail-open), the
 # package manager still waits. Never more than SlowShield's own delay, so in normal use only SlowShield holds anything.
 CLIENT_AGE_DAYS = 3
-_AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "UV_EXCLUDE_NEWER", "npm_config_min_release_age")
+_AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
 
 def client_age_days(delay_days: float) -> int:
@@ -26,11 +26,11 @@ def client_age_days(delay_days: float) -> int:
 
 
 def client_age_env(age_days: int) -> list[tuple[str, str]]:
-    """The environment variables that make pip, uv and npm wait `age_days` themselves (none for 0)."""
+    """The environment variables that make pip and npm wait `age_days` themselves (none for 0). Not uv's
+    UV_EXCLUDE_NEWER: uv records it in uv.lock, so it must be the same wherever the project is locked or synced."""
     if age_days <= 0:
         return []
-    return [("PIP_UPLOADED_PRIOR_TO", f"P{age_days}D"), ("UV_EXCLUDE_NEWER", f"P{age_days}D"),
-            ("npm_config_min_release_age", str(age_days))]  # fmt: skip
+    return [("PIP_UPLOADED_PRIOR_TO", f"P{age_days}D"), ("npm_config_min_release_age", str(age_days))]
 
 
 def ci_env(pypi: str, npm: str, go: str, *, age_days: int) -> str:
@@ -106,10 +106,13 @@ class Tool:
 
 # The first version with a relative release-age setting, and what older ones do with it (checked 2026-10-06).
 AGE_SUPPORT = {
-    "pip": "pip 26.1 or later (pip 26.0 fails with it, 25 and older ignore it)",
-    "uv": "uv 0.9.17 or later (older versions fail with it)",
+    "pip": "pip 26.1 or later (pip 26.0 fails with it, 25 and older ignore it). Installs from pylock.toml fail "
+    "with it, because pip doesn't record upload times there",
+    "uv": "uv 0.9.17 or later (older versions fail with it). In pyproject.toml, not the environment: uv records it in "
+    "uv.lock, so a different value elsewhere breaks uv sync --locked",
     "Poetry": "Poetry 2.4 or later",
-    "PDM": "PDM 2.27 or later; it applies when locking",
+    "PDM": "PDM 2.27 or later. In pyproject.toml, not as pdm lock --exclude-newer, which isn't kept and re-resolves "
+    "every pin",
     "npm": "npm 11.10 or later (11.0 to 11.9 warn about an unknown setting, 10 ignores it)",
     "pnpm": "pnpm 10.16 or later (older versions ignore it)",
     "Yarn": "Yarn 4.10 or later (older versions refuse to run with it)",
@@ -168,7 +171,7 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: in
                     f'[[tool.uv.index]]\nname = "slowshield"\nurl = "{pypi}"\ndefault = true'
                     + (f'\n\n[tool.uv]\nexclude-newer = "P{d}D"' if d else ""),
                 ),
-                ("environment", f"export UV_DEFAULT_INDEX={pypi}" + line(f"export UV_EXCLUDE_NEWER=P{d}D")),
+                ("environment", f"export UV_DEFAULT_INDEX={pypi}"),
             ),
         ),
         Tool(
@@ -184,9 +187,12 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: in
             "PDM",
             "pypi",
             "pdm python pyproject",
-            aged(
-                ("pyproject.toml", f'[[tool.pdm.source]]\nname = "pypi"\nurl = "{pypi}"'),
-                ("+release age, when locking", f"pdm lock --exclude-newer {d}d"),
+            (
+                (
+                    "pyproject.toml",
+                    f'[[tool.pdm.source]]\nname = "pypi"\nurl = "{pypi}"'
+                    + (f'\n\n[tool.pdm.resolution]\nexclude-newer = "{d}d"' if d else ""),
+                ),
             ),
         ),
         Tool(

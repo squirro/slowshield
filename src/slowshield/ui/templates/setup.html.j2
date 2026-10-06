@@ -45,9 +45,9 @@
   <li class="card">
     <header class="card-head"><h2><span class="step">1</span> Use it for everything</h2></header>
     <p class="muted">Environment variables in your shell profile: pip, uv, npm and go then use SlowShield in every new
-      terminal{% if age_days %}<span data-age="on">, and pip, uv and npm also wait {{ age_days }} days themselves
-      (pip 26.1, uv 0.9.17 and npm 11.10 or later; older uv and pip 26.0 refuse to run with it)</span>{% endif %}.
-      Remove the lines to switch it off.</p>
+      terminal{% if age_days %}<span data-age="on">, and pip and npm also wait {{ age_days }} days themselves
+      (pip 26.1 and npm 11.10 or later; pip 26.0 refuses to run with it). For uv, set it in each project's
+      <code>pyproject.toml</code> (Per tool)</span>{% endif %}. Remove the lines to switch it off.</p>
     <div class="tabs" data-tabs="shell">
       <div class="tablist" role="tablist" aria-label="Shell">
         {%- for sh in snippets.shells %}

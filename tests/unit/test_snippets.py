@@ -57,15 +57,16 @@ def test_package_managers_also_wait_unless_switched_off() -> None:
     bash, fish = s.shells[0], s.shells[3]
     for line in (
         "export PIP_UPLOADED_PRIOR_TO=P3D",
-        "export UV_EXCLUDE_NEWER=P3D",
         "export npm_config_min_release_age=3",
     ):
         assert line in bash.code and line not in bash.plain
-    assert "set -Ux UV_EXCLUDE_NEWER P3D" in fish.code
+    assert "set -Ux npm_config_min_release_age 3" in fish.code
+    # Not uv's: it records exclude-newer in uv.lock, so it goes in pyproject.toml, never the environment.
+    assert not any("UV_EXCLUDE_NEWER" in sh.code for sh in s.shells)
     # The plain version is the same snippet without those lines.
     for sh in s.shells:
         assert sh.plain == S.without_client_age(sh.code)
-        assert sh.plain.count("\n") == sh.code.count("\n") - 3
+        assert sh.plain.count("\n") == sh.code.count("\n") - 2
         assert ("GOPROXY" in sh.plain and "EOF" in sh.plain) or sh.id == "fish"
     off = S.for_instance("https://h/pypi/simple/", "https://h/npm/", "https://h/go", age_days=0)
     assert [sh.code for sh in off.shells] == [sh.plain for sh in s.shells]
@@ -92,7 +93,8 @@ def test_tools_name_the_version_their_release_age_needs() -> None:
         "minimumReleaseAge = 259200" in codes["Bun"] and "pip config set global.uploaded-prior-to P3D" in codes["pip"]
     )
     assert 'exclude-newer = "P3D"' in codes["uv"] and "poetry config solver.min-release-age 3" in codes["Poetry"]
-    assert "pdm lock --exclude-newer 3d" in codes["PDM"]
+    assert '[tool.pdm.resolution]\nexclude-newer = "3d"' in codes["PDM"]
+    assert "UV_EXCLUDE_NEWER" not in codes["uv"]
     for name, t in off.items():
         plain = "\n".join(code for _, code in t.snippets)
         assert not any(k in plain for k in ("release-age", "exclude-newer", "ReleaseAge", "AgeGate", "prior-to")), name
@@ -101,8 +103,7 @@ def test_tools_name_the_version_their_release_age_needs() -> None:
 
 def test_ci_and_dockerfile_snippets() -> None:
     ci = S.ci_env("https://h/pypi/simple/", "https://h/npm/", "https://h/go", age_days=3)
-    assert ci.endswith("  GOPROXY: https://h/go\n  PIP_UPLOADED_PRIOR_TO: P3D\n  UV_EXCLUDE_NEWER: P3D\n"
-                       "  npm_config_min_release_age: 3")  # fmt: skip
+    assert ci.endswith("  GOPROXY: https://h/go\n  PIP_UPLOADED_PRIOR_TO: P3D\n  npm_config_min_release_age: 3")
     plain = S.dockerfile_env("https://h/pypi/simple/", "https://h/npm/", "https://h/go", age_days=0)
     assert plain == (
         "ENV PIP_INDEX_URL=https://h/pypi/simple/ \\\n    UV_DEFAULT_INDEX=https://h/pypi/simple/ \\\n"

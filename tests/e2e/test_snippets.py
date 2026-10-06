@@ -34,8 +34,8 @@ GOSUMDB=off GOFLAGS=-modcacherw GOMODCACHE="/tmp/gomod-$SHELLNAME" go mod downlo
   2>/dev/null | grep -q '"Version": "v1.1.0"' && echo "OK $SHELLNAME go"
 [ "$PIP_INDEX_URL" = "$WANT_PYPI" ] && [ "$UV_DEFAULT_INDEX" = "$WANT_PYPI" ] \
   && [ "$npm_config_registry" = "$WANT_NPM" ] && [ "$GOPROXY" = "$WANT_GO" ] && echo "OK $SHELLNAME env"
-# The second layer: pip, uv and npm's own release age (pip 23 and this npm ignore or warn about it, and still work).
-[ "$PIP_UPLOADED_PRIOR_TO" = P3D ] && [ "$UV_EXCLUDE_NEWER" = P3D ] && [ "$npm_config_min_release_age" = 3 ] \
+# The second layer: pip and npm's own release age (pip 23 and this npm ignore or warn about it, and still work).
+[ "$PIP_UPLOADED_PRIOR_TO" = P3D ] && [ "$npm_config_min_release_age" = 3 ] && [ -z "${UV_EXCLUDE_NEWER-}" ] \
   && echo "OK $SHELLNAME age"
 """
 

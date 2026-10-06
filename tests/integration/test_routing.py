@@ -191,7 +191,8 @@ async def test_setup_page_offers_the_package_managers_own_release_age(start_app)
     page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
     assert "data-age-toggle checked disabled" in page  # JS enables it; without JS the "on" snippets show
     # Every snippet that differs is there twice: with the release age, and (hidden) without.
-    assert "export npm_config_min_release_age=3" in page and "UV_EXCLUDE_NEWER: P3D" in page
+    assert "export npm_config_min_release_age=3" in page and "PIP_UPLOADED_PRIOR_TO: P3D" in page
+    assert "UV_EXCLUDE_NEWER" not in page and "exclude-newer = &#34;P3D&#34;" in page  # uv: pyproject.toml only
     on = page.count('data-age="on"')
     off = page.count('data-age="off" hidden')
     assert on > off >= 4 + 2 + 7  # 4 shells, CI and Dockerfile, 7 tools that differ (notes add more "on")

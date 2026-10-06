@@ -444,7 +444,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
   background: conic-gradient(from 0deg, transparent, color-mix(in srgb, var(--amber) 18%, transparent), transparent 30%); animation: orbit 14s linear infinite; }
 .ring { position: absolute; inset: 0; border-radius: 50%; rotate: var(--rot); }
 /* --count must match the number of entries in each ring, or the extra ones land on top of the first. */
-.ring-1 { inset: 17%; border: 1px solid color-mix(in srgb, var(--line) 90%, transparent); --count: 17; --r: calc(var(--sun) * 0.33); }
+.ring-1 { inset: 17%; border: 1px solid color-mix(in srgb, var(--line) 90%, transparent); --count: 20; --r: calc(var(--sun) * 0.33); }
 .ring-2 { inset: 1%; border: 1px dashed color-mix(in srgb, var(--line) 80%, transparent); --count: 7; --r: calc(var(--sun) * 0.49); rotate: calc(var(--rot) * -0.6); }
 /* Pill text scales with the sun, so nothing touches at any angle; below 760px the rings become plain rows. */
 .ring-1 .eco { font-size: clamp(0.6rem, calc(var(--sun) * 0.0145), 0.78rem); padding: 0.36em 0.83em; }
@@ -459,6 +459,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .ring .eco:nth-child(9) { --i: 8; } .ring .eco:nth-child(10) { --i: 9; } .ring .eco:nth-child(11) { --i: 10; }
 .ring .eco:nth-child(12) { --i: 11; } .ring .eco:nth-child(13) { --i: 12; } .ring .eco:nth-child(14) { --i: 13; }
 .ring .eco:nth-child(15) { --i: 14; } .ring .eco:nth-child(16) { --i: 15; } .ring .eco:nth-child(17) { --i: 16; }
+.ring .eco:nth-child(18) { --i: 17; } .ring .eco:nth-child(19) { --i: 18; } .ring .eco:nth-child(20) { --i: 19; }
 .eco-legend { list-style: none; padding: 0; margin: 0 auto; max-width: 900px; display: grid; gap: 0.7rem; color: var(--muted); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin-right: 0.6rem; }
 .dot.live { background: var(--ok); } .dot.soon { background: var(--amber); }

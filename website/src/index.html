@@ -35,12 +35,12 @@
     <span>Slow<b>Shield</b></span>
   </a>
   <nav aria-label="Sections">
+    <a href="#teams">Who it's for</a>
+    <a href="#ecosystems">Roadmap</a>
     <a href="#why">Why</a>
     <a href="#how">How it works</a>
     <a href="#edge">Caching</a>
     <a href="#team-setup">Team setup</a>
-    <a href="#teams">Who it's for</a>
-    <a href="#ecosystems">Roadmap</a>
     <a href="#pricing">Pricing</a>
     <a href="#get-started" class="nav-cta">Get started</a>
   </nav>
@@ -117,6 +117,116 @@
     </ol>
   </div>
   <a class="scroll-hint" href="#why" aria-label="Scroll down"><span></span></a>
+</section>
+
+<!-- ============================== TEAMS ============================== -->
+<section class="teams" id="teams">
+  <div class="section-head reveal">
+    <p class="eyebrow">Who it's for</p>
+    <h2>Made for developers and small teams.</h2>
+    <p class="lead">Large organisations put an artifact repository manager such as JFrog Artifactory or Sonatype Nexus
+      between their builds and the internet, add a repository firewall to keep malware out, and pay people to run it.
+      Most teams can't justify that. SlowShield covers the part that keeps you safe, in one small container you start in
+      a minute, with near-zero&nbsp;upkeep.</p>
+    <ul class="fit">
+      <li><strong>Free and open source.</strong> Free as in free 🍺, and open source under the Apache-2.0 licence.</li>
+      <li><strong>Nothing to administer.</strong> No database server, no repositories to configure, no admin team.</li>
+      <li><strong>One policy for every tool.</strong> Per-tool settings such as npm's <code>min-release-age</code> help on one
+        machine; SlowShield applies the same rules to every laptop, CI runner and package manager.</li>
+    </ul>
+  </div>
+  <div class="cards">
+    <article class="card reveal"><div class="ico ico-shield"></div><h3>Safe by default</h3>
+      <p>A seven-day delay, malware blocking and verification out of the box. Brand-new packages still install
+        (and are flagged) so nobody's day is ruined. Urgent fix? Release a single version early with one line of config.</p></article>
+    <article class="card reveal"><div class="ico ico-stream"></div><h3>Advisory streams built in</h3>
+      <p>OSV / OpenSSF malicious-packages and the GitHub Advisory Database sync every hour. Feed health is monitored and
+        alerted on. CVE-aware policies are next on the roadmap.</p></article>
+    <article class="card reveal"><div class="ico ico-lock"></div><h3>Tamper-proof</h3>
+      <p>Registry digests plus trust-on-first-use fingerprints, a content-addressed cache that is only written after
+        verification and re-checked on a schedule.</p></article>
+    <article class="card reveal"><div class="ico ico-eye"></div><h3>Know what you depend on</h3>
+      <p>A fast dashboard: installs and trends, newly introduced dependencies, versions waiting in line, and a security
+        timeline down to the machine that tried to install malware.</p></article>
+    <article class="card reveal"><div class="ico ico-leaf"></div><h3>Kind to public registries</h3>
+      <p>One verified download per artifact instead of one per laptop and per pipeline run — with HTTP/2, conditional
+        requests and a shared cache. Open-source infrastructure is a commons; treat it like one.</p></article>
+    <article class="card reveal"><div class="ico ico-chart"></div><h3>Observable</h3>
+      <p>OpenTelemetry metrics, logs and traces, with ready-made Grafana dashboards and alerts for blocked malware,
+        tampering, stale feeds and errors.</p></article>
+    <article class="card reveal"><div class="ico ico-box"></div><h3>Hardened all the way down</h3>
+      <p>Distroless Amazon Linux 2023 images, non-root and read-only. TLS 1.3 with post-quantum key exchange and
+        HTTP/3. Strict CSP. Pinned, audited CI. Every release load-tested against the last.</p></article>
+    <article class="card reveal"><div class="ico ico-rocket"></div><h3>Deploys in minutes</h3>
+      <p>Docker Compose, rootless Podman or a Helm chart. One small container plus Caddy for automatic TLS.
+        No database server — SQLite is embedded.</p></article>
+  </div>
+</section>
+
+<!-- ============================== ECOSYSTEMS ============================== -->
+<section class="ecosystems" id="ecosystems">
+  <div class="section-head reveal">
+    <p class="eyebrow">Ecosystems &amp; roadmap</p>
+    <h2>Python, JavaScript, Go and Java today.<br>Everything under the sun tomorrow.</h2>
+    <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
+      same policy, same dashboard, same guarantees.</p>
+  </div>
+  <div class="sun reveal" aria-hidden="true">
+    <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
+    <!-- Inner ring: programming languages (TypeScript comes through npm, Kotlin and Scala through Maven). Outer ring:
+         everything else that downloads. -->
+    <div class="ring ring-1">
+      <span class="eco live">Python</span><span class="eco live">JavaScript</span><span class="eco live">TypeScript</span><span class="eco live">Go</span>
+      <span class="eco live">Java</span><span class="eco live">Kotlin</span><span class="eco live">Scala</span><span class="eco soon">Rust</span>
+      <span class="eco">C#</span><span class="eco">PHP</span><span class="eco">Ruby</span><span class="eco">C / C++</span><span class="eco">Swift</span>
+      <span class="eco">Dart</span><span class="eco">R</span><span class="eco">Elixir</span><span class="eco">Haskell</span><span class="eco">Lua</span>
+      <span class="eco">Julia</span><span class="eco">Perl</span>
+    </div>
+    <div class="ring ring-2">
+      <span class="eco">Linux packages</span><span class="eco soon">Container images</span><span class="eco">Homebrew</span>
+      <span class="eco">GitHub Releases</span><span class="eco">Hugging Face</span><span class="eco">Terraform</span><span class="eco">Helm charts</span>
+    </div>
+  </div>
+  <div class="roadmap">
+    <div class="phase now reveal">
+      <span class="when">Available now</span>
+      <h3>Python, JavaScript, Go &amp; Java</h3>
+      <ul>
+        <li>Python<span>PyPI: pip, uv, Poetry, PDM, Pipenv</span></li>
+        <li>JavaScript &amp; TypeScript<span>npm: npm, pnpm, Yarn, Bun</span></li>
+        <li>Go<span>Go modules, as your <code>GOPROXY</code></span></li>
+        <li>Java, Kotlin &amp; Scala<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt</span></li>
+        <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
+      </ul>
+    </div>
+    <div class="phase next reveal">
+      <span class="when">Next</span>
+      <h3>Rust &amp; container images</h3>
+      <ul>
+        <li>Rust<span>Cargo, through the crates.io sparse index</span></li>
+        <li>Container images<span>Docker Hub, GHCR, Quay and registry.k8s.io, for Docker, Podman and Kubernetes</span></li>
+      </ul>
+    </div>
+    <div class="phase then reveal">
+      <span class="when">Then</span>
+      <h3>The enterprise staples</h3>
+      <ul>
+        <li>C#, Ruby &amp; PHP<span>NuGet, RubyGems, Composer</span></li>
+        <li>Linux packages<span>apt, dnf &amp; apk: Debian, Ubuntu, Fedora, RHEL, Amazon Linux, Alpine</span></li>
+        <li>Helm &amp; Terraform<span>charts, providers and modules</span></li>
+      </ul>
+    </div>
+    <div class="phase later reveal">
+      <span class="when">Later</span>
+      <h3>Beyond package managers</h3>
+      <ul>
+        <li>GitHub Actions<span>every <code>uses:</code> step</span></li>
+        <li>Editor extensions<span>VS Code, Open VSX, JetBrains</span></li>
+        <li>Hugging Face<span>models and datasets</span></li>
+        <li>Homebrew &amp; GitHub Releases<span>and other direct downloads</span></li>
+      </ul>
+    </div>
+  </div>
 </section>
 
 <!-- ============================== WHY ============================== -->
@@ -452,50 +562,6 @@ sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code><
     console). Without it, all clients use one instance and move to another if that one goes away.</p>
 </section>
 
-<!-- ============================== TEAMS ============================== -->
-<section class="teams" id="teams">
-  <div class="section-head reveal">
-    <p class="eyebrow">Who it's for</p>
-    <h2>Made for developers and small teams.</h2>
-    <p class="lead">Large organisations put an artifact repository manager such as JFrog Artifactory or Sonatype Nexus
-      between their builds and the internet, add a repository firewall to keep malware out, and pay people to run it.
-      Most teams can't justify that. SlowShield covers the part that keeps you safe, in one small container you start in
-      a minute, with near-zero&nbsp;upkeep.</p>
-    <ul class="fit">
-      <li><strong>Free and open source.</strong> Free as in free 🍺, and open source under the Apache-2.0 licence.</li>
-      <li><strong>Nothing to administer.</strong> No database server, no repositories to configure, no admin team.</li>
-      <li><strong>One policy for every tool.</strong> Per-tool settings such as npm's <code>min-release-age</code> help on one
-        machine; SlowShield applies the same rules to every laptop, CI runner and package manager.</li>
-    </ul>
-  </div>
-  <div class="cards">
-    <article class="card reveal"><div class="ico ico-shield"></div><h3>Safe by default</h3>
-      <p>A seven-day delay, malware blocking and verification out of the box. Brand-new packages still install
-        (and are flagged) so nobody's day is ruined. Urgent fix? Release a single version early with one line of config.</p></article>
-    <article class="card reveal"><div class="ico ico-stream"></div><h3>Advisory streams built in</h3>
-      <p>OSV / OpenSSF malicious-packages and the GitHub Advisory Database sync every hour. Feed health is monitored and
-        alerted on. CVE-aware policies are next on the roadmap.</p></article>
-    <article class="card reveal"><div class="ico ico-lock"></div><h3>Tamper-proof</h3>
-      <p>Registry digests plus trust-on-first-use fingerprints, a content-addressed cache that is only written after
-        verification and re-checked on a schedule.</p></article>
-    <article class="card reveal"><div class="ico ico-eye"></div><h3>Know what you depend on</h3>
-      <p>A fast dashboard: installs and trends, newly introduced dependencies, versions waiting in line, and a security
-        timeline down to the machine that tried to install malware.</p></article>
-    <article class="card reveal"><div class="ico ico-leaf"></div><h3>Kind to public registries</h3>
-      <p>One verified download per artifact instead of one per laptop and per pipeline run — with HTTP/2, conditional
-        requests and a shared cache. Open-source infrastructure is a commons; treat it like one.</p></article>
-    <article class="card reveal"><div class="ico ico-chart"></div><h3>Observable</h3>
-      <p>OpenTelemetry metrics, logs and traces, with ready-made Grafana dashboards and alerts for blocked malware,
-        tampering, stale feeds and errors.</p></article>
-    <article class="card reveal"><div class="ico ico-box"></div><h3>Hardened all the way down</h3>
-      <p>Distroless Amazon Linux 2023 images, non-root and read-only. TLS 1.3 with post-quantum key exchange and
-        HTTP/3. Strict CSP. Pinned, audited CI. Every release load-tested against the last.</p></article>
-    <article class="card reveal"><div class="ico ico-rocket"></div><h3>Deploys in minutes</h3>
-      <p>Docker Compose, rootless Podman or a Helm chart. One small container plus Caddy for automatic TLS.
-        No database server — SQLite is embedded.</p></article>
-  </div>
-</section>
-
 <!-- ============================== AGENTS ============================== -->
 <section class="agents" id="agents">
   <div class="section-head reveal">
@@ -534,71 +600,6 @@ slowshield.example.com
         when it passes its own <code>--index-url</code>.</p>
     </li>
   </ol>
-</section>
-
-<!-- ============================== ECOSYSTEMS ============================== -->
-<section class="ecosystems" id="ecosystems">
-  <div class="section-head reveal">
-    <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python, JavaScript, Go and Java today.<br>Everything under the sun tomorrow.</h2>
-    <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
-      same policy, same dashboard, same guarantees.</p>
-  </div>
-  <div class="sun reveal" aria-hidden="true">
-    <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
-    <!-- Inner ring: the programming languages' package registries (one entry per registry: npm also serves
-         TypeScript, Maven also Kotlin and Scala). Outer ring: everything else that downloads. -->
-    <div class="ring ring-1">
-      <span class="eco live">PyPI</span><span class="eco live">npm</span><span class="eco live">Go modules</span><span class="eco live">Maven</span>
-      <span class="eco soon">Cargo</span><span class="eco">NuGet</span><span class="eco">Composer</span><span class="eco">RubyGems</span>
-      <span class="eco">Conan / vcpkg</span><span class="eco">SwiftPM</span><span class="eco">pub.dev</span><span class="eco">CRAN</span>
-      <span class="eco">Hex</span><span class="eco">Hackage</span><span class="eco">LuaRocks</span><span class="eco">Julia</span><span class="eco">CPAN</span>
-    </div>
-    <div class="ring ring-2">
-      <span class="eco soon">Linux packages</span><span class="eco">Container images</span><span class="eco">Homebrew</span>
-      <span class="eco">GitHub Releases</span><span class="eco">Hugging Face</span><span class="eco">Terraform</span><span class="eco">Helm charts</span>
-    </div>
-  </div>
-  <div class="roadmap">
-    <div class="phase now reveal">
-      <span class="when">Available now</span>
-      <h3>Python, JavaScript, Go &amp; Java</h3>
-      <ul>
-        <li>PyPI<span>pip, uv, Poetry, PDM, Pipenv</span></li>
-        <li>npm<span>npm, pnpm, Yarn, Bun</span></li>
-        <li>Go modules<span>as your <code>GOPROXY</code></span></li>
-        <li>Maven<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt</span></li>
-        <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
-      </ul>
-    </div>
-    <div class="phase next reveal">
-      <span class="when">Next</span>
-      <h3>Rust &amp; Linux packages</h3>
-      <ul>
-        <li>Cargo<span>the crates.io sparse index</span></li>
-        <li>apt, dnf &amp; apk<span>Debian, Ubuntu, Fedora, RHEL, Amazon Linux, Alpine</span></li>
-      </ul>
-    </div>
-    <div class="phase then reveal">
-      <span class="when">Then</span>
-      <h3>The enterprise staples</h3>
-      <ul>
-        <li>Container images<span>Docker Hub, GHCR, Quay</span></li>
-        <li>NuGet, RubyGems, Composer<span>.NET, Ruby, PHP</span></li>
-        <li>Helm &amp; Terraform<span>charts, providers and modules</span></li>
-      </ul>
-    </div>
-    <div class="phase later reveal">
-      <span class="when">Later</span>
-      <h3>Beyond package managers</h3>
-      <ul>
-        <li>GitHub Actions<span>every <code>uses:</code> step</span></li>
-        <li>Editor extensions<span>VS Code, Open VSX, JetBrains</span></li>
-        <li>Hugging Face<span>models and datasets</span></li>
-        <li>Homebrew &amp; GitHub Releases<span>and other direct downloads</span></li>
-      </ul>
-    </div>
-  </div>
 </section>
 
 <!-- ============================== GET STARTED ============================== -->

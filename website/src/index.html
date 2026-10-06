@@ -385,6 +385,67 @@
   </div>
 </section>
 
+<!-- ============================== TWO LAYERS ============================== -->
+<section class="layers" id="layers">
+  <div class="section-head reveal">
+    <p class="eyebrow">Two layers</p>
+    <h2>Let your package manager wait, too.</h2>
+    <p class="lead">Most package managers can now refuse brand-new releases on their own. Turn that on as well, a
+      little shorter than SlowShield: 7 days in SlowShield, 3 in the package manager. On a normal day only SlowShield
+      holds anything back. When something gets past it, the package manager still waits.</p>
+  </div>
+  <div class="layers-wrap reveal">
+    <table class="layers-table">
+      <caption class="sr-only">What happens with one layer and with two</caption>
+      <thead>
+        <tr><th scope="col"><span class="sr-only">Situation</span></th><th scope="col">SlowShield only</th>
+          <th scope="col">SlowShield and the package manager</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">A new release, on a normal day</th>
+          <td data-label="SlowShield only"><span class="mark yes" aria-hidden="true">✓</span>Held for 7 days</td>
+          <td data-label="With the package manager"><span class="mark yes" aria-hidden="true">✓</span>Held for 7 days.
+            The package manager never sees anything younger than 3 days, so it stays silent</td>
+        </tr>
+        <tr>
+          <th scope="row">A build that goes around SlowShield: a new CI runner, a laptop without the setup</th>
+          <td data-label="SlowShield only"><span class="mark no" aria-hidden="true">✗</span>Installs the new release
+            right away</td>
+          <td data-label="With the package manager"><span class="mark yes" aria-hidden="true">✓</span>Waits 3 days, if
+            the setting lives in the project (<code>.npmrc</code>, <code>pyproject.toml</code>,
+            <code>pnpm-workspace.yaml</code>)</td>
+        </tr>
+        <tr>
+          <th scope="row">A brand-new package with no older version, such as a typosquat</th>
+          <td data-label="SlowShield only"><span class="mark no" aria-hidden="true">✗</span>Served on PyPI and npm,
+            because no version is old enough yet (fail-open), and recorded</td>
+          <td data-label="With the package manager"><span class="mark yes" aria-hidden="true">✓</span>Refused for 3
+            days</td>
+        </tr>
+        <tr>
+          <th scope="row">A release your administrator lets through early</th>
+          <td data-label="SlowShield only"><span class="mark neutral" aria-hidden="true">–</span>Installs right
+            away</td>
+          <td data-label="With the package manager"><span class="mark neutral" aria-hidden="true">–</span>Waits 3
+            days, unless the package manager's exclude list has it too</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="layers-tools reveal">
+    <h3>Package managers with a release-age setting</h3>
+    <ul class="layers-list">
+      <li>npm <span>11.10</span></li><li>pnpm <span>10.16</span></li><li>Yarn <span>4.10</span></li>
+      <li>Bun <span>1.3</span></li><li>Deno <span>2.6</span></li><li>pip <span>26.1</span></li>
+      <li>uv <span>0.9.17</span></li><li>Poetry <span>2.4</span></li><li>PDM <span>2.27</span></li>
+    </ul>
+    <p class="muted">The minimum version for each. Go, Maven, Gradle and Cargo have no stable setting yet: there,
+      SlowShield is the only layer. The Setup page writes the settings for you, on by default, with one switch to
+      turn them off.</p>
+  </div>
+</section>
+
 <!-- ============================== EDGE / CACHING ============================== -->
 <section class="edge" id="edge">
   <div class="section-head reveal">

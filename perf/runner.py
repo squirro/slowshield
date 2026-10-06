@@ -27,12 +27,14 @@ from perf.stats import mann_whitney_p, median, relative_change
 
 ROOT = Path(__file__).resolve().parent
 K6_SCRIPT = ROOT / "k6" / "scenarios.js"
+OCI_ACCEPT = "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json"
 PORT = 18080
 UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
 CONFIG = ROOT / "slowshield.toml"
 # Sections an older baseline image rejects, newest first. Each pattern runs up to [feeds], so it takes the later
 # sections too.
 _NEWER_SECTIONS = (
+    re.compile(r"(?ms)^# Releases before OCI support.*?(?=^\[feeds\])"),
     re.compile(r"(?ms)^# Releases before Cargo support.*?(?=^\[feeds\])"),
     re.compile(r"(?ms)^# Releases before Go and Maven support.*?(?=^\[feeds\])"),
 )
@@ -67,6 +69,8 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("maven_jar", "latency", rate=300),
         Scenario("cargo_index", "throughput", vus=32),
         Scenario("cargo_crate", "latency", rate=300),
+        Scenario("oci_manifest", "throughput", vus=32),
+        Scenario("oci_config", "latency", rate=300),
     ],
     "quick": [
         Scenario("pypi_simple_json", "throughput", vus=32),
@@ -77,6 +81,7 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("go_mod", "throughput", vus=32),
         Scenario("maven_jar", "throughput", vus=32),
         Scenario("cargo_index", "throughput", vus=32),
+        Scenario("oci_manifest", "throughput", vus=32),
     ],
 }
 
@@ -233,7 +238,8 @@ class Harness:
         sh("docker", "network", "create", self.network)
         sh(
             "docker", "run", "-d", "--rm", "--name", f"{self.network}-up", "--network", self.network,
-            "--network-alias", "fakeupstream", *self._cpuset(self.load_cpus), "-p", f"127.0.0.1:{UPSTREAM_PORT}:9000",
+            "--network-alias", "fakeupstream", "--network-alias", "fakecdn", "-e", "FAKEUPSTREAM_OCI_CDN=http://fakecdn:9000",
+            *self._cpuset(self.load_cpus), "-p", f"127.0.0.1:{UPSTREAM_PORT}:9000",
             self.fakeupstream, "--host", "0.0.0.0", "--port", "9000", "--perf", "--now", str(self.now),
         )  # fmt: skip
         # SlowShield syncs its feeds right at startup: an upstream still starting would fail that sync.
@@ -317,6 +323,7 @@ class Harness:
             ("/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar", "*/*"),
             ("/cargo/ma/ny/many-crate", "*/*"),
             ("/cargo/crates/fake_hello/1.0.0/download", "*/*"),
+            ("/v2/quay.io/prometheus/node-exporter/manifests/latest", OCI_ACCEPT),
             ("/", "text/html"),
         ):
             req = urllib.request.Request(base + path, headers={"Accept": accept})

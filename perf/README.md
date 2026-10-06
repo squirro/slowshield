@@ -31,8 +31,9 @@ Noise controls:
 `artifact_big` (100 MB stream, MB/s), `blocked` (451 path), `dashboard` (UI render), `mixed`
 (45 % PyPI index, 30 % npm abbreviated, 20 % artifacts, 5 % full packuments), `go_list` (500-version Go module) and
 `go_mod` (cached go.mod files, which dominate `go mod download`), `maven_metadata` (filtered metadata of a
-500-version artifact), `maven_jar` (a cached jar), `cargo_index` (the index file of a 500-version crate) and
-`cargo_crate` (a cached .crate).
+500-version artifact), `maven_jar` (a cached jar), `cargo_index` (the index file of a 500-version crate),
+`cargo_crate` (a cached .crate), `oci_manifest` (an image tag that time-travels, from the tag and manifest caches)
+and `oci_config` (a cached image config).
 
 Recorded per scenario: requests/s, p50/p95/p99, error rate, MB/s, CPU-ms per 1,000 requests (cgroup
 `cpu.stat`); per image: peak RSS (cgroup `memory.peak`), startup-to-ready time and image size.

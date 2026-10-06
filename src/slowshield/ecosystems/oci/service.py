@@ -51,6 +51,7 @@ TAG_TTL = 300.0  # a tag's upstream digest is asked for again after this long
 RECHECK = 300.0  # a stored manifest is checked to still exist upstream at most this often
 HISTORY_RETRY = 600.0  # a registry time that couldn't be read is asked for again after this long
 MANIFEST_TTL = 30 * DAY  # manifests are immutable: kept by digest
+RECORDED_MAX = 100_000  # manifests a worker remembers having catalogued
 API = {"Docker-Distribution-API-Version": "registry/2.0"}
 
 
@@ -136,6 +137,7 @@ class OciService:
         self._since: float | None = None
         self._checked: dict[tuple[str, str], float] = {}
         self._asked: dict[tuple[str, str], float] = {}  # (repository, tag) -> when its registry history was read
+        self._recorded: set[tuple[str, str]] = set()  # manifests this worker has catalogued (or found catalogued)
 
     @property
     def layer_store(self) -> bool:
@@ -495,6 +497,12 @@ class OciService:
         return m is not None
 
     async def _record_manifest(self, repo: str, m: Manifest, now: float) -> None:
+        """Catalogue a manifest (its type, its children, whether it names a config) once per worker: a warm pull
+        must not wait for the database writer. The worker that fetched it wrote this before answering."""
+        if (repo, m.digest) in self._recorded:
+            return
+        if len(self._recorded) > RECORDED_MAX:
+            self._recorded.clear()
         config = m.config()
         if config:  # a config is cached like a package file; layers are not (blob())
             await self.ctx.metadata_store.aput(f"oci:config:{config}", b"1", expires=now + MANIFEST_TTL)
@@ -515,6 +523,7 @@ class OciService:
 
         # Written before answering: the client asks for the platform manifests next, maybe from another worker.
         await self.ctx.db.writer.run(op)
+        self._recorded.add((repo, m.digest))
 
     # ---- blobs and listings ------------------------------------------------------------------------------
 

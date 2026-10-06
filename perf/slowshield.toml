@@ -29,6 +29,13 @@ gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
 index_url = "http://fakeupstream:9000/cargo-index"
 download_url = "http://fakeupstream:9000/cargo-static/crates"
 
+# Releases before OCI support reject this section; perf/runner.py leaves it out for them.
+[upstreams.oci.registries."quay.io"]
+url = "http://fakeupstream:9000/oci/quay.io"
+download_hosts = ["fakecdn"]
+times = "quay"
+times_url = "http://fakeupstream:9000/quay"
+
 [feeds]
 poll_interval_minutes = 60
 osv_base_url = "http://fakeupstream:9000/osv"

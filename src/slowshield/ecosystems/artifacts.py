@@ -65,6 +65,7 @@ class ArtifactRequest:
     on_upstream: Callable[[StreamResponse], Awaitable[Response | dict[str, str] | None]] | None = None
     # Extra headers for a cache hit, from what was recorded on the first download.
     hit_headers: Callable[[ArtifactRecord], dict[str, str]] | None = None
+    published: float | None = None  # when the registry stored the file, if known: recorded for later cache hits
 
 
 @dataclass(slots=True)
@@ -74,6 +75,7 @@ class ArtifactRecord:
     tampered: bool
     legacy: bool = False
     upstream_digest: str | None = None
+    published: float | None = None
 
 
 class StreamedArtifact:
@@ -144,12 +146,14 @@ class ArtifactServer:
 
     def record_for(self, ecosystem: str, key: str) -> ArtifactRecord | None:
         row = self.db.readers.one(
-            "SELECT sha256, size, tampered, upstream_digest FROM artifacts WHERE ecosystem = ? AND path = ?",
+            "SELECT sha256, size, tampered, upstream_digest, published FROM artifacts WHERE ecosystem = ? AND path = ?",
             (ecosystem, key),
         )
         if row is None:
             return None
-        return ArtifactRecord(row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST, upstream_digest=row[3])
+        return ArtifactRecord(
+            row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST, upstream_digest=row[3], published=row[4]
+        )
 
     async def serve(
         self,
@@ -332,11 +336,24 @@ class ArtifactServer:
         def op(conn):  # type: ignore[no-untyped-def]
             conn.execute(
                 "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, upstream_digest, size, "
-                "first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "first_seen, last_seen, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (ecosystem, path) DO UPDATE SET last_seen = excluded.last_seen, "
                 "sha256 = coalesce(artifacts.sha256, excluded.sha256), size = coalesce(artifacts.size, excluded.size), "
-                "upstream_digest = coalesce(artifacts.upstream_digest, excluded.upstream_digest)",
-                (req.ecosystem, req.key, req.package, req.version, req.filename, sha, digest, verifier.size, now, now),
+                "upstream_digest = coalesce(artifacts.upstream_digest, excluded.upstream_digest), "
+                "published = coalesce(artifacts.published, excluded.published)",
+                (
+                    req.ecosystem,
+                    req.key,
+                    req.package,
+                    req.version,
+                    req.filename,
+                    sha,
+                    digest,
+                    verifier.size,
+                    now,
+                    now,
+                    req.published,
+                ),
             )
             row = conn.execute(
                 "SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (req.ecosystem, req.key)

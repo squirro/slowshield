@@ -20,6 +20,8 @@ All notable changes to this project are documented here. The format is based on
     Portal's path, and fingerprinted. Responses carry `X-Checksum-Sha1`, so Maven skips checksum requests.
   - OSV and GitHub malware advisories for Maven feed the blocklist, matched in Maven's version order (`1.0` = `1.0.0`).
   - Metadata SlowShield can't filter is refused with `503`, never passed on unfiltered.
+  - A cached file is judged again by its own recorded `Last-Modified` (migration `0004_artifact_published`), so it is
+    held again when the policy gets stricter, without a request upstream.
 - `fail_open` per ecosystem (`upstreams.<ecosystem>.fail_open`). Maven defaults to off: brand-new artifacts are held.
 - The Setup page has Maven (`settings.xml`), Gradle (init script), sbt and Coursier.
 

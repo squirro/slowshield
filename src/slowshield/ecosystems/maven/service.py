@@ -596,6 +596,7 @@ class MavenService:
 
         async def on_upstream(up: StreamResponse) -> Response | dict[str, str] | None:
             stored = self._stored_at(up.status, up.headers)
+            art.published = stored  # recorded with the file: later cache hits are judged by it, without a request
             if is_pom and self._times(mreq.name).get(version, [None, None])[0] is None:
                 self._learned(mreq.name, version, stored)  # the version's publish time, from this very GET
             refusal = await self._judge(request, repo, mreq, _earliest(stored, listed), kind="artifact")
@@ -616,16 +617,19 @@ class MavenService:
     async def _cached_gate(
         self, request: Request, repo: Repo, mreq: L.MavenRequest, key: str, known: float | None
     ) -> Response | None:
-        """A file SlowShield already has is served without asking upstream, so its own Last-Modified is not at hand.
-        When the version's .pom date isn't known either, look it up (one HEAD, once per version) and judge by it, so a
-        cached file is held again if the policy got stricter since it was first downloaded."""
-        if known is not None:
-            return None
+        """A file SlowShield already has is served without asking upstream, and is judged again by the current policy
+        (which may have got stricter since its first download): by its own publish time, recorded with it, like a
+        download (the first-listed time may clear it too). Files recorded before that was kept are judged by their
+        version's .pom date, looked up once per version when it isn't known."""
         rec = self.ctx.artifacts.record_for(ECO, key)
         if rec is None or rec.tampered or self.ctx.artifact_cache.lookup(rec.sha256) is None:
             return None  # not served from the cache: the upstream response is judged instead
         version = mreq.version or ""
         listed = self._times(mreq.name).get(version, [None, None])[1]
+        if rec.published is not None:
+            return await self._judge(request, repo, mreq, _earliest(rec.published, listed), kind="artifact")
+        if known is not None:
+            return None  # judged by the version's .pom date before this
         try:
             published = await self._pom_time(repo, mreq, version)
         except UpstreamError as exc:

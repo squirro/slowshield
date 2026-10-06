@@ -77,8 +77,10 @@ The rules:
    later evaluation, at most five minutes on, has looked them up). The result is stored once.
 2. **Files.** Each file is judged by its own `Last-Modified`, from the download SlowShield makes anyway: a file added
    to an old version later is held on its own. A version already known to be too new is refused before any request.
-   A cached file is judged again by its version's `.pom` date, so it is held again when the policy gets stricter; if
-   that date can't be looked up (an outage), the first-listed time can still clear it, otherwise the answer is `503`.
+   A cached file is judged again by its own `Last-Modified`, recorded with it on the first download (migration
+   `0004_artifact_published`), so it is held again when the policy gets stricter, without asking upstream and during
+   outages. Files cached before that are judged by their version's `.pom` date (one `HEAD` when it isn't known); if it
+   can't be looked up, the first-listed time can still clear them, otherwise the answer is `503`.
 3. **Only a `200` counts.** Central's 404s carry a `Last-Modified` too. Without a plausible value, the clock starts
    when SlowShield first sees the file.
 4. **A second clock.** SlowShield records when it first saw a version listed in the upstream metadata. A version (and

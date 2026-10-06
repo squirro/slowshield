@@ -247,21 +247,28 @@ async def test_versions_beyond_the_lookups_of_one_evaluation_wait(running: Runni
     assert _versions(second.text) == ["1.0.0"] and "<latest>1.0.0</latest>" in second.text
 
 
-async def test_cached_files_during_an_outage(start_app) -> None:
-    first = await start_app()
-    jar = f"{HELLO}/1.1.0/hello-1.1.0.jar"  # downloaded on its own: SlowShield never saw its .pom
-    known = f"{HELLO}/1.0.0/hello-1.0.0.jar"
-    for path in (jar, f"{HELLO}/1.0.0/hello-1.0.0.pom", known):
-        assert (await first.client.get(path)).status_code == 200, path
-    await first.drain()
-    again = await start_app()  # same data directory: both jars are cached
-    again.fake.control("fail", prefix="/maven/central/", status="503")
+async def test_cached_files_are_judged_by_their_own_date_without_asking_upstream(start_app) -> None:
+    lax = await start_app("default_delay_days = 0\n")
+    late = "/maven/central/org/example/late-classifier/1.0.0"
+    jar = f"{HELLO}/1.1.0/hello-1.1.0.jar"  # 30 days old, downloaded on its own: SlowShield never saw its .pom
+    for path in (f"{late}/late-classifier-1.0.0.pom", f"{late}/late-classifier-1.0.0-extra.jar", jar):
+        assert (await lax.client.get(path)).status_code == 200, path
+    await lax.drain()
+    strict = await start_app()  # same data directory; the default 7 days, and the repository is down
+    strict.fake.control("fail", prefix="/maven/central/", status="503")
     try:
-        assert (await again.client.get(known)).headers["x-slowshield-cache"] == "hit"  # its .pom date is known
-        r = await again.client.get(jar)
-        assert r.status_code == 503 and "release date" in r.text  # no date to judge it by while upstream is down
+        hit = await strict.client.get(jar)
+        assert hit.status_code == 200 and hit.headers["x-slowshield-cache"] == "hit"  # its recorded date: 30 days
+        # Added yesterday to a 100-day-old version: held by its own date, although the version's .pom is old.
+        assert (await strict.client.get(f"{late}/late-classifier-1.0.0-extra.jar")).status_code == 425
+        # A file recorded before SlowShield kept these dates: no date to judge it by while the repository is down.
+        await strict.ctx.db.writer.run(
+            lambda c: c.execute("UPDATE artifacts SET published = NULL WHERE path LIKE ?", ("%hello-1.1.0.jar",))
+        )
+        r = await strict.client.get(jar)
+        assert r.status_code == 503 and "release date" in r.text
     finally:
-        again.fake.control("fail", prefix="/maven/central/", status="0")
+        strict.fake.control("fail", prefix="/maven/central/", status="0")
 
 
 async def test_upstream_requests_per_new_version(running: Running) -> None:

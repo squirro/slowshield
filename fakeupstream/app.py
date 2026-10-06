@@ -9,6 +9,7 @@ import email.utils
 import hashlib
 import io
 import json
+import os
 import re
 import time
 import zipfile
@@ -483,8 +484,9 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
 
     # ---- OCI registries -------------------------------------------------------------------------------
     # /oci/<registry>/v2/...: docker.io, quay.io and ghcr.io want a token (from /oci/token); registry.k8s.io doesn't,
-    # and adds gcr.io's `manifest` map to tags/list. Blobs redirect to /oci-cdn/ on `localhost` (another host than
-    # the 127.0.0.1 SlowShield is configured with), which refuses requests that still carry the token.
+    # and adds gcr.io's `manifest` map to tags/list. Blobs redirect to /oci-cdn/ on another host than the one
+    # SlowShield is configured with (`localhost`, or FAKEUPSTREAM_OCI_CDN such as http://fakecdn:9000 in Compose),
+    # which refuses requests that still carry the token.
 
     open_registries = {"registry.k8s.io"}
 
@@ -553,7 +555,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(body, media_type=mt, headers=headers)
         if ref not in repo.blobs:
             return oci_err(404, "BLOB_UNKNOWN")
-        loc = f"http://localhost:{request.url.port}/oci-cdn/{registry}/{path}/{ref}"
+        cdn = os.environ.get("FAKEUPSTREAM_OCI_CDN") or f"http://localhost:{request.url.port}"
+        loc = f"{cdn}/oci-cdn/{registry}/{path}/{ref}"
         return Response(status_code=307, headers={"Location": loc})
 
     async def oci_cdn(request: Request) -> Response:

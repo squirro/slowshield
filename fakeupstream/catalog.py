@@ -353,7 +353,7 @@ def make_oci_image(path: str, version: str) -> tuple[str, dict[str, tuple[str, b
                 "os": "linux",
                 "created": "1970-01-01T00:00:00Z",  # builder-set: SlowShield never uses it
                 "config": {"Labels": {"version": version}},
-                "rootfs": {"type": "layers", "diff_ids": [_sha(layer)]},
+                "rootfs": {"type": "layers", "diff_ids": [_sha(gzip.decompress(layer))]},
             }
         )
         blobs[_sha(layer)] = layer

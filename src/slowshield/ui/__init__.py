@@ -522,6 +522,7 @@ class UI:
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         age_days = S.client_age_days(raw.default_delay_days)
+        images = S.oci_tools(local or base, tuple(sorted(raw.upstreams.oci.all_registries())), age_days=age_days)
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
@@ -536,8 +537,8 @@ class UI:
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
-            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days),
-            tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0),
+            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days) + images,
+            tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0) + images,
             age_days=age_days,
             ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
             ci_plain=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=0),

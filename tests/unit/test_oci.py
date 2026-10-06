@@ -10,7 +10,7 @@ from slowshield import config as C
 from slowshield import names
 from slowshield.ecosystems import ECOSYSTEMS
 from slowshield.ecosystems.oci.reference import parse
-from slowshield.ecosystems.oci.registry import Manifest, bearer
+from slowshield.ecosystems.oci.registry import Manifest, RegistryClient, bearer
 from slowshield.ecosystems.oci.service import blob_error
 from slowshield.ecosystems.oci.times import _ts
 from slowshield.upstream import Upstream, redirected
@@ -161,3 +161,9 @@ def test_registry_config() -> None:
 def test_invalid_registry_config(toml: str) -> None:
     with pytest.raises(C.ConfigError):
         C.parse(toml)
+
+
+def test_ratelimit_gauge_reads_the_count() -> None:
+    client = RegistryClient.__new__(RegistryClient)
+    client.ratelimit = {"docker.io": "87;w=21600", "odd.example": "n/a"}
+    assert client.remaining() == [(87.0, {"registry": "docker.io"})]

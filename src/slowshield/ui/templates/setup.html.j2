@@ -12,7 +12,7 @@
 {% set days = cfg.default_delay_days|round(1)|replace(".0", "") %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm, go, Maven and Gradle at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
+  <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm, go, Maven, Gradle, Cargo and container runtimes at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
 </div>
 {% if legacy_hosts %}
 <section class="card" role="note">
@@ -88,7 +88,7 @@
     {%- endfor %}
   </div>
   <p class="muted small" role="status" data-tool-empty hidden>No tool matches. Try pip, uv, Poetry, PDM, Pipenv, npm,
-    pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier or Cargo.</p>
+    pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, containerd, Docker, Podman or BuildKit.</p>
   <div class="tool-results">
     {%- for t in tools %}
     {%- set plain = tools_plain[loop.index0] %}
@@ -115,8 +115,10 @@
   <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
     the container itself. Block direct access to pypi.org, files.pythonhosted.org, registry.npmjs.org,
     proxy.golang.org, sum.golang.org, repo1.maven.org, repo.maven.apache.org, dl.google.com, plugins.gradle.org,
-    index.crates.io and static.crates.io at the firewall so nothing bypasses SlowShield (the go command reaches the
-    checksum database through SlowShield too). For Maven, Gradle and Cargo in CI and images, copy the
+    index.crates.io, static.crates.io and the container registries (registry-1.docker.io, ghcr.io, quay.io,
+    registry.k8s.io, ...) at the firewall so nothing bypasses SlowShield (the go command reaches the checksum
+    database through SlowShield too; BuildKit and Docker's classic image store go to the registry after a
+    refusal). For Maven, Gradle and Cargo in CI and images, copy the
     <code>settings.xml</code>, the init script or the Cargo command from Per tool.</p>
 </section>
 <section class="card">
@@ -141,7 +143,11 @@
       one. A <code>Cargo.lock</code> that pins one fails with the reason and the version to use instead. Crates none of
       whose versions is old enough are held too. <code>cargo search</code> needs crates.io; <code>cargo publish</code>
       needs <code>--registry crates-io</code>.</li>
-    <li><strong>Brand-new packages:</strong> if <em>no</em> version is old enough yet, SlowShield fails open and serves them, recording a fail-open event.</li>
+    <li><strong>Containers:</strong> a tag resolves to the newest image it has pointed to for {{ days }} days, so
+      <code>nginx:latest</code> stays about {{ days }} days behind. A digest that is too new, and a blocked image, fail
+      with <code>403</code>: Docker, Podman, BuildKit, skopeo and crane print the reason, containerd 2.2 and older only
+      <code>403 Forbidden</code>. With the pull-only <code>hosts.toml</code>, pushes need the registry's own file.</li>
+    <li><strong>Brand-new packages:</strong> if <em>no</em> version is old enough yet, SlowShield fails open and serves them, recording a fail-open event. For container images this only happens during an instance's first {{ days }} days, for tags it has no history for yet.</li>
     <li><strong>Tampering:</strong> every artifact is fingerprinted on first download; if the bytes ever change, the download is aborted and the event recorded.</li>
   </ul>
 </section>

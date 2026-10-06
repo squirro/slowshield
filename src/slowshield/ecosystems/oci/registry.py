@@ -189,6 +189,16 @@ class RegistryClient:
             self.ratelimit[reg.name] = res.headers["ratelimit-remaining"]
         return res
 
+    def remaining(self) -> list[tuple[float, dict[str, str | int | float | bool]]]:
+        """Pulls each registry last said were left (Docker Hub: `ratelimit-remaining: 87;w=21600`), for a gauge."""
+        out: list[tuple[float, dict[str, str | int | float | bool]]] = []
+        for name, value in self.ratelimit.items():
+            try:
+                out.append((float(value.split(";", 1)[0]), {"registry": name}))
+            except ValueError:
+                continue
+        return out
+
     async def manifest(self, reg: Registry, path: str, ref: str, *, head: bool = False) -> Manifest | None:
         """The manifest `ref` (a tag or digest) names, or None if the registry has none. With `head`, only its digest
         and type (a HEAD, which Docker Hub doesn't count as a pull), unless the registry announces no digest."""

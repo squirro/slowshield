@@ -185,7 +185,7 @@ class SlowShield:
 
         ui = UI(ctx)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
-        self._register_gauges(ctx)
+        self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
             self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, oci=oci, ui=ui)
         )
@@ -230,27 +230,33 @@ class SlowShield:
         self._tasks.append(asyncio.ensure_future(coro))
         self._tasks[-1].set_name(f"slowshield-{name}")
 
-    def _register_gauges(self, ctx: AppContext) -> None:
+    def _register_gauges(self, ctx: AppContext, oci: OciService | None) -> None:
         process.register()
         instruments.observe("slowshield.db.writer.queue", lambda: [(ctx.db.writer.queue_depth, {})], unit="{op}")
-        instruments.observe(
-            "slowshield.cache.size",
-            lambda: [
+        layers = ctx.artifacts.stores.get("layers")  # the optional OCI layer store
+
+        def sizes() -> list[tuple[float, dict[str, str | int | float | bool]]]:
+            out: list[tuple[float, dict[str, str | int | float | bool]]] = [
                 (ctx.artifact_cache.size_bytes, {"cache": "artifact"}),
                 (ctx.metadata_store.usage(max_age=60)[1], {"cache": "metadata"}),
                 (ctx.metadata_cache.bytes, {"cache": "metadata_memory"}),
-            ],
-            unit="By",
-        )
-        instruments.observe(
-            "slowshield.cache.limit",
-            lambda: [
+            ]
+            if layers is not None:
+                out.append((layers.size_bytes, {"cache": "oci_layers"}))
+            return out
+
+        def limits() -> list[tuple[float, dict[str, str | int | float | bool]]]:
+            out: list[tuple[float, dict[str, str | int | float | bool]]] = [
                 (ctx.artifact_cache.max_bytes, {"cache": "artifact"}),
                 (ctx.metadata_store.max_bytes, {"cache": "metadata"}),
                 (ctx.metadata_cache.max_bytes, {"cache": "metadata_memory"}),
-            ],
-            unit="By",
-        )
+            ]
+            if layers is not None:
+                out.append((layers.max_bytes, {"cache": "oci_layers"}))
+            return out
+
+        instruments.observe("slowshield.cache.size", sizes, unit="By")
+        instruments.observe("slowshield.cache.limit", limits, unit="By")
         from slowshield import build_info
 
         info = build_info()
@@ -269,6 +275,8 @@ class SlowShield:
             ],
         )
         instruments.observe("slowshield.leader", lambda: [(1 if ctx.is_leader else 0, {})])
+        if oci is not None:
+            instruments.observe("slowshield.oci.ratelimit.remaining", oci.client.remaining, unit="{request}")
 
     async def _config_watcher(self, ctx: AppContext) -> None:
         while True:

@@ -36,6 +36,7 @@ C = {
     "go": "#00add8",
     "maven": "#ed8b00",
     "cargo": "#dea584",
+    "oci": "#1d63ed",
 }
 DECISION_COLORS = {
     "served": C["brand"],
@@ -471,7 +472,8 @@ def dashboard(
 
 
 INSTANCE_VAR = query_var("instance", "Instance", "label_values(slowshield_build_info, instance)")
-ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", ["pypi", "npm", "go", "maven", "cargo"])
+ECOSYSTEMS = ("pypi", "npm", "go", "maven", "cargo", "oci")
+ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", list(ECOSYSTEMS))
 
 
 # request-rate helper for native histograms
@@ -668,7 +670,7 @@ def overview() -> dict[str, Any]:
             ],
             unit="reqps",
             stack=True,
-            colors={eco: C[eco] for eco in ("pypi", "npm", "go", "maven", "cargo")},
+            colors={eco: C[eco] for eco in ECOSYSTEMS},
         ),
         12,
         8,
@@ -714,7 +716,7 @@ def overview() -> dict[str, Any]:
                 ),
             ],
             unit="percentunit",
-            colors={"artifact": C["brand"], "metadata": C["pypi"]},
+            colors={"artifact": C["brand"], "metadata": C["pypi"], "oci_layers": C["oci"]},
             fill=0,
             desc="Metadata counts 304-revalidations as hits.",
         ),
@@ -841,7 +843,7 @@ def security() -> dict[str, Any]:
                     instant=True,
                 ),
             ],
-            colors={eco: C[eco] for eco in ("pypi", "npm", "go", "maven", "cargo")},
+            colors={eco: C[eco] for eco in ECOSYSTEMS},
         ),
         8,
         8,
@@ -949,7 +951,19 @@ def upstream() -> dict[str, Any]:
             unit="reqps",
             stack=True,
         ),
-        12,
+        8,
+        8,
+    )
+    L.add(
+        timeseries(
+            "Registry pulls left",
+            [prom(f"min by (registry) (slowshield_oci_ratelimit_remaining{{{INST}}})", "{{registry}}")],
+            unit="short",
+            fill=0,
+            desc="What the registry last said (Docker Hub: ratelimit-remaining). Only manifest GETs count; "
+            "SlowShield fetches each image manifest once for all clients.",
+        ),
+        8,
         8,
     )
     L.add(
@@ -964,7 +978,7 @@ def upstream() -> dict[str, Any]:
             ],
             desc="From Tempo span-metrics; only sampled requests are counted.",
         ),
-        12,
+        8,
         8,
     )
 

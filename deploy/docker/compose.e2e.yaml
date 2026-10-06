@@ -6,13 +6,16 @@ services:
   fakeupstream:
     image: ${FAKEUPSTREAM_IMAGE:-slowshield-fakeupstream:ci}
     command: ["--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      # Container image blobs redirect here: another host name, like a registry's CDN.
+      FAKEUPSTREAM_OCI_CDN: http://fakecdn:9000
     read_only: true
     user: "65532:65532"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     networks:
       backend:
-        aliases: [fakeupstream]
+        aliases: [fakeupstream, fakecdn]
     ports:
       # Control API for the tests (tamper, publish, ...); loopback only.
       - "127.0.0.1:${FAKEUPSTREAM_PORT:-19000}:9000"

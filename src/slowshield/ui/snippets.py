@@ -131,7 +131,9 @@ def tools(pypi: str, npm: str, go: str, maven: str) -> tuple[Tool, ...]:
             "sbt scala coursier",
             (
                 ("~/.sbt/repositories", f"[repositories]\n  local\n  slowshield: {maven}/all/{sbt_insecure}"),
-                ("~/.sbtopts", "-Dsbt.override.build.repos=true"),
+                # Not ~/.sbtopts: the sbt script doesn't read it, and the build definition's own Scala and plugins
+                # would then come from Maven Central directly (checked with sbt 1.11). SBT_OPTS works for every version.
+                ("environment", 'export SBT_OPTS="-Dsbt.override.build.repos=true $SBT_OPTS"'),
             ),
         ),
         Tool(

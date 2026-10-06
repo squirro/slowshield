@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from slowshield.ui import snippets
+
 if TYPE_CHECKING:
     from tests.e2e.conftest import Stack
 
@@ -325,3 +327,42 @@ def test_maven_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     held = mvn("new.xml")
     assert held.returncode != 0
     assert "status code: 425, reason phrase: Too Early (425)" in held.stdout, held.stdout[-3000:]
+
+
+GRADLE_IMAGE = "gradle:9.8.0-jdk21@sha256:4debe478645a3ad9208f3403ac021859fdf4d1a819d59970d75309b098f28f76"
+
+
+def _gradle_project(root: Path, version: str) -> None:
+    root.mkdir()
+    (root / "settings.gradle").write_text(f"rootProject.name = 'try-{version}'\n")
+    (root / "build.gradle").write_text(
+        "plugins { id 'java' }\nrepositories { mavenCentral() }\n"
+        f"dependencies {{ implementation 'org.example:hello:{version}' }}\n"
+        "tasks.register('resolve') { doLast { configurations.compileClasspath.files.each { println it.name } } }\n"
+    )
+
+
+def test_gradle_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Gradle with the Setup page's init script, which points mavenCentral() at SlowShield. 1.0.0 of
+    org.example:hello is 100 days old; 1.2.0 two days, so Gradle reports a 425."""
+    (tmp_path / "init.gradle").write_text(snippets.gradle_init("http://localhost:8080/maven"))
+    for version in ("1.0.0", "1.2.0"):
+        _gradle_project(tmp_path / version, version)
+
+    def gradle(version: str) -> subprocess.CompletedProcess[str]:
+        # Gradle writes into the project (build/reports), so it works on a copy inside the container.
+        script = (
+            f"cp -r /w/{version} /tmp/project && gradle --no-daemon --no-configuration-cache -q -g /tmp/gradle-home "
+            "-I /w/init.gradle -p /tmp/project resolve"
+        )
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", GRADLE_IMAGE, "-c", script],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = gradle("1.0.0")
+    assert ok.returncode == 0 and "hello-1.0.0.jar" in ok.stdout, (ok.stdout + ok.stderr)[-3000:]
+    held = gradle("1.2.0")
+    assert held.returncode != 0
+    assert "Received status code 425 from server" in held.stderr, held.stderr[-3000:]

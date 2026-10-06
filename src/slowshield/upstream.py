@@ -2,13 +2,15 @@
 
 Two clients: one for metadata (transparent gzip/br/zstd, bounded body size) and one for artifacts
 (identity encoding so we hash exactly the bytes the registry serves). Redirects are never followed
-automatically; `_follow()` only follows them within the configured upstream hosts, so this can never
-be turned into an open proxy.
+automatically; they are only followed within the configured upstream hosts (exact names, or `*` patterns for
+CDNs such as `*.data.mcr.microsoft.com`), so this can never be turned into an open proxy. A redirect to another
+host never carries the `Authorization` header: registry tokens stay with the registry.
 """
 
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import time
 from collections.abc import AsyncIterator, Iterable
@@ -27,6 +29,15 @@ from slowshield.telemetry import instruments
 log = logging.getLogger(__name__)
 
 _REDIRECTS = {301, 302, 303, 307, 308}
+_CREDENTIALS = frozenset({"authorization", "cookie"})
+
+
+def redirected(url: str, location: str, headers: dict[str, str]) -> tuple[str, dict[str, str]]:
+    """The redirect target, and the headers to send there: without credentials once the host changes."""
+    target = urljoin(url, location)
+    if (urlsplit(target).hostname or "").lower() != (urlsplit(url).hostname or "").lower():
+        headers = {k: v for k, v in headers.items() if k.lower() not in _CREDENTIALS}
+    return target, headers
 
 
 class UpstreamError(Exception):
@@ -97,7 +108,9 @@ class Upstream:
         read_timeout: float = 30.0,
         metadata_timeout: float = 60.0,
     ) -> None:
-        self.allowed_hosts = {h.lower() for h in allowed_hosts}
+        hosts = {h.lower() for h in allowed_hosts}
+        self.allowed_hosts = {h for h in hosts if "*" not in h}
+        self.allowed_patterns = tuple(sorted(h for h in hosts if "*" in h))
         self._metadata_timeout = timedelta(seconds=metadata_timeout)
 
         def base() -> ClientBuilder:
@@ -126,7 +139,7 @@ class Upstream:
 
     def _allowed(self, url: str) -> bool:
         host = (urlsplit(url).hostname or "").lower()
-        return host in self.allowed_hosts
+        return host in self.allowed_hosts or any(fnmatch.fnmatchcase(host, p) for p in self.allowed_patterns)
 
     async def fetch(
         self,
@@ -179,7 +192,7 @@ class Upstream:
                         status_code = resp.status
                         hdrs = _headers(resp)
                         if status_code in _REDIRECTS and "location" in hdrs:
-                            url = urljoin(url, hdrs["location"])
+                            url, headers = redirected(url, hdrs["location"], headers)
                             continue
                         body = b"" if method == "HEAD" else await _read_limited(resp, max_bytes, url)
                         span.set_attribute("http.response.status_code", status_code)
@@ -206,6 +219,7 @@ class Upstream:
     @asynccontextmanager
     async def stream(self, url: str, *, headers: dict[str, str] | None = None) -> AsyncIterator[StreamResponse]:
         """Streamed artifact GET (no decompression). Caller must check `.status`."""
+        headers = dict(headers or {})
         for _hop in range(4):
             if not self._allowed(url):
                 raise UpstreamError(url, "redirect to a host that is not a configured upstream")
@@ -218,7 +232,7 @@ class Upstream:
             span = span_cm.__enter__()
             try:
                 try:
-                    req = self.raw.get(url).headers(headers or {}).build_streamed()
+                    req = self.raw.get(url).headers(headers).build_streamed()
                     cm = req
                     resp = await cm.__aenter__()
                 except PyreqwestError as exc:
@@ -230,7 +244,7 @@ class Upstream:
                     span.set_attribute("http.response.status_code", status_code)
                     hdrs = _headers(resp)
                     if status_code in _REDIRECTS and "location" in hdrs:
-                        url = urljoin(url, hdrs["location"])
+                        url, headers = redirected(url, hdrs["location"], headers)
                         continue
                     try:
                         yield StreamResponse(resp, url)

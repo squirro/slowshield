@@ -24,8 +24,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo")
+Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "oci"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "oci")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -137,12 +137,70 @@ class CargoUpstream(msgspec.Struct, forbid_unknown_fields=True):
     download_hosts: list[str] = []
 
 
+OciTimes = Literal["hub", "quay", "gcr", "mcr", "none"]
+
+
+class OciRegistry(msgspec.Struct, forbid_unknown_fields=True):
+    url: str  # the registry API (https://registry-1.docker.io for docker.io)
+    # Hosts its token service and downloads may use, `*` allowed (blob CDNs, regional backends). Every manifest and
+    # blob is checked against its digest wherever it comes from; tokens are never sent to another host.
+    download_hosts: list[str] = []
+    # Where the time a tag got its digest comes from: the Docker Hub API, Quay's tag history, the `manifest` map in
+    # gcr.io/Artifact Registry `tags/list`, MCR's catalog, or none (SlowShield's own first sight only).
+    times: OciTimes = "none"
+    aliases: list[str] = []  # other names clients use for it (index.docker.io)
+    enabled: bool = True
+    # Credentials for its token service (Docker Hub: a username and a "Public Repo Read-only" access token), so
+    # pulls count against an account instead of a shared IP. The token is read from this file at startup.
+    username: str | None = None
+    token_file: str | None = None
+
+
+def _oci_builtin() -> dict[str, OciRegistry]:
+    return {
+        "docker.io": OciRegistry(
+            "https://registry-1.docker.io",
+            ["auth.docker.io", "hub.docker.com", "production.cloudfront.docker.com",
+             "production.cloudflare.docker.com", "*.r2.cloudflarestorage.com"],
+            "hub", ["index.docker.io", "registry-1.docker.io"],
+        ),
+        "ghcr.io": OciRegistry("https://ghcr.io", ["pkg-containers.githubusercontent.com"]),
+        "quay.io": OciRegistry("https://quay.io", ["cdn*.quay.io", "quayio-production-s3.s3.amazonaws.com"], "quay"),
+        "registry.k8s.io": OciRegistry(
+            "https://registry.k8s.io",
+            ["*-docker.pkg.dev", "cdn.registry.k8s.io", "prod-registry-k8s-io-*.s3.dualstack.*.amazonaws.com"],
+            "gcr",
+        ),
+        "gcr.io": OciRegistry("https://gcr.io", ["storage.googleapis.com"], "gcr"),
+        "mcr.microsoft.com": OciRegistry("https://mcr.microsoft.com", ["*.data.mcr.microsoft.com"], "mcr"),
+        "public.ecr.aws": OciRegistry("https://public.ecr.aws", ["*.cloudfront.net"]),
+    }  # fmt: skip
+
+
+class OciUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # A tag with nothing old enough is refused, except during the first `default_delay_days` after this instance
+    # started serving images: it has no tag history yet, so it serves the current digest and records a fail-open
+    # event. False: strict from the first day (docs/design/oci.md).
+    fail_open: bool | None = None
+    # Image layers are streamed and checked, not stored: they would evict the package files the artifact cache is
+    # for. A budget above 0 keeps them in a separate store under <data_dir>/cache/oci-layers.
+    layer_cache_gb: float = 0
+    # More registries, or changes to the built-in ones (docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
+    # mcr.microsoft.com, public.ecr.aws), keyed by the name clients use in image references.
+    registries: dict[str, OciRegistry] = {}
+
+    def all_registries(self) -> dict[str, OciRegistry]:
+        return {name: reg for name, reg in {**_oci_builtin(), **self.registries}.items() if reg.enabled}
+
+
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
     npm: NpmUpstream = msgspec.field(default_factory=NpmUpstream)
     go: GoUpstream = msgspec.field(default_factory=GoUpstream)
     maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
     cargo: CargoUpstream = msgspec.field(default_factory=CargoUpstream)
+    oci: OciUpstream = msgspec.field(default_factory=OciUpstream)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):
@@ -359,6 +417,7 @@ def _apply_env(cfg: Config) -> None:
         ("SLOWSHIELD_GO_ENABLED", lambda b: setattr(cfg.upstreams.go, "enabled", b)),
         ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
         ("SLOWSHIELD_CARGO_ENABLED", lambda b: setattr(cfg.upstreams.cargo, "enabled", b)),
+        ("SLOWSHIELD_OCI_ENABLED", lambda b: setattr(cfg.upstreams.oci, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
@@ -385,6 +444,8 @@ _PUBLIC_URL = re.compile(
 
 
 _HOSTNAME = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)+")
+_OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 
 def _validate(cfg: Config) -> None:
@@ -438,6 +499,25 @@ def _validate(cfg: Config) -> None:
     for host in cargo.download_hosts:
         if not _HOSTNAME.fullmatch(host):
             raise ConfigError(f"upstreams.cargo.download_hosts entries must be host names, got {host!r}")
+    oci = cfg.upstreams.oci
+    if oci.layer_cache_gb < 0:
+        raise ConfigError("upstreams.oci.layer_cache_gb must be >= 0")
+    for name in oci.registries:
+        if not _OCI_REGISTRY.fullmatch(name):
+            raise ConfigError(
+                f"upstreams.oci.registries: {name!r} must be a registry host name (e.g. registry.example.com)"
+            )
+    for name, reg in oci.all_registries().items():
+        if not reg.url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.oci.registries.{name}: url must be an http(s) URL, got {reg.url!r}")
+        for host in reg.download_hosts:
+            if not _HOST_PATTERN.fullmatch(host):
+                raise ConfigError(
+                    f"upstreams.oci.registries.{name}: download_hosts entries must be host names or `*` patterns, "
+                    f"got {host!r}"
+                )
+        if bool(reg.username) != bool(reg.token_file):
+            raise ConfigError(f"upstreams.oci.registries.{name}: username and token_file go together")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
@@ -558,6 +638,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         f"upstreams.maven.{name}"
         for name in ("central", "google", "gradle_plugins", "repos")
         if getattr(old.upstreams.maven, name) != getattr(new.upstreams.maven, name)
+    )
+    changed.extend(  # registries decide which upstream hosts the client may reach
+        f"upstreams.oci.{name}"
+        for name in ("registries", "layer_cache_gb")
+        if getattr(old.upstreams.oci, name) != getattr(new.upstreams.oci, name)
     )
     changed.extend(  # these decide which upstream hosts the client may reach
         f"upstreams.cargo.{name}"

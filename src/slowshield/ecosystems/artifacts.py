@@ -66,6 +66,10 @@ class ArtifactRequest:
     # Extra headers for a cache hit, from what was recorded on the first download.
     hit_headers: Callable[[ArtifactRecord], dict[str, str]] | None = None
     published: float | None = None  # when the registry stored the file, if known: recorded for later cache hits
+    upstream_headers: dict[str, str] = field(default_factory=dict)  # e.g. a registry token (never sent to a CDN)
+    # Which store keeps a verified body, from its Content-Length: "main" (the default), "layers" (the separate OCI
+    # layer store), or None (streamed and checked, not stored).
+    store: Callable[[int | None], str | None] | None = None
 
 
 @dataclass(slots=True)
@@ -136,10 +140,18 @@ def _tamper_response(req: ArtifactRequest) -> Response:
 
 class ArtifactServer:
     def __init__(
-        self, *, db: Database, cache: ArtifactCache, upstream: Upstream, recorder: Recorder, clock: Clock
+        self,
+        *,
+        db: Database,
+        cache: ArtifactCache,
+        upstream: Upstream,
+        recorder: Recorder,
+        clock: Clock,
+        layers: ArtifactCache | None = None,
     ) -> None:
         self.db = db
         self.cache = cache
+        self.stores = {"main": cache, **({"layers": layers} if layers is not None else {})}
         self.upstream = upstream
         self.recorder = recorder
         self.clock = clock
@@ -177,7 +189,11 @@ class ArtifactServer:
         if rec is not None and rec.sha256:
             req.expected.tofu_sha256 = rec.sha256
 
-        cached = self.cache.lookup(rec.sha256 if rec else None)
+        cached = None
+        for store in self.stores.values():
+            cached = store.lookup(rec.sha256 if rec else None)
+            if cached is not None:
+                break
         if cached is not None:
             self.recorder.decision(req.ecosystem, "artifact", "served")
             if method != "HEAD":
@@ -209,7 +225,9 @@ class ArtifactServer:
 
         stack = AsyncExitStack()
         try:
-            up: StreamResponse = await stack.enter_async_context(self.upstream.stream(req.upstream_url))
+            up: StreamResponse = await stack.enter_async_context(
+                self.upstream.stream(req.upstream_url, headers=req.upstream_headers)
+            )
         except UpstreamError as exc:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
@@ -247,7 +265,9 @@ class ArtifactServer:
         if size is not None:
             out_headers["Content-Length"] = str(size)
         verifier = StreamVerifier(req.expected)
-        tee = self.cache.open_tee()
+        store = req.store(size) if req.store is not None else "main"
+        target = self.stores.get(store) if store else None
+        tee = target.open_tee() if target is not None else None
         state = {"verified": False, "delivered": False}
 
         async def body() -> AsyncIterator[bytes]:
@@ -296,7 +316,13 @@ class ArtifactServer:
         async def on_close() -> None:
             await stack.aclose()
             await self._finish(
-                req, tee, verifier, content_type, verified=state["verified"], delivered=state["delivered"]
+                req,
+                tee,
+                verifier,
+                content_type,
+                verified=state["verified"],
+                delivered=state["delivered"],
+                target=target,
             )
             log.debug(
                 "artifact streamed",
@@ -314,6 +340,7 @@ class ArtifactServer:
         *,
         verified: bool,
         delivered: bool,
+        target: ArtifactCache | None = None,
     ) -> None:
         """Verified bytes are cached even if the client went away; only delivered ones count as served."""
         if not verified:
@@ -324,7 +351,7 @@ class ArtifactServer:
             self.recorder.decision(req.ecosystem, "artifact", "served")
             self.recorder.download(req.ecosystem, req.package, req.version, verifier.size, cache_hit=False)
         if tee is not None:
-            await self.cache.commit(tee, verifier.sha256, content_type)
+            await (target or self.cache).commit(tee, verifier.sha256, content_type)
 
     async def _remember(self, req: ArtifactRequest, verifier: StreamVerifier) -> str | None:
         """Insert-or-keep the TOFU digest; returns the digest now on record."""

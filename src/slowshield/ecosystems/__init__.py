@@ -25,8 +25,23 @@ class EcosystemInfo:
     registry_site: str  # what that site is called ("View on ...")
 
     def page_url(self, name: str) -> str:
+        if self.id == "oci":
+            return _oci_page(name)
         group, _, artifact = name.partition(":")
         return self.registry_page.replace("{name}", name).replace("{group}", group).replace("{artifact}", artifact)
+
+
+def _oci_page(name: str) -> str:
+    registry, path = names.oci_split(name)
+    if registry == names.OCI_DOCKER_HUB:
+        return (
+            f"https://hub.docker.com/_/{path[8:]}"
+            if path.startswith("library/")
+            else f"https://hub.docker.com/r/{path}"
+        )
+    if registry == "quay.io":
+        return f"https://quay.io/repository/{path}"
+    return f"https://{registry}/{path}"
 
 
 ECOSYSTEMS: dict[str, EcosystemInfo] = {
@@ -51,6 +66,11 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
         EcosystemInfo(
             "cargo", "Cargo", "Rust", names.normalize_cargo, names.is_valid_cargo, "crates.io", "rust",
             "https://crates.io/crates/{name}", "crates.io",
+        ),
+        # No advisory database covers container images: OCI has no OSV or GitHub ecosystem name.
+        EcosystemInfo(
+            "oci", "OCI", "Containers", names.normalize_oci, names.is_valid_oci, "", "", "https://{name}",
+            "the registry",
         ),
     )
 }  # fmt: skip

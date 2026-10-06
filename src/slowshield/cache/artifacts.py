@@ -7,6 +7,9 @@ Layout under `<data>/cache`:
 
 Write order on a miss: stream to tmp -> verify digests -> fsync -> rename into objects/ -> insert row.
 A crash at any point leaves at worst an orphaned tmp file, which `cleanup()` removes.
+
+The same class runs a second, separate store for container image layers (`<data>/cache/oci-layers`, table
+`oci_layer_entries`) when `upstreams.oci.layer_cache_gb` gives it a budget, so layers never evict package files.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from slowshield.db import Database
 from slowshield.telemetry import instruments
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_TABLES = frozenset({"cache_entries", "oci_layer_entries"})  # interpolated into SQL: never anything else
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +83,21 @@ class TeeFile:
 
 
 class ArtifactCache:
-    def __init__(self, root: Path, db: Database, clock: Clock, *, max_bytes: int, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        root: Path,
+        db: Database,
+        clock: Clock,
+        *,
+        max_bytes: int,
+        enabled: bool = True,
+        table: str = "cache_entries",
+        label: str = "artifact",
+    ) -> None:
+        if table not in _TABLES:
+            raise ValueError(f"unknown cache table {table!r}")
+        self.table = table
+        self.label = label  # the `cache` metric label
         self.root = root
         self.db = db
         self.clock = clock
@@ -112,13 +130,13 @@ class ArtifactCache:
         try:
             st = path.stat()
         except FileNotFoundError:
-            instruments.cache_requests.add(1, {"cache": "artifact", "result": "miss"})
+            instruments.cache_requests.add(1, {"cache": self.label, "result": "miss"})
             return None
-        row = self.db.readers.one("SELECT content_type FROM cache_entries WHERE sha256 = ?", (sha256,))
+        row = self.db.readers.one(f"SELECT content_type FROM {self.table} WHERE sha256 = ?", (sha256,))
         if row is None:
-            instruments.cache_requests.add(1, {"cache": "artifact", "result": "miss"})
+            instruments.cache_requests.add(1, {"cache": self.label, "result": "miss"})
             return None
-        instruments.cache_requests.add(1, {"cache": "artifact", "result": "hit"})
+        instruments.cache_requests.add(1, {"cache": self.label, "result": "hit"})
         self._touch(sha256)
         return CachedFile(path, sha256, st.st_size, row[0])
 
@@ -129,7 +147,7 @@ class ArtifactCache:
         self._touched[sha256] = now
         if len(self._touched) > 100_000:
             self._touched.clear()
-        self.db.writer.execute("UPDATE cache_entries SET last_access = ? WHERE sha256 = ?", (now, sha256))
+        self.db.writer.execute(f"UPDATE {self.table} SET last_access = ? WHERE sha256 = ?", (now, sha256))
 
     def open_tee(self) -> TeeFile | None:
         if not self.enabled:
@@ -150,7 +168,7 @@ class ArtifactCache:
             return
         now = self.clock.now()
         self.db.writer.execute(
-            "INSERT INTO cache_entries (sha256, size, content_type, created, last_access, verified) "
+            f"INSERT INTO {self.table} (sha256, size, content_type, created, last_access, verified) "
             "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sha256) DO UPDATE SET last_access = excluded.last_access",
             (sha256, tee.size, content_type, now, now, now),
         )
@@ -166,7 +184,7 @@ class ArtifactCache:
     # ---- maintenance (leader only) -------------------------------------------------------------
 
     def refresh_stats(self) -> None:
-        row = self.db.readers.one("SELECT count(*), coalesce(sum(size), 0) FROM cache_entries")
+        row = self.db.readers.one(f"SELECT count(*), coalesce(sum(size), 0) FROM {self.table}")
         if row is not None:
             self.entries, self.size_bytes = int(row[0]), int(row[1])
 
@@ -179,7 +197,7 @@ class ArtifactCache:
             return 0
         target = int(self.max_bytes * 0.9)
         rows = await self.db.readers.aquery(
-            "SELECT sha256, size FROM cache_entries ORDER BY last_access ASC LIMIT 5000"
+            f"SELECT sha256, size FROM {self.table} ORDER BY last_access ASC LIMIT 5000"
         )
         victims: list[str] = []
         freed = 0
@@ -191,10 +209,10 @@ class ArtifactCache:
         if not victims:
             return 0
         await asyncio.to_thread(self._move_to_trash, victims)
-        self.db.writer.executemany("DELETE FROM cache_entries WHERE sha256 = ?", [(s,) for s in victims])
+        self.db.writer.executemany(f"DELETE FROM {self.table} WHERE sha256 = ?", [(s,) for s in victims])
         self.size_bytes -= freed
         self.entries -= len(victims)
-        instruments.cache_evictions.add(len(victims), {"cache": "artifact"})
+        instruments.cache_evictions.add(len(victims), {"cache": self.label})
         log.info("evicted artifacts from cache", extra={"count": len(victims), "bytes": freed})
         return len(victims)
 
@@ -228,18 +246,20 @@ class ArtifactCache:
                 continue
         missing = [
             (sha,)
-            for (sha,) in self.db.readers.query("SELECT sha256 FROM cache_entries")
+            for (sha,) in self.db.readers.query(f"SELECT sha256 FROM {self.table}")
             if not self.object_path(sha).exists()
         ]
         if missing:
-            self.db.writer.executemany("DELETE FROM cache_entries WHERE sha256 = ?", missing)
+            self.db.writer.executemany(f"DELETE FROM {self.table} WHERE sha256 = ?", missing)
         self.purge_trash()
 
     async def scrub(self, *, budget_bytes: int = 2 << 30) -> list[str]:
         """Re-hash the least recently verified objects; corrupt ones are removed. Returns bad digests."""
         if not self.enabled:
             return []
-        rows = await self.db.readers.aquery("SELECT sha256, size FROM cache_entries ORDER BY verified ASC LIMIT 1000")
+        rows = await self.db.readers.aquery(
+            f"SELECT sha256, size FROM {self.table} ORDER BY verified ASC LIMIT 1000"
+        )
         checked: list[str] = []
         bad: list[str] = []
         spent = 0
@@ -254,12 +274,12 @@ class ArtifactCache:
         now = self.clock.now()
         if checked:
             self.db.writer.executemany(
-                "UPDATE cache_entries SET verified = ? WHERE sha256 = ?", [(now, s) for s in checked]
+                f"UPDATE {self.table} SET verified = ? WHERE sha256 = ?", [(now, s) for s in checked]
             )
         if bad:
             log.error("artifact cache corruption detected; removing objects", extra={"digests": bad})
             await asyncio.to_thread(self._move_to_trash, bad)
-            self.db.writer.executemany("DELETE FROM cache_entries WHERE sha256 = ?", [(s,) for s in bad])
+            self.db.writer.executemany(f"DELETE FROM {self.table} WHERE sha256 = ?", [(s,) for s in bad])
         return bad
 
     def _verify_file(self, sha256: str) -> bool | None:

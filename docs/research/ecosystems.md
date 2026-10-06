@@ -50,8 +50,10 @@ per-version publish time, and metadata it can filter without breaking a signatur
 
 ## Proposed phases
 
-1. **Next:** Cargo, NuGet, RubyGems (Go shipped); compatibility tests for pnpm/Yarn/Bun.
-2. **Then:** OCI pull-through (Maven/Gradle shipped), Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains.
+1. **Next:** Cargo (https://github.com/squirro/slowshield/issues/16) and OCI pull-through
+   (https://github.com/squirro/slowshield/issues/22); Go and Maven/Gradle shipped.
+2. **Then:** NuGet, RubyGems, Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains; compatibility tests for
+   pnpm/Yarn/Bun.
 3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).
 4. **Opt-in only:** apt/dnf/apk re-signing, Hex/Homebrew refuse-at-download, GitHub Releases forward proxy.
 

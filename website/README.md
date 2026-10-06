@@ -10,7 +10,7 @@ The public website: a static site in `src/`, built by `build.py` and served by C
 | `wrangler.jsonc` | Production Worker `slowshield-website` (custom domain `slowshield.org`) |
 | `wrangler.preview.jsonc` | Separate Worker `slowshield-website-preview` for per-PR previews |
 | `dns/*.zone` | Target DNS records of `slowshield.org` and the redirect zones `slowshield.net`, `slowshield.com` |
-| `package.json`, `package-lock.json` | Pinned Wrangler, locked against registry.npmjs.org |
+| `package.json`, `package-lock.json` | Pinned Wrangler, locked against registry.npmjs.org. `overrides` lifts `sharp` (via miniflare) to `^0.35.5` for GHSA-wq5f-xc86-pv6w; drop it once Wrangler's miniflare requires 0.35.5 or later |
 | `../.github/workflows/website.yml` | Build on every PR, preview for same-repository PRs, deploy on push to `main` |
 
 ## Work on it locally

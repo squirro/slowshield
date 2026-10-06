@@ -23,8 +23,11 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
+from slowshield.blocklist import PackageBlocks
+from slowshield.config import LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
+from slowshield.ecosystems.oci.service import delay_days
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
@@ -315,10 +318,11 @@ class UI:
                 "series": Q.package_series(conn, eco, name, w),
                 "events": Q.package_events(conn, eco, name, 50),
                 "blocks": Q.package_blocks(conn, eco, name),
+                "tags": Q.oci_tags(conn, name) if eco == "oci" else [],
             }
 
         data = await self._q(collect)
-        if data["pkg"] is None and not data["blocks"]:
+        if data["pkg"] is None and not data["blocks"] and not data["tags"]:
             return self._render("not_found.html.j2", request, what="package", name=name, eco=eco)
         versions = []
         for v in data["versions"]:
@@ -348,7 +352,8 @@ class UI:
             title=f"Downloads of {name}",
             height=160,
         )
-        held = sum(1 for v in versions if v["status"] == "held")
+        tags = _oci_tags(data["tags"], name, cfg, blocks, now)
+        held = sum(1 for v in [*versions, *tags] if v["status"] == "held")
         return self._render(
             "package.html.j2",
             request,
@@ -356,6 +361,7 @@ class UI:
             name=name,
             pkg=data["pkg"],
             versions=versions,
+            tags=tags,
             held=held,
             chart=chart,
             events=data["events"],
@@ -554,6 +560,34 @@ class UI:
             text = _read_doc(name)
             docs[name] = Markup(self.md.render(text)) if text else None  # noqa: S704 - markdown-it with html disabled
         return self._render("about.html.j2", request, docs=docs, info=build_info())
+
+
+def _oci_tags(rows: list[Any], repo: str, cfg: LoadedConfig, blocks: PackageBlocks, now: float) -> list[dict]:
+    """The package page's tag history: each digest a tag pointed to, judged as a pull by that tag would be, and which
+    one the tag serves now (the newest available one)."""
+    out: list[dict] = []
+    served: set[str] = set()
+    for r in rows:  # newest first within each tag
+        registry_time = r["registry_time"]
+        time = r["first_seen"] if registry_time is None else min(r["first_seen"], registry_time)
+        delay = delay_days(cfg, repo, r["digest"], r["tag"])
+        block = blocks.match("oci", r["digest"]) or blocks.match("oci", r["tag"])
+        until = None
+        if block is not None:
+            status = "blocked"
+        elif r["gone"] is not None:
+            status = "taken_down"
+        elif now - time < delay * DAY:
+            status, until = "held", time + delay * DAY
+        else:
+            status = "available"
+        serving = status == "available" and r["tag"] not in served
+        if serving:
+            served.add(r["tag"])
+        clock = "registry" if registry_time is not None and registry_time <= r["first_seen"] else "first seen"
+        out.append({**dict(r), "time": time, "clock": clock, "status": status, "until": until, "block": block,
+                    "serving": serving})  # fmt: skip
+    return out
 
 
 def _client_os(request: Request) -> str:

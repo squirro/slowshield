@@ -155,7 +155,7 @@ tr.withdrawn { opacity: 0.55; }
 .eco-cargo { background: var(--cargo); color: #000; }
 .eco-oci { background: var(--oci); }
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-.ev-blocked, .st-blocked, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
+.ev-blocked, .st-blocked, .st-taken_down, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
 .ev-tampered, .ev-integrity_mismatch, .st-tampered { background: var(--tamper-soft); color: var(--tamper); }
 .ev-fail_open, .ev-age_gate, .st-held, .feed-badge-missing_token { background: var(--hold-soft); color: var(--hold); }
 .st-available, .feed-badge-ok { background: var(--ok-soft); color: var(--ok); }

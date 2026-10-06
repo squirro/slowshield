@@ -28,7 +28,7 @@
 {% macro event_badge(t) -%}<span class="badge ev-{{ t }}">{{ event_label.get(t, t) }}</span>{%- endmacro %}
 
 {% macro status_badge(s) -%}
-<span class="badge st-{{ s }}">{{ {"available": "Available", "held": "Held back", "blocked": "Blocked", "tampered": "Tampered", "yanked": "Yanked", "unknown": "Unknown age"}.get(s, s) }}</span>
+<span class="badge st-{{ s }}">{{ {"available": "Available", "held": "Held back", "blocked": "Blocked", "tampered": "Tampered", "yanked": "Yanked", "unknown": "Unknown age", "taken_down": "Taken down"}.get(s, s) }}</span>
 {%- endmacro %}
 
 {% macro delta(d, invert=False) -%}
@@ -47,7 +47,7 @@
 {%- endmacro %}
 
 {% macro advisory(entry) -%}
-{% if entry.url %}<a href="{{ entry.url|href }}" rel="noopener noreferrer" target="_blank">{{ entry.advisory_id or "advisory" }}</a>{% else %}{{ entry.advisory_id or "—" }}{% endif %}
+{% if entry.url %}<a href="{{ entry.url|href }}" rel="noopener noreferrer" target="_blank">{{ entry.advisory_id or "advisory" }}</a>{% else %}{{ entry.advisory_id or ("administrator" if entry.source == "config" else "—") }}{% endif %}
 {%- endmacro %}
 
 {% macro pager(page, has_next, base_path, extra={}, target=None) -%}

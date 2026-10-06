@@ -27,6 +27,7 @@ from starlette.types import Receive, Scope, Send
 
 from slowshield.blocklist import BlockEntry, PackageBlocks
 from slowshield.cache.metadata import SingleFlight
+from slowshield.config import LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import ArtifactRecord, ArtifactRequest, AsgiResponse
 from slowshield.ecosystems.oci import reference as R
@@ -93,6 +94,16 @@ def blob_error(status: int, code: str, *, headers: dict[str, str] | None = None,
 
 
 GONE = Manifest("", "", b"", 0)  # what body() returns for a manifest the registry took down
+
+
+def delay_days(cfg: LoadedConfig, repo: str, digest: str, tag: str | None = None) -> float:
+    """Exceptions for a digest win over those for a tag, which win over those for the repository."""
+    if tag and cfg.has_version_rules(ECO, repo):
+        by_digest = cfg.delay_days_for(ECO, repo, digest)
+        if by_digest != cfg.delay_days_for(ECO, repo):
+            return by_digest
+        return cfg.delay_days_for(ECO, repo, tag)
+    return cfg.delay_days_for(ECO, repo, digest)
 
 
 @dataclass(slots=True)
@@ -199,14 +210,7 @@ class OciService:
         return None if row is None else (float(row[0]), row[1], row[2], row[3])
 
     def delay(self, repo: str, digest: str, tag: str | None = None) -> float:
-        """Exceptions for a digest win over those for a tag, which win over those for the repository."""
-        cfg = self.ctx.cfg
-        if tag and cfg.has_version_rules(ECO, repo):
-            by_digest = cfg.delay_days_for(ECO, repo, digest)
-            if by_digest != cfg.delay_days_for(ECO, repo):
-                return by_digest
-            return cfg.delay_days_for(ECO, repo, tag)
-        return cfg.delay_days_for(ECO, repo, digest)
+        return delay_days(self.ctx.cfg, repo, digest, tag)
 
     # ---- tags ----------------------------------------------------------------------------------------
 

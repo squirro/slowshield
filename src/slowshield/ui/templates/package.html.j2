@@ -25,7 +25,7 @@
   <div class="kpi"><div class="kpi-label">Data served</div><div class="kpi-value">{{ (pkg.bytes if pkg else 0)|bytes }}</div></div>
   <div class="kpi"><div class="kpi-label">First installed</div><div class="kpi-value small-value">{{ ago(pkg.first_served) if pkg and pkg.first_served else "never" }}</div></div>
   <div class="kpi"><div class="kpi-label">Last installed</div><div class="kpi-value small-value">{{ ago(pkg.last_served) if pkg and pkg.last_served else "never" }}</div></div>
-  <div class="kpi hold"><div class="kpi-label">Versions held back</div><div class="kpi-value">{{ held }}</div></div>
+  <div class="kpi hold"><div class="kpi-label">{{ "Digests" if eco == "oci" else "Versions" }} held back</div><div class="kpi-value">{{ held }}</div></div>
 </section>
 
 <section class="card">
@@ -33,6 +33,29 @@
   {{ chart }}
 </section>
 
+{% if eco == "oci" %}
+<section class="card">
+  <header class="card-head"><h2>Tags</h2><span class="muted small">every digest each tag pointed to, newest first</span></header>
+  {% if tags %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Tag</th><th>Digest</th><th>Status</th><th>Pushed</th><th>Available</th></tr></thead>
+    <tbody>
+    {% for t in tags %}
+      <tr class="row-{{ t.status }}">
+        <td><code>{{ t.tag }}</code></td>
+        <td><code title="{{ t.digest }}">{{ t.digest[:19] }}…</code></td>
+        <td>{{ m.status_badge(t.status) }}{% if t.serving %} <span class="badge">served for this tag</span>{% endif %}{% if t.block %} {{ m.advisory(t.block) }}{% endif %}</td>
+        <td>{{ t.time|ts }} <span class="muted small">({{ t.clock }})</span></td>
+        <td>{% if t.status == "held" %}<span class="countdown">in {{ (t.until - now)|duration }}</span>{% elif t.status == "available" %}yes{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">No tag pulled through SlowShield yet.</p>{% endif %}
+</section>
+{% else %}
 <section class="card">
   <header class="card-head"><h2>Versions</h2><span class="muted small">{{ versions|length }} known</span></header>
   {% if versions %}
@@ -56,6 +79,7 @@
   </div>
   {% else %}<p class="empty">No version metadata recorded yet.</p>{% endif %}
 </section>
+{% endif %}
 
 <div class="grid-2">
   <section class="card">

@@ -224,3 +224,15 @@ async def test_a_registry_outage_serves_from_history(start_app) -> None:
     r = await get(run, "/v2/quay.io/prometheus/other/manifests/latest")
     assert r.status_code == 503 and r.headers["retry-after"] == "10"
     run.fake.control("fail", prefix="/oci/quay.io/", status="0")
+
+
+async def test_the_package_page_shows_what_each_tag_pointed_to(running: Running) -> None:
+    assert (await get(running, "/v2/quay.io/prometheus/node-exporter/manifests/latest")).status_code == 200
+    page = (await running.client.get("/ui/packages/oci/quay.io/prometheus/node-exporter")).text
+    assert "<h2>Tags</h2>" in page and "<h2>Versions</h2>" not in page
+    trs = page.split('<tr class="row-')
+    digests = {v: index_digest("prometheus/node-exporter", v)[:19] for v in ("1.8.0", "1.8.1", "1.8.2")}
+    rows = {v: next(r for r in trs if d in r) for v, d in digests.items()}
+    assert rows["1.8.2"].startswith("held") and "(registry)" in rows["1.8.2"]
+    assert rows["1.8.1"].startswith("available") and "served for this tag" in rows["1.8.1"]
+    assert rows["1.8.0"].startswith("available") and "served for this tag" not in rows["1.8.0"]

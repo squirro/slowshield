@@ -148,6 +148,9 @@ class OciRegistry(msgspec.Struct, forbid_unknown_fields=True):
     # Where the time a tag got its digest comes from: the Docker Hub API, Quay's tag history, the `manifest` map in
     # gcr.io/Artifact Registry `tags/list`, MCR's catalog, or none (SlowShield's own first sight only).
     times: OciTimes = "none"
+    # The base URL of that time source when it isn't the registry itself: https://hub.docker.com (Docker Hub's API),
+    # https://quay.io, https://mcr.microsoft.com. gcr.io and Artifact Registry answer on the registry API.
+    times_url: str | None = None
     aliases: list[str] = []  # other names clients use for it (index.docker.io)
     enabled: bool = True
     # Credentials for its token service (Docker Hub: a username and a "Public Repo Read-only" access token), so
@@ -162,17 +165,21 @@ def _oci_builtin() -> dict[str, OciRegistry]:
             "https://registry-1.docker.io",
             ["auth.docker.io", "hub.docker.com", "production.cloudfront.docker.com",
              "production.cloudflare.docker.com", "*.r2.cloudflarestorage.com"],
-            "hub", ["index.docker.io", "registry-1.docker.io"],
+            "hub", "https://hub.docker.com", ["index.docker.io", "registry-1.docker.io"],
         ),
         "ghcr.io": OciRegistry("https://ghcr.io", ["pkg-containers.githubusercontent.com"]),
-        "quay.io": OciRegistry("https://quay.io", ["cdn*.quay.io", "quayio-production-s3.s3.amazonaws.com"], "quay"),
+        "quay.io": OciRegistry(
+            "https://quay.io", ["cdn*.quay.io", "quayio-production-s3.s3.amazonaws.com"], "quay", "https://quay.io"
+        ),
         "registry.k8s.io": OciRegistry(
             "https://registry.k8s.io",
             ["*-docker.pkg.dev", "cdn.registry.k8s.io", "prod-registry-k8s-io-*.s3.dualstack.*.amazonaws.com"],
             "gcr",
         ),
         "gcr.io": OciRegistry("https://gcr.io", ["storage.googleapis.com"], "gcr"),
-        "mcr.microsoft.com": OciRegistry("https://mcr.microsoft.com", ["*.data.mcr.microsoft.com"], "mcr"),
+        "mcr.microsoft.com": OciRegistry(
+            "https://mcr.microsoft.com", ["*.data.mcr.microsoft.com"], "mcr", "https://mcr.microsoft.com"
+        ),
         "public.ecr.aws": OciRegistry("https://public.ecr.aws", ["*.cloudfront.net"]),
     }  # fmt: skip
 
@@ -516,6 +523,12 @@ def _validate(cfg: Config) -> None:
                     f"upstreams.oci.registries.{name}: download_hosts entries must be host names or `*` patterns, "
                     f"got {host!r}"
                 )
+        if reg.times_url and not reg.times_url.startswith(("https://", "http://")):
+            raise ConfigError(
+                f"upstreams.oci.registries.{name}: times_url must be an http(s) URL, got {reg.times_url!r}"
+            )
+        if reg.times in ("hub", "quay", "mcr") and not reg.times_url:
+            raise ConfigError(f"upstreams.oci.registries.{name}: times = {reg.times!r} needs times_url")
         if bool(reg.username) != bool(reg.token_file):
             raise ConfigError(f"upstreams.oci.registries.{name}: username and token_file go together")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))

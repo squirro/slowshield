@@ -25,6 +25,14 @@ All notable changes to this project are documented here. The format is based on
 - The Setup page has Cargo: the `config.toml`, and a one-line command for CI and Dockerfiles (the official `rust`
   images set `CARGO_HOME`, so `~/.cargo` isn't read there).
 
+- The Setup page also sets the package managers' own release age, 3 days, where they have one (pip, uv, Poetry,
+  PDM, npm, pnpm, Yarn, Bun), as a second layer: a release then still waits on a machine that goes around
+  SlowShield, or when SlowShield serves a brand-new package because nothing is old enough yet (fail-open). In
+  normal use only SlowShield holds anything, since its delay is longer. A switch turns it off; each tool shows the
+  version it needs, and what older versions do with the setting. Never more than SlowShield's own delay. uv's and
+  PDM's go in `pyproject.toml` only: uv records the setting in `uv.lock` (an environment variable on one machine
+  breaks `uv sync --locked` on another), and PDM doesn't keep its command-line flag.
+
 ### Changed
 - Cargo is shown in `#DEA584` (GitHub's Rust colour) in the UI and in Grafana.
 

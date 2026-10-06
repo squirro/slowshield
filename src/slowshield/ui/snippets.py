@@ -13,6 +13,44 @@ PATH = Path(__file__).with_name("snippets.toml")
 # values; refusing anything else here means a regression fails the page instead of serving runnable shell syntax.
 _SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 
+# The second layer: package managers that can also refuse releases younger than this themselves. If a machine goes
+# around SlowShield, or SlowShield serves a brand-new package because nothing is old enough yet (fail-open), the
+# package manager still waits. Never more than SlowShield's own delay, so in normal use only SlowShield holds anything.
+CLIENT_AGE_DAYS = 3
+_AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
+
+
+def client_age_days(delay_days: float) -> int:
+    """The release age to suggest for package managers: CLIENT_AGE_DAYS, or less under a shorter delay (0: none)."""
+    return max(0, min(CLIENT_AGE_DAYS, int(delay_days)))
+
+
+def client_age_env(age_days: int) -> list[tuple[str, str]]:
+    """The environment variables that make pip and npm wait `age_days` themselves (none for 0). Not uv's
+    UV_EXCLUDE_NEWER: uv records it in uv.lock, so it must be the same wherever the project is locked or synced."""
+    if age_days <= 0:
+        return []
+    return [("PIP_UPLOADED_PRIOR_TO", f"P{age_days}D"), ("npm_config_min_release_age", str(age_days))]
+
+
+def ci_env(pypi: str, npm: str, go: str, *, age_days: int) -> str:
+    """The `env:` block for a GitHub Actions workflow or job."""
+    pairs = [("PIP_INDEX_URL", pypi), ("UV_DEFAULT_INDEX", pypi), ("npm_config_registry", npm), ("GOPROXY", go)]
+    pairs += client_age_env(age_days)
+    return "# GitHub Actions (workflow or job)\nenv:\n" + "\n".join(f"  {k}: {safe(v)}" for k, v in pairs)
+
+
+def dockerfile_env(pypi: str, npm: str, go: str, *, age_days: int) -> str:
+    """One `ENV` instruction for a Dockerfile."""
+    pairs = [("PIP_INDEX_URL", pypi), ("UV_DEFAULT_INDEX", pypi), ("npm_config_registry", npm), ("GOPROXY", go)]
+    pairs += client_age_env(age_days)
+    return "ENV " + " \\\n    ".join(f"{k}={safe(v)}" for k, v in pairs)
+
+
+def without_client_age(code: str) -> str:
+    """A shell snippet without the lines that set the package managers' own release age."""
+    return "\n".join(line for line in code.split("\n") if not any(var in line for var in _AGE_VARS))
+
 
 @dataclass(frozen=True, slots=True)
 class Shell:
@@ -20,6 +58,7 @@ class Shell:
     label: str
     os: str
     code: str
+    plain: str = ""  # `code` without the package managers' own release age
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,9 +74,14 @@ def safe(value: str) -> str:
     return value
 
 
-def render(code: str, *, pypi: str, npm: str, go: str, py_pkg: str = "requests") -> str:
-    """Fill the placeholders. Plain replacement: the shell code itself may contain braces."""
-    for key, value in (("pypi", pypi), ("npm", npm), ("go", go), ("py_pkg", py_pkg)):
+def render(
+    code: str, *, pypi: str, npm: str, go: str, py_pkg: str = "requests", age_days: int = CLIENT_AGE_DAYS
+) -> str:
+    """Fill the placeholders. Plain replacement: the shell code itself may contain braces. With `age_days` 0, the
+    lines that set the package managers' own release age are left out."""
+    if age_days <= 0:
+        code = without_client_age(code)
+    for key, value in (("pypi", pypi), ("npm", npm), ("go", go), ("py_pkg", py_pkg), ("age_days", str(age_days))):
         code = code.replace("{" + key + "}", safe(value))
     return code
 
@@ -57,23 +101,79 @@ class Tool:
     ecosystem: str  # an id from slowshield.ecosystems
     keywords: str
     snippets: tuple[tuple[str, str], ...]  # (label, code)
+    age: str = ""  # what the tool's own release age needs (shown while it is switched on); "" when it has none
 
 
-def tools(pypi: str, npm: str, go: str, maven: str, cargo: str) -> tuple[Tool, ...]:
-    """Per-tool setup (Setup page only), with this instance's URLs. `maven` is the base of the Maven repositories
-    (`<public_url>/maven`), `cargo` the sparse index (`<public_url>/cargo/`)."""
-    pypi, npm, go, maven, cargo = safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo)
+# The first version with a relative release-age setting, and what older ones do with it (checked 2026-10-06).
+AGE_SUPPORT = {
+    "pip": "pip 26.1 or later (pip 26.0 fails with it, 25 and older ignore it). Installs from pylock.toml fail "
+    "with it, because pip doesn't record upload times there",
+    "uv": "uv 0.9.17 or later (older versions fail with it). In pyproject.toml, not the environment: uv records it in "
+    "uv.lock, so a different value elsewhere breaks uv sync --locked",
+    "Poetry": "Poetry 2.4 or later",
+    "PDM": "PDM 2.27 or later. In pyproject.toml, not as pdm lock --exclude-newer, which isn't kept and re-resolves "
+    "every pin",
+    "npm": "npm 11.10 or later (11.0 to 11.9 warn about an unknown setting, 10 ignores it)",
+    "pnpm": "pnpm 10.16 or later (older versions ignore it)",
+    "Yarn": "Yarn 4.10 or later (older versions refuse to run with it)",
+    "Bun": "Bun 1.3 or later (older versions ignore it)",
+}
+NO_AGE = {
+    "Cargo": "Cargo's own setting (min-publish-age) isn't stable yet: SlowShield is the only layer.",
+}
+NO_AGE_DEFAULT = "No release-age setting of its own: SlowShield is the only layer."
+
+
+def tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int = CLIENT_AGE_DAYS) -> tuple[Tool, ...]:
+    """Per-tool setup (Setup page only), with this instance's URLs and, unless `age_days` is 0, each tool's own
+    release age. `maven` is the base of the Maven repositories (`<public_url>/maven`), `cargo` the sparse index
+    (`<public_url>/cargo/`)."""
+    urls = (safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo))
+    if age_days <= 0:
+        return _tools(*urls, age_days=0)
+    aged = _tools(*urls, age_days=age_days)
+    return tuple(
+        Tool(t.name, t.ecosystem, t.keywords, t.snippets, AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT))
+        for t in aged
+    )
+
+
+def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int) -> tuple[Tool, ...]:
+    # Units differ per tool: npm's min-release-age and Poetry's solver.min-release-age count days (npm 11.10 to 12.1:
+    # `before = now - 86400000 * min-release-age`), pnpm's minimumReleaseAge minutes, Bun's seconds; pip, uv, Yarn and
+    # PDM take a duration (P3D, 3d).
+    d = age_days
+
+    def aged(*parts: tuple[str, str]) -> tuple[tuple[str, str], ...]:
+        """`parts`, without those that only set the release age when `d` is 0 (their label starts with "+")."""
+        return tuple((label.removeprefix("+"), code) for label, code in parts if d or not label.startswith("+"))
+
+    def line(text: str) -> str:
+        return f"\n{text}" if d else ""
+
     sbt_insecure = ", allowInsecureProtocol" if maven.startswith("http://") else ""
     secure = "false" if pypi.startswith("http://") else "true"
     yarn_http = "\nunsafeHttpWhitelist:\n  - localhost" if npm.startswith("http://") else ""
     return (
-        Tool("pip", "pypi", "pip pip.conf pip.ini python", (("command", f"pip config set global.index-url {pypi}"),)),
+        Tool(
+            "pip",
+            "pypi",
+            "pip pip.conf pip.ini python",
+            aged(
+                ("command", f"pip config set global.index-url {pypi}"),
+                ("+release age", f"pip config set global.uploaded-prior-to P{d}D"),
+            ),
+        ),
         Tool(
             "uv",
             "pypi",
             "uv astral pyproject python",
             (
-                ("pyproject.toml", f'[[tool.uv.index]]\nname = "slowshield"\nurl = "{pypi}"\ndefault = true'),
+                (
+                    "pyproject.toml",
+                    f'[[tool.uv.index]]\nname = "slowshield"\nurl = "{pypi}"\ndefault = true'
+                    + (f'\n\n[tool.uv]\nexclude-newer = "P{d}D"' if d else ""),
+                ),
                 ("environment", f"export UV_DEFAULT_INDEX={pypi}"),
             ),
         ),
@@ -81,13 +181,22 @@ def tools(pypi: str, npm: str, go: str, maven: str, cargo: str) -> tuple[Tool, .
             "Poetry",
             "pypi",
             "poetry python pyproject",
-            (("command", f"poetry source add --priority=primary slowshield {pypi}"),),
+            aged(
+                ("command", f"poetry source add --priority=primary slowshield {pypi}"),
+                ("+release age", f"poetry config solver.min-release-age {d}"),
+            ),
         ),
         Tool(
             "PDM",
             "pypi",
             "pdm python pyproject",
-            (("pyproject.toml", f'[[tool.pdm.source]]\nname = "pypi"\nurl = "{pypi}"'),),
+            (
+                (
+                    "pyproject.toml",
+                    f'[[tool.pdm.source]]\nname = "pypi"\nurl = "{pypi}"'
+                    + (f'\n\n[tool.pdm.resolution]\nexclude-newer = "{d}d"' if d else ""),
+                ),
+            ),
         ),
         Tool(
             "Pipenv",
@@ -99,16 +208,42 @@ def tools(pypi: str, npm: str, go: str, maven: str, cargo: str) -> tuple[Tool, .
             "npm",
             "npm",
             "npm npmrc node javascript",
-            (("command", f"npm config set registry {npm}"), (".npmrc (project or ~)", f"registry={npm}")),
+            (
+                ("command", f"npm config set registry {npm}" + line(f"npm config set min-release-age {d}")),
+                (".npmrc (project or ~)", f"registry={npm}" + line(f"min-release-age={d}")),
+            ),
         ),
-        Tool("pnpm", "npm", "pnpm npmrc node javascript", (("command", f"pnpm config set registry {npm}"),)),
+        Tool(
+            "pnpm",
+            "npm",
+            "pnpm npmrc node javascript workspace",
+            aged(
+                ("command", f"pnpm config set registry {npm}"),
+                ("+pnpm-workspace.yaml", f"minimumReleaseAge: {d * 1440}  # {d} days, in minutes"),
+            ),
+        ),
         Tool(
             "Yarn",
             "npm",
             "yarn berry yarnrc node javascript",
-            ((".yarnrc.yml (Yarn Berry)", f'npmRegistryServer: "{npm}"{yarn_http}'),),
+            (
+                (
+                    ".yarnrc.yml (Yarn Berry)",
+                    f'npmRegistryServer: "{npm}"{yarn_http}' + line(f'npmMinimalAgeGate: "{d}d"'),
+                ),
+            ),
         ),
-        Tool("Bun", "npm", "bun bunfig node javascript", (("bunfig.toml", f'[install]\nregistry = "{npm}"'),)),
+        Tool(
+            "Bun",
+            "npm",
+            "bun bunfig node javascript",
+            (
+                (
+                    "bunfig.toml",
+                    f'[install]\nregistry = "{npm}"' + line(f"minimumReleaseAge = {d * 86400}  # {d} days, in seconds"),
+                ),
+            ),
+        ),
         Tool(
             "Go",
             "go",
@@ -221,8 +356,17 @@ def maven_settings(maven: str) -> str:
     )
 
 
-def for_instance(pypi: str, npm: str, go: str) -> Snippets:
-    """The snippets with this instance's URLs."""
+def for_instance(pypi: str, npm: str, go: str, age_days: int = CLIENT_AGE_DAYS) -> Snippets:
+    """The snippets with this instance's URLs; each shell also without the package managers' own release age."""
     s = load()
-    shells = tuple(Shell(sh.id, sh.label, sh.os, render(sh.code, pypi=pypi, npm=npm, go=go)) for sh in s.shells)
+    shells = tuple(
+        Shell(
+            sh.id,
+            sh.label,
+            sh.os,
+            render(sh.code, pypi=pypi, npm=npm, go=go, age_days=age_days),
+            render(sh.code, pypi=pypi, npm=npm, go=go, age_days=0),
+        )
+        for sh in s.shells
+    )
     return Snippets(shells, render(s.try_python, pypi=pypi, npm=npm, go=go))

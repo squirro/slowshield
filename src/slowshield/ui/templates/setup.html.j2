@@ -1,8 +1,13 @@
 {% extends "base.html.j2" %}
 {% block title %}Setup{% endblock %}
-{% macro snippet(code, label="") -%}
-<div class="snippet">{% if label %}<span class="snippet-label">{{ label }}</span>{% endif %}
+{% macro snippet(code, label="", age="") -%}
+<div class="snippet"{% if age %} data-age="{{ age }}"{% if age == "off" %} hidden{% endif %}{% endif %}>
+{%- if label %}<span class="snippet-label">{{ label }}</span>{% endif %}
 <pre><code>{{ code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
+{%- endmacro %}
+{#- `code` with the package managers' own release age, and `plain` without; the switch shows one of them. -#}
+{% macro aged(code, plain, label="") -%}
+{%- if code == plain %}{{ snippet(code, label) }}{% else %}{{ snippet(code, label, "on") }}{{ snippet(plain, label, "off") }}{% endif -%}
 {%- endmacro %}
 {% set days = cfg.default_delay_days|round(1)|replace(".0", "") %}
 {% block content %}
@@ -25,11 +30,24 @@
     <code>{{ secure.cargo }}</code>.</p>
 </section>
 {% endif %}
+{% if age_days %}
+<section class="card age-layer">
+  <label class="age-switch"><input type="checkbox" data-age-toggle checked disabled>
+    <span><strong>Two layers:</strong> package managers also wait {{ age_days }} days on their own</span></label>
+  <p class="muted small">SlowShield holds new releases for {{ days }} days. With this on, the snippets below also set the
+    release age of every package manager that has one, to {{ age_days }} days. Normally that never triggers, because
+    SlowShield is stricter. But a release still waits if a machine or build goes around SlowShield, or if SlowShield
+    serves a brand-new package because none of its versions is old enough yet. Per tool shows the version each package
+    manager needs.</p>
+</section>
+{% endif %}
 <ol class="setup-steps">
   <li class="card">
     <header class="card-head"><h2><span class="step">1</span> Use it for everything</h2></header>
-    <p class="muted">Four environment variables in your shell profile: pip, uv, npm and go then use SlowShield in
-      every new terminal. Remove the lines to switch it off.</p>
+    <p class="muted">Environment variables in your shell profile: pip, uv, npm and go then use SlowShield in every new
+      terminal{% if age_days %}<span data-age="on">, and pip and npm also wait {{ age_days }} days themselves
+      (pip 26.1 and npm 11.10 or later; pip 26.0 refuses to run with it). For uv, set it in each project's
+      <code>pyproject.toml</code> (Per tool)</span>{% endif %}. Remove the lines to switch it off.</p>
     <div class="tabs" data-tabs="shell">
       <div class="tablist" role="tablist" aria-label="Shell">
         {%- for sh in snippets.shells %}
@@ -38,11 +56,12 @@
         {%- endfor %}
       </div>
       {%- for sh in snippets.shells %}
-      <div class="snippet" role="tabpanel" id="sh-{{ sh.id }}" aria-labelledby="t-sh-{{ sh.id }}"{% if sh.id != shell %} hidden{% endif %}>
-<pre><code>{{ sh.code }}</code></pre><button type="button" class="copy" data-copy>Copy</button></div>
+      <div role="tabpanel" id="sh-{{ sh.id }}" aria-labelledby="t-sh-{{ sh.id }}"{% if sh.id != shell %} hidden{% endif %}>
+        {{- aged(sh.code, sh.plain) -}}
+      </div>
       {%- endfor %}
     </div>
-    {% if os == "windows" %}<p class="muted small">On Windows, set the four variables under
+    {% if os == "windows" %}<p class="muted small">On Windows, set these variables under
       <em>System → Environment Variables</em>, or use the bash tab in WSL.</p>{% endif %}
   </li>
   <li class="card">
@@ -72,10 +91,17 @@
     pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier or Cargo.</p>
   <div class="tool-results">
     {%- for t in tools %}
+    {%- set plain = tools_plain[loop.index0] %}
     <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}" data-tool-name="{{ t.name }}">
       <h3>{{ t.name }}{% if not enabled[t.ecosystem] %}
         <span class="badge">disabled</span>{% endif %}</h3>
+      {%- if t.age %}<p class="muted small age-note" data-age="on">Release age: {{ t.age }}</p>{% endif %}
+      {%- if t.snippets == plain.snippets %}
       {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}
+      {%- else %}
+      <div data-age="on">{% for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}</div>
+      <div data-age="off" hidden>{% for label, code in plain.snippets %}{{ snippet(code, label) }}{% endfor %}</div>
+      {%- endif %}
     </div>
     {%- endfor %}
   </div>
@@ -83,8 +109,8 @@
 <section class="card">
   <header class="card-head"><h2>CI and containers</h2></header>
   <div class="grid-2">
-    {{ snippet("# GitHub Actions (workflow or job)\nenv:\n  PIP_INDEX_URL: " ~ pypi_index ~ "\n  UV_DEFAULT_INDEX: " ~ pypi_index ~ "\n  npm_config_registry: " ~ npm_registry ~ "\n  GOPROXY: " ~ go_proxy, "CI") }}
-    {{ snippet("ENV PIP_INDEX_URL=" ~ pypi_index ~ " \\\n    UV_DEFAULT_INDEX=" ~ pypi_index ~ " \\\n    npm_config_registry=" ~ npm_registry ~ " \\\n    GOPROXY=" ~ go_proxy, "Dockerfile") }}
+    <div>{{ aged(ci, ci_plain, "CI") }}</div>
+    <div>{{ aged(dockerfile, dockerfile_plain, "Dockerfile") }}</div>
   </div>
   <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
     the container itself. Block direct access to pypi.org, files.pythonhosted.org, registry.npmjs.org,
@@ -97,6 +123,12 @@
   <header class="card-head"><h2>What to expect</h2></header>
   <ul>
     <li><strong>Too new:</strong> versions younger than the delay are hidden from indexes; downloading one directly (e.g. from a lockfile) returns <code>403</code> with a <code>Retry-After</code> header.</li>
+    {%- if age_days %}
+    <li data-age="on"><strong>Exceptions:</strong> when an administrator lets a release through early, package managers
+      with their own release age still wait {{ age_days }} days for it. Use their exclude list for that package
+      (<code>min-release-age-exclude</code> in npm, <code>exclude-newer-package</code> in uv,
+      <code>solver.min-release-age-exclude</code> in Poetry), or switch the second layer off for that build.</li>
+    {%- endif %}
     <li><strong>Malware:</strong> packages or versions on the blocklist return <code>451 Unavailable For Legal Reasons</code> with the advisory in the body.</li>
     <li><strong>Go:</strong> Go builds the exact versions <code>go.mod</code> requires, so a requirement that is too new
       fails with <code>403</code> instead of picking an older version. Leave <code>,direct</code> and <code>|</code>

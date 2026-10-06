@@ -180,6 +180,11 @@ tr.withdrawn { opacity: 0.55; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: -6px; }
 
 .snippet { position: relative; margin-bottom: 12px; }
+.age-switch { display: flex; gap: 10px; align-items: baseline; cursor: pointer; margin-bottom: 6px; }
+.age-switch input { accent-color: var(--primary); width: 1rem; height: 1rem; flex: none; transform: translateY(2px); }
+.age-switch input:disabled { cursor: default; }
+.age-layer p { margin: 0; }
+.age-note { margin: -4px 0 8px; }
 .snippet-label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
 .copy { position: absolute; right: 8px; bottom: 8px; font-size: 0.75rem; border: 1px solid var(--border); background: var(--surface);
   color: var(--text); border-radius: 6px; padding: 2px 8px; cursor: pointer; }

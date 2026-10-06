@@ -52,6 +52,7 @@ SITE_URLS = {
     "npm": "http://localhost:8080/npm/",
     "go": "http://localhost:8080/go",
     "py_pkg": "requests",
+    "age_days": "3",  # the package managers' own release age (snippets.CLIENT_AGE_DAYS)
 }
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # html + css + js, uncompressed

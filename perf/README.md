@@ -45,8 +45,8 @@ gets `perf/slowshield.toml` without the `[upstreams.go]` and `[upstreams.maven]`
 In CI, every pull request compares its image against one built from its base branch (`--profile quick`,
 3 rounds, informational: the report goes to the job summary and the `perf-<arch>` artifact, and doesn't fail the
 build). It runs by default; the `skip-perf` label skips it and the micro benchmarks, for a change that can't affect
-performance (the label is read when the job runs, so adding it and re-running the job is enough). Releases don't
-run it again. The gate (`--gate`, thresholds in `thresholds.toml`) is for running by hand, for example against
+performance (the label is read when the job runs, so adding it and re-running the job is enough). Release pull
+requests (branches `release-*`, version bumps only) skip it, and the release itself doesn't run it again. The gate (`--gate`, thresholds in `thresholds.toml`) is for running by hand, for example against
 the current release before tagging a performance-sensitive change:
 `uv run python -m perf run --gate --candidate slowshield:dev --baseline ghcr.io/squirro/slowshield:latest`.
 

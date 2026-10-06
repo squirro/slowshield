@@ -28,7 +28,7 @@ uvx zizmor==1.30.1 --persona=pedantic .github/   # when touching workflows
 - **Performance matters.** Keep blocking work off the event loop, avoid per-request allocations of large
   objects, and run `uv run python -m perf micro` before/after changes to hot paths. Every pull request
   compares the macro benchmarks against its base branch (see `perf/README.md`); add the `skip-perf` label
-  when a change can't affect performance.
+  when a change can't affect performance. Release pull requests (branches `release-*`) skip it.
 - **Containers** use Amazon Linux 2023 only (builder stages too), pinned by digest.
 - **Workflows** must pass zizmor's pedantic persona: SHA-pinned actions with version comments, explicit
   minimal permissions with comments, no `${{ }}` inside `run:`, `persist-credentials: false`.

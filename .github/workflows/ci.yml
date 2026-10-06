@@ -215,8 +215,9 @@ jobs:
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:ci
         run: uv run pytest -m e2e tests/e2e -v
 
-      # The performance comparison runs on every pull request unless it has the skip-perf label. The label is
-      # read live rather than from the event, so adding it and re-running the job is enough.
+      # The performance comparison runs on every pull request unless it has the skip-perf label or is a release
+      # pull request (branch release-*: version bumps only). The label is read live rather than from the event,
+      # so adding it and re-running the job is enough.
       - name: Performance comparison wanted?
         id: perf
         if: github.event_name == 'pull_request'
@@ -224,9 +225,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          if gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx skip-perf; then
+          if [[ "$HEAD_REF" == release-* ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release pull request: no performance comparison or micro benchmarks"
+          elif gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx skip-perf; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::skip-perf label: no performance comparison or micro benchmarks"
           else

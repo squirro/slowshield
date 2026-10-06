@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-10-06
+
 ### Added
 - Maven repositories at `/maven/` for Maven, Gradle, sbt and Coursier ([docs/design/maven.md](docs/design/maven.md),
   https://github.com/squirro/slowshield/issues/18). `/maven/all/` serves Maven Central and Google Maven behind one
@@ -28,8 +30,9 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 - Maven is shown in Java orange `#ED8B00` (Maven's own red is too close to npm's), in the UI and in Grafana.
 - CI: the performance comparison on pull requests (k6 against the base branch, and the micro benchmarks) can be
-  skipped with the `skip-perf` label. Releases no longer run a performance gate against the previous release,
-  only the end-to-end tests and the observability smoke test on the release images.
+  skipped with the `skip-perf` label, and release pull requests (branches `release-*`) skip it. Releases no longer
+  run a performance gate against the previous release, only the end-to-end tests and the observability smoke test
+  on the release images.
 
 ## [0.0.5] - 2026-10-05
 

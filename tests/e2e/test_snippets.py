@@ -34,6 +34,9 @@ GOSUMDB=off GOFLAGS=-modcacherw GOMODCACHE="/tmp/gomod-$SHELLNAME" go mod downlo
   2>/dev/null | grep -q '"Version": "v1.1.0"' && echo "OK $SHELLNAME go"
 [ "$PIP_INDEX_URL" = "$WANT_PYPI" ] && [ "$UV_DEFAULT_INDEX" = "$WANT_PYPI" ] \
   && [ "$npm_config_registry" = "$WANT_NPM" ] && [ "$GOPROXY" = "$WANT_GO" ] && echo "OK $SHELLNAME env"
+# The second layer: pip, uv and npm's own release age (pip 23 and this npm ignore or warn about it, and still work).
+[ "$PIP_UPLOADED_PRIOR_TO" = P3D ] && [ "$UV_EXCLUDE_NEWER" = P3D ] && [ "$npm_config_min_release_age" = 3 ] \
+  && echo "OK $SHELLNAME age"
 """
 
 RUNNER = r"""
@@ -71,6 +74,8 @@ def test_published_snippets_work(stack: Stack, tmp_path: Path) -> None:
     )  # fmt: skip
     out = res.stdout
     assert "pip 23.0.1" in out, out + res.stderr
-    expected = ["OK try pip"] + [f"OK {sh.id} {check}" for sh in s.shells for check in ("pip", "npm", "go", "env")]
+    expected = ["OK try pip"] + [
+        f"OK {sh.id} {check}" for sh in s.shells for check in ("pip", "npm", "go", "env", "age")
+    ]
     missing = [line for line in expected if line not in out.splitlines()]
     assert not missing, f"{missing}\n--- stdout\n{out}\n--- stderr\n{res.stderr[-3000:]}"

@@ -44,6 +44,23 @@
     }
   });
 
+  // Two layers (Setup page): the snippets set the package managers' own release age too, unless switched off. Each
+  // snippet that differs is rendered both ways (data-age="on"/"off"); the visitor's choice is kept. Without JS the
+  // "on" versions show and the switch stays disabled.
+  const AGE_KEY = "slowshield-client-age";
+  document.querySelectorAll("[data-age-toggle]").forEach((box) => {
+    const apply = () => {
+      for (const el of document.querySelectorAll("[data-age]")) el.hidden = (el.dataset.age === "on") !== box.checked;
+    };
+    try { if (localStorage.getItem(AGE_KEY) === "off") box.checked = false; } catch (_) { /* storage blocked */ }
+    box.disabled = false;
+    box.addEventListener("change", () => {
+      apply();
+      try { localStorage.setItem(AGE_KEY, box.checked ? "on" : "off"); } catch (_) { /* storage blocked: fine */ }
+    });
+    apply();
+  });
+
   // Tool finder (Setup page): typing shows the tools whose name or keywords contain the text; Enter completes to
   // the first match, Escape clears. Without JS every tool stays visible.
   document.querySelectorAll("[data-tool-finder]").forEach((finder) => {

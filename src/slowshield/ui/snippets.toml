@@ -1,10 +1,12 @@
 # Client setup snippets, one source for the Setup page (/ui/setup) and slowshield.org (website/build.py).
 # Placeholders: {pypi} PyPI index URL, {npm} npm registry URL, {go} Go module proxy URL, {py_pkg} example Python
-# package.
+# package, {age_days} the release age pip, uv and npm enforce themselves (the second layer: the Setup page can
+# leave those lines out, see snippets.without_client_age).
 # tests/e2e/test_snippets.py runs every snippet below in bash, zsh and fish containers against the e2e stack.
 
-# Global setup: pip, uv, npm and go use SlowShield in every new terminal. GOPROXY has no `,direct`: with it,
-# the go command fetches from the origin whenever the proxy says 404. `os` preselects the tab
+# Global setup: pip, uv, npm and go use SlowShield in every new terminal, and pip, uv and npm also refuse releases
+# younger than {age_days} days themselves (pip 26.1, uv 0.9.17, npm 11.10 or later). GOPROXY has no `,direct`: with
+# it, the go command fetches from the origin whenever the proxy says 404. `os` preselects the tab
 # (macOS defaults to zsh); the visitor's last choice wins.
 [[shell]]
 id = "bash"
@@ -16,6 +18,9 @@ export PIP_INDEX_URL={pypi}
 export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
+export PIP_UPLOADED_PRIOR_TO=P{age_days}D
+export UV_EXCLUDE_NEWER=P{age_days}D
+export npm_config_min_release_age={age_days}
 EOF
 source ~/.bashrc"""
 
@@ -30,6 +35,9 @@ export PIP_INDEX_URL={pypi}
 export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
+export PIP_UPLOADED_PRIOR_TO=P{age_days}D
+export UV_EXCLUDE_NEWER=P{age_days}D
+export npm_config_min_release_age={age_days}
 EOF
 source ~/.bash_profile"""
 
@@ -43,6 +51,9 @@ export PIP_INDEX_URL={pypi}
 export UV_DEFAULT_INDEX={pypi}
 export npm_config_registry={npm}
 export GOPROXY={go}
+export PIP_UPLOADED_PRIOR_TO=P{age_days}D
+export UV_EXCLUDE_NEWER=P{age_days}D
+export npm_config_min_release_age={age_days}
 EOF
 source ~/.zshrc"""
 
@@ -54,7 +65,10 @@ code = """
 set -Ux PIP_INDEX_URL {pypi}
 set -Ux UV_DEFAULT_INDEX {pypi}
 set -Ux npm_config_registry {npm}
-set -Ux GOPROXY {go}"""
+set -Ux GOPROXY {go}
+set -Ux PIP_UPLOADED_PRIOR_TO P{age_days}D
+set -Ux UV_EXCLUDE_NEWER P{age_days}D
+set -Ux npm_config_min_release_age {age_days}"""
 
 # One install through SlowShield, in a throwaway virtualenv: Homebrew and current Linux Pythons refuse pip
 # installs outside one (PEP 668).

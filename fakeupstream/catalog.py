@@ -517,6 +517,13 @@ class Catalog:
         self.add_maven("google", "androidx.test:core", "1.6.0", 3)
         self.add_maven("portal", "com.example.plugin:com.example.plugin.gradle.plugin", "1.0", 50, jar=False)
         self.add_maven("snapshots", "org.example:nightly", "2.0-SNAPSHOT", 0)
+        self.add_maven("snapshots", "org.example:lib-SNAPSHOT", "1.0.0", 1)  # a release, named like a snapshot
+        for odd in ("doctype", "anonymous", "prefixed"):  # see maven_metadata() in app.py
+            self.add_maven("central", f"org.example:{odd}", "1.0.0", 100)
+            self.add_maven("central", f"org.example:{odd}", "1.1.0", 1)
+        for i in range(25):  # more new versions than one metadata evaluation looks up
+            self.add_maven("central", "org.example:busy", f"2.{i}.0", 1)
+        self.add_maven("central", "org.example:busy", "1.0.0", 100)
         if self.perf:
             self.add_pypi("big-wheel", "1.0.0", 30, big=100 * 1024 * 1024)
             for i in range(500):

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from slowshield import versions
+from slowshield.blocklist import BlockEntry, PackageBlocks
 from slowshield.ecosystems.maven import layout as L
 from slowshield.ecosystems.maven import metadata as MD
 from slowshield.ecosystems.maven.version import compare
@@ -57,6 +59,31 @@ def test_layout(path: str, kind: str | None) -> None:
     assert (parsed.kind if parsed else None) == kind
 
 
+def test_only_the_version_makes_a_file_a_snapshots() -> None:
+    def req(path: str) -> L.MavenRequest:
+        parsed = L.parse(path)
+        assert parsed is not None, path
+        return parsed
+
+    assert req("org/x/lib/1.0-SNAPSHOT/lib-1.0-SNAPSHOT.jar").snapshot
+    release = req("org/x/lib-SNAPSHOT/1.0.0/lib-SNAPSHOT-1.0.0.jar")  # an artifactId named like a snapshot
+    assert not release.snapshot and not release.snapshot_metadata
+    # Metadata in a snapshot-named directory: a snapshot's builds or such an artifact's versions (content decides).
+    for path in ("org/x/lib/1.0-SNAPSHOT/maven-metadata.xml", "org/x/lib-SNAPSHOT/maven-metadata.xml"):
+        assert req(path).snapshot_metadata and not req(path).snapshot
+    assert not req("org/x/lib/maven-metadata.xml").snapshot_metadata
+
+
+def test_equal_maven_versions_match_one_advisory() -> None:
+    assert len({versions.canonical("maven", v) for v in ("1.0", "1.0.0", "1-ga", "1.0-final", " 1.0 ")}) == 1
+    assert versions.canonical("maven", "1-cr1") == versions.canonical("maven", "1-RC1")
+    assert versions.canonical("maven", "1.0.1") != versions.canonical("maven", "1.0")
+    advisory = BlockEntry("maven", "org.x:lib", "1.0", None, "osv", "MAL-1", None, None)
+    blocks = PackageBlocks("maven", [advisory])
+    assert blocks.match("maven", "1.0.0") is advisory and blocks.match("maven", "1-ga") is advisory
+    assert blocks.match("maven", "1.0.1") is None and advisory.matches("1.0.0")
+
+
 METADATA = b"""<?xml version="1.0" encoding="UTF-8"?>
 <metadata>
   <groupId>org.x</groupId>
@@ -96,4 +123,28 @@ def test_metadata_render_changes_only_versions_latest_and_release() -> None:
     ],
 )
 def test_metadata_refuses_dtds_entities_and_broken_xml(attack: bytes) -> None:
-    assert MD.parse(attack) is None
+    assert MD.parse(attack) is None and MD.kind(attack) is None
+
+
+def test_metadata_kinds() -> None:
+    assert MD.kind(METADATA) == "versions"
+    snapshot = b"<metadata><version>1.0-SNAPSHOT</version><versioning><snapshot><buildNumber>3</buildNumber>"
+    assert MD.kind(snapshot + b"</snapshot></versioning></metadata>") == "snapshot"
+    assert MD.kind(b"<metadata><plugins><plugin><prefix>p</prefix></plugin></plugins></metadata>") == "plugins"
+    assert MD.kind(b"<html><body>not found</body></html>") is None
+    # No groupId/artifactId: still an artifact's versions (SlowShield goes by the path, not by these).
+    anonymous = METADATA.replace(b"  <groupId>org.x</groupId>\n  <artifactId>y</artifactId>\n", b"")
+    md = MD.parse(anonymous)
+    assert md is not None and md.group is None and md.versions == ("1.0.0", "1.1.0", "1.2.0")
+
+
+def test_metadata_render_refuses_what_it_cannot_filter() -> None:
+    prefixed = (
+        b'<m:metadata xmlns:m="http://maven.apache.org/METADATA/1.1.0"><m:versioning><m:versions>'
+        b"<m:version>1.0.0</m:version><m:version>1.1.0</m:version></m:versions></m:versioning></m:metadata>"
+    )
+    md = MD.parse(prefixed)
+    assert md is not None and md.versions == ("1.0.0", "1.1.0")
+    with pytest.raises(MD.MetadataError):
+        MD.render(md, {"1.0.0"}, "1.0.0", "1.0.0")  # the regex edits can't see <m:version>
+    assert MD.render(md, {"1.0.0", "1.1.0"}, None, None) == prefixed  # nothing to hold: unchanged

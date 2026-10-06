@@ -35,7 +35,15 @@ class MavenRequest:
 
     @property
     def snapshot(self) -> bool:
-        return bool(self.version and is_snapshot(self.version)) or bool(self.artifact and is_snapshot(self.artifact))
+        """A file of a snapshot version. Only the version decides: an artifactId may end in `-SNAPSHOT` too, and
+        its releases are judged like any other."""
+        return bool(self.version and is_snapshot(self.version))
+
+    @property
+    def snapshot_metadata(self) -> bool:
+        """Metadata in a directory named like a snapshot version (for metadata, `artifact` is that directory): a
+        snapshot's builds, or the versions of an artifact named that way. The content tells which."""
+        return self.kind == "metadata" and bool(self.artifact and is_snapshot(self.artifact))
 
 
 def parse(rel: str) -> MavenRequest | None:

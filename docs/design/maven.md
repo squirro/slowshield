@@ -39,6 +39,7 @@ The rest of the path is the standard Maven layout.
 | any file of a version (`.pom`, `.jar`, `.module`, `.aar`, `-sources.jar`, `.asc`, …) | `425 Too Early` with `Retry-After` when too new, `451` when blocked or tampered, else verified and cached. `HEAD` is gated the same way |
 | a checksum file of a version's file | Gated like that file; from the verified download when SlowShield has one, else from upstream (cached) |
 | group-level metadata (plugin prefixes), archetype catalogs | Passed through unchanged |
+| metadata SlowShield can't filter (unreadable, a `DOCTYPE`, tags its edits can't see) | `503`: never passed on with held or blocked versions in it |
 | `.index/` (Central's multi-gigabyte search index), `-SNAPSHOT` on a built-in repository | `404` |
 
 **Why 425.** Maven and Gradle show only the status line of an error, never its body:
@@ -72,9 +73,12 @@ time is its `.pom`'s.
 The rules:
 
 1. **Metadata.** Versions are judged newest first, in Maven's version order, until one is old enough, with a
-   `HEAD` of its `.pom` for a version SlowShield hasn't seen (at most 20 per evaluation). The result is stored once.
+   `HEAD` of its `.pom` for a version SlowShield hasn't seen (at most 20 per evaluation; the rest are held until a
+   later evaluation, at most five minutes on, has looked them up). The result is stored once.
 2. **Files.** Each file is judged by its own `Last-Modified`, from the download SlowShield makes anyway: a file added
    to an old version later is held on its own. A version already known to be too new is refused before any request.
+   A cached file is judged again by its version's `.pom` date, so it is held again when the policy gets stricter; if
+   that date can't be looked up (an outage), the first-listed time can still clear it, otherwise the answer is `503`.
 3. **Only a `200` counts.** Central's 404s carry a `Last-Modified` too. Without a plausible value, the clock starts
    when SlowShield first sees the file.
 4. **A second clock.** SlowShield records when it first saw a version listed in the upstream metadata. A version (and
@@ -109,7 +113,8 @@ The rules:
 ## Malware feeds
 
 OSV `Maven` and GitHub `maven`; packages are named `groupId:artifactId`. Versions follow Maven's `ComparableVersion`
-order (ported, with Maven's own test cases), which also orders the metadata walk.
+order (ported, with Maven's own test cases), which also orders the metadata walk. Exact matches use it too: an
+advisory for `1.0` also blocks `1.0.0` and `1-ga`, which Maven treats as the same version.
 
 ## Client setup
 
@@ -135,6 +140,7 @@ behind a Nexus or Artifactory, its `425` becomes that proxy's cached `404`.
 
 ## Limitations and follow-ups
 
-- Snapshots are served for operator repositories only, without a release-age check (they change by design).
+- Snapshots are served for operator repositories only, without a release-age check (they change by design). Only
+  the version makes a file a snapshot's: an artifactId ending in `-SNAPSHOT` doesn't.
 - Ivy-layout repositories (older sbt plugins) aren't supported yet.
 - PGP signature verification, opt-in.

@@ -213,6 +213,57 @@ async def test_group_metadata_and_operator_snapshots_pass_through(running: Runni
     assert snap.status_code == 200 and snap.content[:2] == b"PK"
 
 
+async def test_a_release_named_like_a_snapshot_is_judged_like_any_release(running: Running) -> None:
+    # The operator repository serves snapshots, but 1.0.0 of `lib-SNAPSHOT` is a release, published yesterday.
+    base = "/maven/snapshots/org/example/lib-SNAPSHOT"
+    assert (await running.client.get(f"{base}/1.0.0/lib-SNAPSHOT-1.0.0.jar")).status_code == 425
+    meta = await running.client.get(f"{base}/maven-metadata.xml")
+    assert meta.status_code == 200 and _versions(meta.text) == []  # filtered, not passed through
+    # A snapshot's own metadata passes through on an operator repository, and is 404 on Central.
+    snap = await running.client.get("/maven/snapshots/org/example/nightly/2.0-SNAPSHOT/maven-metadata.xml")
+    assert snap.status_code == 200 and "<snapshot>" in snap.text
+    central = await running.client.get(f"{HELLO}/1.3.0-SNAPSHOT/maven-metadata.xml")
+    assert central.status_code == 404 and f"{HELLO}/1.3.0-SNAPSHOT/maven-metadata.xml" not in _hits(running, HELLO)
+
+
+async def test_metadata_that_cannot_be_filtered_is_never_passed_on(running: Running) -> None:
+    for odd in ("doctype", "prefixed"):  # a DOCTYPE; tags the textual edits can't see
+        r = await running.client.get(f"/maven/central/org/example/{odd}/maven-metadata.xml")
+        assert r.status_code == 503 and "1.1.0" not in r.text and r.headers["retry-after"] == "300", odd
+    # No groupId/artifactId in the document: filtered by the path's coordinates.
+    r = await running.client.get("/maven/central/org/example/anonymous/maven-metadata.xml")
+    assert r.status_code == 200 and _versions(r.text) == ["1.0.0"]
+
+
+async def test_versions_beyond_the_lookups_of_one_evaluation_wait(running: Running) -> None:
+    # 25 releases from yesterday and one from 100 days ago: one evaluation looks up 20, the rest are held unseen.
+    url = "/maven/central/org/example/busy/maven-metadata.xml"
+    first = await running.client.get(url)
+    assert first.status_code == 200 and _versions(first.text) == []
+    assert sum(n for p, n in _hits(running, "/maven/central/org/example/busy/").items() if p.endswith(".pom")) == 20
+    await running.drain()  # the 20 dates are stored
+    running.clock.advance(301)  # the held view expires: the next evaluation looks up the rest
+    second = await running.client.get(url)
+    assert _versions(second.text) == ["1.0.0"] and "<latest>1.0.0</latest>" in second.text
+
+
+async def test_cached_files_during_an_outage(start_app) -> None:
+    first = await start_app()
+    jar = f"{HELLO}/1.1.0/hello-1.1.0.jar"  # downloaded on its own: SlowShield never saw its .pom
+    known = f"{HELLO}/1.0.0/hello-1.0.0.jar"
+    for path in (jar, f"{HELLO}/1.0.0/hello-1.0.0.pom", known):
+        assert (await first.client.get(path)).status_code == 200, path
+    await first.drain()
+    again = await start_app()  # same data directory: both jars are cached
+    again.fake.control("fail", prefix="/maven/central/", status="503")
+    try:
+        assert (await again.client.get(known)).headers["x-slowshield-cache"] == "hit"  # its .pom date is known
+        r = await again.client.get(jar)
+        assert r.status_code == 503 and "release date" in r.text  # no date to judge it by while upstream is down
+    finally:
+        again.fake.control("fail", prefix="/maven/central/", status="0")
+
+
 async def test_upstream_requests_per_new_version(running: Running) -> None:
     """A Maven build resolving one dependency: metadata, pom, jar. SlowShield adds the metadata walk's HEADs and
     nothing else; Maven skips checksum files because the responses carry X-Checksum-Sha1."""

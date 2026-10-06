@@ -315,12 +315,35 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         versions = list(art.versions)
         release = [v for v in versions if not v.endswith("-SNAPSHOT")]
         rows = "".join(f"      <version>{v}</version>\n" for v in versions)
-        return (
+        # Odd documents real repositories could send: a DOCTYPE, no groupId/artifactId, prefixed tags.
+        ids = (
+            ""
+            if art.artifact == "anonymous"
+            else (f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n")
+        )
+        body = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
-            f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n  <versioning>\n"
+            f"{ids}  <versioning>\n"
             f"    <latest>{versions[-1]}</latest>\n    <release>{release[-1] if release else ''}</release>\n"
             f"    <versions>\n{rows}    </versions>\n    <lastUpdated>20260920000000</lastUpdated>\n"
             "  </versioning>\n</metadata>\n"
+        )
+        if art.artifact == "doctype":
+            body = body.replace("<metadata>", '<!DOCTYPE metadata [<!ENTITY x "y">]>\n<metadata>', 1)
+        if art.artifact == "prefixed":
+            body = re.sub(r"<(/?)(?!\?)", r"<\1m:", body).replace(
+                "<m:metadata>", '<m:metadata xmlns:m="http://maven.apache.org/METADATA/1.1.0">', 1
+            )
+        return body.encode()
+
+    def maven_snapshot_metadata(art: Any, version: str) -> bytes:
+        """A snapshot version's builds (`<group>/<artifact>/<version>/maven-metadata.xml`)."""
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
+            f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n"
+            f"  <version>{version}</version>\n  <versioning>\n"
+            "    <snapshot>\n      <timestamp>20260920.000000</timestamp>\n      <buildNumber>1</buildNumber>\n"
+            "    </snapshot>\n    <lastUpdated>20260920000000</lastUpdated>\n  </versioning>\n</metadata>\n"
         ).encode()
 
     plugin_metadata = (
@@ -334,7 +357,11 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         """(artifact, version, filename) for a path, or (artifact, None, None) for its metadata."""
         parts = rest.split("/")
         if parts[-1].startswith("maven-metadata.xml"):
-            return state.catalog.maven.get((repo, "/".join(parts[:-1]))), None, None
+            art = state.catalog.maven.get((repo, "/".join(parts[:-1])))
+            if art is None:  # a version's metadata: a snapshot's builds
+                art = state.catalog.maven.get((repo, "/".join(parts[:-2])))
+                return (art, parts[-2], parts[-1]) if art and parts[-2] in art.versions else (None, None, None)
+            return art, None, None
         if len(parts) < 4:
             return None, None, None
         return state.catalog.maven.get((repo, "/".join(parts[:-2]))), parts[-2], parts[-1]
@@ -377,6 +404,14 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                 body,
                 media_type="text/xml",
                 headers={"Last-Modified": email.utils.formatdate(state.catalog.now - DAY, usegmt=True)},
+            )
+        if fname and fname.startswith("maven-metadata.xml"):
+            body = maven_snapshot_metadata(art, version)
+            algo = fname.rsplit(".", 1)[-1] if not fname.endswith(".xml") else None
+            return (
+                PlainTextResponse(hashlib.new(algos[algo], body).hexdigest())
+                if algo in algos
+                else Response(body, media_type="text/xml")
             )
         files = art.versions.get(version, {})
         algo = next((a for a in algos if fname.endswith("." + a)), None)

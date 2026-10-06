@@ -18,7 +18,8 @@ All notable changes to this project are documented here. The format is based on
     whichever is earlier, so a file added to an old version later is held on its own.
   - Downloads are checked against Central's `x-checksum-sha1`, the `.sha1` file, or the sha256 in the Plugin
     Portal's path, and fingerprinted. Responses carry `X-Checksum-Sha1`, so Maven skips checksum requests.
-  - OSV and GitHub malware advisories for Maven feed the blocklist.
+  - OSV and GitHub malware advisories for Maven feed the blocklist, matched in Maven's version order (`1.0` = `1.0.0`).
+  - Metadata SlowShield can't filter is refused with `503`, never passed on unfiltered.
 - `fail_open` per ecosystem (`upstreams.<ecosystem>.fail_open`). Maven defaults to off: brand-new artifacts are held.
 - The Setup page has Maven (`settings.xml`), Gradle (init script), sbt and Coursier.
 

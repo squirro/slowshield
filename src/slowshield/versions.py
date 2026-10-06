@@ -83,7 +83,8 @@ def canonical(ecosystem: str, version: str) -> str:
         v = parse_pep440(version)
         return str(v) if v is not None else version.strip()
     if ecosystem == "maven":
-        return version.strip()
+        # Maven treats 1.0, 1.0.0 and 1-ga as the same version, so an advisory for one names all of them.
+        return maven.canonical(version)
     if not parse_semver(version):
         return version.strip()
     out = version.strip().removeprefix("v")

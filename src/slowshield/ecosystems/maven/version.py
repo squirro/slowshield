@@ -158,6 +158,12 @@ def parse(value: str) -> MavenVersion:
     return MavenVersion(value.strip())
 
 
+def canonical(value: str) -> str:
+    """One spelling per version: versions Maven treats as equal (`1.0`, `1.0.0`, `1-ga`; `1-cr1`, `1-RC1`) give the
+    same string."""
+    return repr(parse(value).items)
+
+
 def compare(a: str, b: str) -> int:
     return parse(a).compare(parse(b))
 

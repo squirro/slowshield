@@ -180,6 +180,8 @@ class MavenService:
         if mreq.snapshot:
             # Snapshots change by design: no release-age check, no fingerprint. Operator repositories only.
             return await self._passthrough(request, repo, mreq) if repo.snapshots else text_error(404, "not found")
+        if mreq.snapshot_metadata and not repo.snapshots:
+            return text_error(404, "not found")
         if mreq.kind == "metadata":
             return await self.metadata(request, repo, mreq)
         if mreq.kind == "checksum":
@@ -374,11 +376,19 @@ class MavenService:
             ctx.recorder.decision(ECO, "metadata", "not_found")
             return text_error(404, "not found")
         md = MD.parse(doc.body)
-        if md is None or md.group != mreq.group or md.artifact != mreq.artifact:
-            return self._metadata_response(doc.body, mreq.algo)  # group-level plugin lists and the like: unchanged
+        if md is None:
+            kind = MD.kind(doc.body)
+            if kind == "plugins" or (kind == "snapshot" and repo.snapshots):
+                return self._metadata_response(doc.body, mreq.algo)  # a group's plugin prefixes, a snapshot's builds
+            if kind == "snapshot":
+                return text_error(404, "not found")
+            return self._unreadable_metadata()
         if doc.fresh:
             self._listed(mreq.name, md.versions)
-        v = await self.view(repo, mreq, md, doc.content_id)
+        try:
+            v = await self.view(repo, mreq, md, doc.content_id)
+        except MD.MetadataError:
+            return self._unreadable_metadata()
         if v.package_block is not None:
             return self._blocked(request, mreq.name, None, v.package_block, kind="metadata")
         if v.held:
@@ -403,6 +413,12 @@ class MavenService:
         if v.fail_open:
             headers["X-SlowShield-Fail-Open"] = "1"
         return self._metadata_response(v.body, mreq.algo, headers)
+
+    def _unreadable_metadata(self) -> Response:
+        """A version list SlowShield can't filter is never passed on: its held and blocked versions would show."""
+        self.ctx.recorder.decision(ECO, "metadata", "upstream_error")
+        message = "slowshield: unreadable maven-metadata.xml from upstream"
+        return text_error(503, message, headers={"Retry-After": "300"})
 
     def _metadata_response(self, body: bytes, algo: str | None, headers: dict[str, str] | None = None) -> Response:
         """The metadata, or one of its checksum files: computed from this very body, so they always match."""
@@ -459,13 +475,16 @@ class MavenService:
                 0
             ] is None:
                 if probes >= PROBE_LIMIT:
+                    # Held until a later evaluation (at most 300 s on) has looked it up: an unknown age isn't old.
                     v.complete = False
+                    hold(ver, None)
                     continue
                 probes += 1
                 try:
                     got = await self._pom_time(repo, mreq, ver)
                 except UpstreamError:
                     v.complete = False
+                    hold(ver, None)
                     continue
                 if isinstance(got, _Absent):
                     hold(ver, None)
@@ -511,7 +530,10 @@ class MavenService:
         if isinstance(doc, Gone):
             return False
         md = MD.parse(doc.body)
-        return md is not None and (await self.view(repo, mreq, md, doc.content_id)).fail_open
+        try:
+            return md is not None and (await self.view(repo, mreq, md, doc.content_id)).fail_open
+        except MD.MetadataError:
+            return False
 
     # ---- files ------------------------------------------------------------------------------------------
 
@@ -602,11 +624,21 @@ class MavenService:
         rec = self.ctx.artifacts.record_for(ECO, key)
         if rec is None or rec.tampered or self.ctx.artifact_cache.lookup(rec.sha256) is None:
             return None  # not served from the cache: the upstream response is judged instead
-        listed = self._times(mreq.name).get(mreq.version or "", [None, None])[1]
+        version = mreq.version or ""
+        listed = self._times(mreq.name).get(version, [None, None])[1]
         try:
-            published = await self._pom_time(repo, mreq, mreq.version or "")
-        except UpstreamError:
-            return None  # the file passed the check when it was first downloaded; don't fail it on an outage
+            published = await self._pom_time(repo, mreq, version)
+        except UpstreamError as exc:
+            # Without the .pom the age can only be proven by the first-listed time (the version was published
+            # before SlowShield first saw it listed); otherwise it can't be established until the repository is back.
+            ctx = self.ctx
+            if not ctx.cfg.raw.enforce_age_on_download or (
+                listed is not None and is_old_enough(listed, self._delay(mreq.name, version), ctx.clock.now())
+            ):
+                return None
+            ctx.recorder.decision(ECO, "artifact", "upstream_error")
+            message = f"slowshield: can't establish the release date right now: {exc.detail}"
+            return text_error(503, message, headers={"Retry-After": "60"})
         pom = None if isinstance(published, _Absent) else published
         return await self._judge(request, repo, mreq, _earliest(pom, listed), kind="artifact")
 

@@ -114,16 +114,14 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .hero-glow-0 { stop-color: var(--brand); stop-opacity: 0.2; }
 .hero-glow-1 { stop-color: var(--brand); stop-opacity: 0; }
 .hero-mark { color: var(--brand); }
-/* At rest (and with reduced motion): the chevrons lined up at the solid side, nearest strongest. */
+/* At rest: the chevrons lined up at the solid side, nearest strongest. */
 .chev { fill: none; stroke: var(--brand); stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; }
 .ch1 { transform: translateX(16px); opacity: 0.25; } .ch2 { transform: translateX(46px); opacity: 0.55; } .ch3 { transform: translateX(76px); }
 .ripple { fill: none; stroke: var(--brand-2); stroke-width: 1.4; opacity: 0; transform-box: fill-box; transform-origin: 50% 50%; }
-@media (prefers-reduced-motion: no-preference) {
-  .chev { animation: inbound 2.4s cubic-bezier(.55,0,.9,.45) infinite; opacity: 0; }
-  .ch2 { animation-delay: 0.8s; } .ch3 { animation-delay: 1.6s; }
-  .ripple { animation: impact 2.4s ease-out infinite; }
-  .rp2 { animation-delay: 0.8s; } .rp3 { animation-delay: 1.6s; }
-}
+.chev { animation: inbound 2.4s cubic-bezier(.55,0,.9,.45) infinite; opacity: 0; }
+.ch2 { animation-delay: 0.8s; } .ch3 { animation-delay: 1.6s; }
+.ripple { animation: impact 2.4s ease-out infinite; }
+.rp2 { animation-delay: 0.8s; } .rp3 { animation-delay: 1.6s; }
 /* fast: rush in from the left and stop dead at the solid side */
 @keyframes inbound {
   0% { transform: translateX(-70px); opacity: 0; }
@@ -373,11 +371,9 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .dg-flow.g3 { offset-path: path("M406 196 C430 196 430 316 454 316 H598"); }
 .dg-flow.g4 { offset-path: path("M406 196 C430 196 430 106 454 106 H462"); }
 .dg-flow.g5 { offset-path: path("M406 196 C430 196 430 286 454 286 H530"); }
-@media (prefers-reduced-motion: no-preference) {
-  .dg-wait { animation: spin-r 4s linear infinite; }
-  .story-figure[data-step="13"] .dg-flow { animation: dg-serve 1.6s ease-in infinite both; }
-  .story-figure[data-step="13"] .dg-flow.g1 { animation-delay: 0.35s; } .story-figure[data-step="13"] .dg-flow.g2 { animation-delay: 0.70s; } .story-figure[data-step="13"] .dg-flow.g3 { animation-delay: 1.05s; } .story-figure[data-step="13"] .dg-flow.g4 { animation-delay: 1.40s; } .story-figure[data-step="13"] .dg-flow.g5 { animation-delay: 1.75s; }
-}
+.dg-wait { animation: spin-r 4s linear infinite; }
+.story-figure[data-step="13"] .dg-flow { animation: dg-serve 1.6s ease-in infinite both; }
+.story-figure[data-step="13"] .dg-flow.g1 { animation-delay: 0.35s; } .story-figure[data-step="13"] .dg-flow.g2 { animation-delay: 0.70s; } .story-figure[data-step="13"] .dg-flow.g3 { animation-delay: 1.05s; } .story-figure[data-step="13"] .dg-flow.g4 { animation-delay: 1.40s; } .story-figure[data-step="13"] .dg-flow.g5 { animation-delay: 1.75s; }
 @keyframes spin-r { to { transform: rotate(360deg); } }
 @keyframes dg-serve { 0% { offset-distance: 0%; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
 
@@ -518,20 +514,6 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .footer-brand svg { width: 24px; height: 24px; color: var(--brand); }
 .footer nav { display: flex; gap: 1.4rem; flex-wrap: wrap; justify-content: center; }
 .fine { font-size: 0.82rem; margin: 0; }
-
-/* ---- motion preferences ----------------------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .reveal, .no-sda .reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
-  .count { font-size: inherit !important; } .count::after { content: none !important; }
-  .step { opacity: 1 !important; translate: none !important; }
-  .packet { display: none; }
-  .ripple { display: none; }
-  /* the headline keeps a plain fade (no movement) */
-  .headline.rotating [data-hl] { transform: none !important; transition: opacity 0.35s ease !important; }
-  .headline.rotating [data-hl].on { transition: opacity 0.6s ease 0.35s !important; }
-}
 
 /* shared keyframes */
 @keyframes spin { to { transform: rotate(-540deg); } }
@@ -773,11 +755,9 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .tm-wall .tm-gate { fill: var(--ok); }
 .team-svg .tm-wall-label { font: 600 12px var(--mono); text-anchor: middle; fill: var(--bad); letter-spacing: 0.04em; }
 .tm-pkt { fill: var(--ok); opacity: 0; offset-path: path("M780 215 H524"); offset-rotate: 0deg; }
-@media (prefers-reduced-motion: no-preference) {
-  .tm-link, .tm-out { animation: flow 0.9s linear infinite; }
-  .tm-pkt { animation: dg-serve 2.4s ease-in-out infinite; }
-  .k2 { animation-delay: 0.8s; } .k3 { animation-delay: 1.6s; }
-}
+.tm-link, .tm-out { animation: flow 0.9s linear infinite; }
+.tm-pkt { animation: dg-serve 2.4s ease-in-out infinite; }
+.k2 { animation-delay: 0.8s; } .k3 { animation-delay: 1.6s; }
 .team-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.2rem; }
 .team-steps li { min-width: 0; padding: 1.5rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); display: grid; gap: 0.8rem; align-content: start; }
 .team-steps h3 { display: flex; align-items: center; gap: 0.7rem; font-size: 1.15rem; }

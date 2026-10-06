@@ -5,7 +5,8 @@
   </picture>
 </p>
 
-SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules** and **Maven** (Maven, Gradle, sbt).
+SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules**, **Maven** (Maven, Gradle, sbt) and
+**Cargo** (crates.io).
 It sits between your developers,
 CI and production builds and the public registries, and:
 
@@ -20,20 +21,20 @@ CI and production builds and the public registries, and:
   ready-made Grafana dashboards and alerts.
 
 ```
-pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle
+pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle / cargo
                  │  HTTPS (TLS 1.3, HTTP/2, HTTP/3)
                  ▼
           Caddy (TLS, H3)  ──────────────── certificates: ACME, your files, or internal CA
                  │
           SlowShield (Python 3.15, Granian)
           ├─ blocklist      OSV + GitHub malware advisories (sync every hour)
-          ├─ release age    per file (PyPI, Maven) / per version (npm, Go), exceptions, fail-open
+          ├─ release age    per file (PyPI, Maven) / per version (npm, Go, Cargo), exceptions, fail-open
           ├─ integrity      registry digests + trust-on-first-use fingerprint, verified cache
           └─ telemetry      OTLP → Alloy → Prometheus / Loki / Tempo → Grafana
                  │  HTTP/2
                  ▼
      pypi.org · files.pythonhosted.org · registry.npmjs.org · proxy.golang.org · sum.golang.org
-     repo1.maven.org · dl.google.com (Google Maven) · plugins.gradle.org
+     repo1.maven.org · dl.google.com (Google Maven) · plugins.gradle.org · index.crates.io · static.crates.io
 ```
 
 ## Quick start
@@ -93,10 +94,11 @@ export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
 npm config set registry https://slowshield.example.com/npm/
 go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", which would go around SlowShield
 # Maven: a mirror in ~/.m2/settings.xml; Gradle: an init script in ~/.gradle/init.d/ (both on the Setup page)
+# Cargo: source replacement in ~/.cargo/config.toml, index "sparse+https://slowshield.example.com/cargo/"
 ```
 
 The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
-Bun, Go, Maven, Gradle, sbt and Coursier with your URLs. Every ecosystem lives under a path on the one host
+Bun, Go, Maven, Gradle, sbt, Coursier and Cargo with your URLs. Every ecosystem lives under a path on the one host
 ([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:
@@ -104,7 +106,7 @@ What clients see:
 | Situation | Index / packument | Direct download (lockfile) |
 |---|---|---|
 | version older than the delay | listed | `200` (verified, cached) |
-| version younger than the delay | hidden; `latest` points at the newest allowed | `403` + `Retry-After` |
+| version younger than the delay | hidden (Cargo: marked yanked); `latest` points at the newest allowed | `403` + `Retry-After` (Maven: `425`) |
 | no version old enough yet (brand-new package) | all non-blocked versions (*fail-open*, recorded) | `200` |
 | package or version on the malware blocklist | removed (`451` if nothing is left) | `451` with the advisory |
 | bytes differ from the registry digest or first-seen fingerprint | — | stream aborted, event recorded, later `451` |

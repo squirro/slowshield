@@ -99,6 +99,9 @@ def test_host_parsing() -> None:
         ("/ui/random-attacker-path", "/ui/{page}"),
         ("/lodash", "/{package}"),
         ("/lodash/-/lodash-1.0.0.tgz", "/{package}/-/{file}"),
+        ("/cargo/config.json", "/cargo/config.json"),
+        ("/cargo/se/rd/serde", "/cargo/{index_file}"),
+        ("/cargo/crates/serde/1.0.0/download", "/cargo/crates/{crate}/{version}/download"),
     ],
 )
 def test_route_labels_are_low_cardinality(path: str, label: str) -> None:

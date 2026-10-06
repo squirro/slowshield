@@ -24,8 +24,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go", "maven"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven")
+Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -123,11 +123,26 @@ class MavenUpstream(msgspec.Struct, forbid_unknown_fields=True):
         return {"central": self.central, "google": self.google, "gradle-plugins": self.gradle_plugins, **self.repos}
 
 
+class CargoUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # A crate none of whose versions is old enough is held too: on crates.io, brand-new crates are the realistic
+    # attack (typosquats and impersonations), as on Maven (docs/design/cargo.md).
+    fail_open: bool | None = False
+    # The sparse index. Each line carries the version's publish time (`pubtime`), set by crates.io.
+    index_url: str = "https://index.crates.io"
+    # Where .crate files come from: <download_url>/<name>/<version>/download.
+    download_url: str = "https://static.crates.io/crates"
+    # Hosts the download URL may redirect to (static.crates.io does not redirect). Every .crate is checked against
+    # the index's `cksum` wherever it comes from.
+    download_hosts: list[str] = []
+
+
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
     npm: NpmUpstream = msgspec.field(default_factory=NpmUpstream)
     go: GoUpstream = msgspec.field(default_factory=GoUpstream)
     maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
+    cargo: CargoUpstream = msgspec.field(default_factory=CargoUpstream)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):
@@ -343,6 +358,7 @@ def _apply_env(cfg: Config) -> None:
         ("SLOWSHIELD_NPM_ENABLED", lambda b: setattr(cfg.upstreams.npm, "enabled", b)),
         ("SLOWSHIELD_GO_ENABLED", lambda b: setattr(cfg.upstreams.go, "enabled", b)),
         ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
+        ("SLOWSHIELD_CARGO_ENABLED", lambda b: setattr(cfg.upstreams.cargo, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
@@ -415,6 +431,13 @@ def _validate(cfg: Config) -> None:
         for host in repo.download_hosts:
             if not _HOSTNAME.fullmatch(host):
                 raise ConfigError(f"upstreams.maven {repo_id}: download_hosts entries must be host names, got {host!r}")
+    cargo = cfg.upstreams.cargo
+    for name, url in (("index_url", cargo.index_url), ("download_url", cargo.download_url)):
+        if not url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.cargo.{name} must be an http(s) URL, got {url!r}")
+    for host in cargo.download_hosts:
+        if not _HOSTNAME.fullmatch(host):
+            raise ConfigError(f"upstreams.cargo.download_hosts entries must be host names, got {host!r}")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
@@ -535,6 +558,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         f"upstreams.maven.{name}"
         for name in ("central", "google", "gradle_plugins", "repos")
         if getattr(old.upstreams.maven, name) != getattr(new.upstreams.maven, name)
+    )
+    changed.extend(  # these decide which upstream hosts the client may reach
+        f"upstreams.cargo.{name}"
+        for name in ("index_url", "download_url", "download_hosts")
+        if getattr(old.upstreams.cargo, name) != getattr(new.upstreams.cargo, name)
     )
     if old.cache.artifacts_enabled != new.cache.artifacts_enabled:
         changed.append("cache.artifacts_enabled")

@@ -24,6 +24,11 @@ central = { url = "http://fakeupstream:9000/maven/central" }
 google = { url = "http://fakeupstream:9000/maven/google" }
 gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
 
+# Releases before Cargo support reject this section; perf/runner.py leaves it out for them.
+[upstreams.cargo]
+index_url = "http://fakeupstream:9000/cargo-index"
+download_url = "http://fakeupstream:9000/cargo-static/crates"
+
 [feeds]
 poll_interval_minutes = 60
 osv_base_url = "http://fakeupstream:9000/osv"

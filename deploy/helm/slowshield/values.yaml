@@ -24,7 +24,8 @@ hostnames:
 # Defaults to https://<first hostname>.
 publicUrl: ""
 
-# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/ and Maven at /maven/ on every hostname above.
+# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/, Maven at /maven/ and Cargo at /cargo/ on every
+# hostname above.
 # ecosystems.*.hostnames (per-ecosystem host routing) are deprecated and removed in 0.1: leave them empty.
 ecosystems:
   pypi:
@@ -36,6 +37,8 @@ ecosystems:
   go:
     enabled: true
   maven:
+    enabled: true
+  cargo:
     enabled: true
 
 # Granian workers (processes; threads on the free-threaded build).

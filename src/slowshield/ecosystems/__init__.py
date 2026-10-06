@@ -48,6 +48,10 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
             "maven", "Maven", "Java", names.normalize_maven, names.is_valid_maven, "Maven", "maven",
             "https://central.sonatype.com/artifact/{group}/{artifact}", "Maven Central",
         ),
+        EcosystemInfo(
+            "cargo", "Cargo", "Rust", names.normalize_cargo, names.is_valid_cargo, "crates.io", "rust",
+            "https://crates.io/crates/{name}", "crates.io",
+        ),
     )
 }  # fmt: skip
 IDS: tuple[str, ...] = tuple(ECOSYSTEMS)

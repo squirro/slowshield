@@ -13,6 +13,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ npm service   (ecosystems/npm)   ─┤── policy (policy.py) ── blocklist (blocklist.py)
    │               ├─ Go service    (ecosystems/go)    ─┤                      └─ config exceptions
    │               ├─ Maven service (ecosystems/maven) ─┤
+   │               ├─ Cargo service (ecosystems/cargo) ─┤
    │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)
    ├── artifact server (ecosystems/artifacts.py) ── on-disk verified cache (cache/artifacts.py)
@@ -73,6 +74,18 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 3. A file: a version known to be too new → `425` without an upstream request; otherwise the file's own
    `Last-Modified` (or the version's first-listed time, if earlier) decides when the upstream response arrives.
    The download is checked against the repository's checksum and the first-seen fingerprint.
+
+## Request flow: Cargo
+
+`/cargo/` is a sparse registry that replaces crates-io in Cargo's configuration ([design/cargo.md](design/cargo.md)).
+
+1. Blocklist hit for the whole crate → `451`.
+2. An index file: from memory, the shared metadata cache, or `GET <index_url>/<path>` (`If-None-Match` once known).
+   Each line's `pubtime` is the publish time; the first one seen per version is kept and never moves earlier.
+   Lines of too-new and blocked versions get `"yanked":true`; everything else passes byte for byte.
+3. `crates/<name>/<version>/download`: version block → `451`, too new → `403` with the version to use instead, else
+   the artifact server fetches `<download_url>/<exact name>/<version>/download`, checked against the line's `cksum`
+   and the first-seen fingerprint.
 
 ## Integrity
 

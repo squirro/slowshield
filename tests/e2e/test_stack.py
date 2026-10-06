@@ -366,3 +366,47 @@ def test_gradle_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None
     held = gradle("1.2.0")
     assert held.returncode != 0
     assert "Received status code 425 from server" in held.stderr, held.stderr[-3000:]
+
+
+CARGO_IMAGE = "rust:1.99-slim@sha256:24e632c09342c20abf8312cf4f61430a911c01ed3a5e4c02b87292b1c39c5273"
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+
+
+def test_cargo_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real cargo with the Setup page's command (official images set CARGO_HOME). fake-deps needs fake_hello ^1:
+    1.2.0 is two days old, so it is marked yanked and cargo picks 1.1.0. A Cargo.lock that pins 1.2.0 gets the
+    403 text."""
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "Cargo.toml").write_text(
+        '[package]\nname = "try-cargo"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nfake-deps = "0.1"\n'
+    )
+    (project / "src" / "lib.rs").write_text("pub use fake_deps::VERSION;\n")
+    pinned = tmp_path / "pinned"
+    (pinned / "src").mkdir(parents=True)
+    (pinned / "Cargo.toml").write_text(
+        '[package]\nname = "pinned"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nfake_hello = "1"\n'
+    )
+    (pinned / "src" / "lib.rs").write_text("")
+    cksum = stack.fake_info()["cargo"]["fake_hello"]["1.2.0"]["cksum"]
+    (pinned / "Cargo.lock").write_text(
+        f'version = 4\n\n[[package]]\nname = "fake_hello"\nversion = "1.2.0"\nsource = "{CRATES_IO}"\n'
+        f'checksum = "{cksum}"\n\n[[package]]\nname = "pinned"\nversion = "0.1.0"\ndependencies = ["fake_hello"]\n'
+    )
+    setup = snippets.cargo_command("http://localhost:8080/cargo/")
+
+    def cargo(script: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", CARGO_IMAGE, "-c", f"{setup} && {script}"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = cargo("cp -r /w/project /tmp/p && cd /tmp/p && cargo build -q && cat Cargo.lock")
+    assert ok.returncode == 0, ok.stderr[-3000:]
+    assert f'name = "fake_hello"\nversion = "1.1.0"\nsource = "{CRATES_IO}"' in ok.stdout  # crates.io, unchanged
+    assert 'name = "fake-deps"\nversion = "0.1.0"' in ok.stdout
+    held = cargo("cp -r /w/pinned /tmp/p && cd /tmp/p && cargo fetch --locked")
+    assert held.returncode != 0
+    assert "got 403" in held.stderr and "fake_hello@1.2.0 is too new" in held.stderr, held.stderr[-3000:]
+    assert "--precise 1.1.0" in held.stderr

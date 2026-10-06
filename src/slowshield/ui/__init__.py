@@ -498,6 +498,7 @@ class UI:
         npm_registry = cfg.npm_public_base() + "/"
         go_proxy = f"{base}/go"
         maven_base = f"{base}/maven"
+        cargo_index = f"{base}/cargo/"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
@@ -507,13 +508,21 @@ class UI:
                 local = f"http://{'[' + host + ']' if ':' in host else host}"
         secure = None
         if local:
-            secure = {"pypi": pypi_index, "npm": npm_registry, "go": go_proxy, "maven": f"{maven_base}/all/"}
+            secure = {
+                "pypi": pypi_index,
+                "npm": npm_registry,
+                "go": go_proxy,
+                "maven": f"{maven_base}/all/",
+                "cargo": cargo_index,
+            }
             pypi_index = f"{local}/pypi/simple/"
             go_proxy = f"{local}/go"
             maven_base = f"{local}/maven"
+            cargo_index = f"{local}/cargo/"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
-        snippets = S.for_instance(pypi_index, npm_registry, go_proxy)
+        age_days = S.client_age_days(raw.default_delay_days)
+        snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
@@ -523,10 +532,17 @@ class UI:
             npm_registry=npm_registry,
             go_proxy=go_proxy,
             maven_repo=f"{maven_base}/all/",
+            cargo_index=cargo_index,
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
-            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base),
+            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days),
+            tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0),
+            age_days=age_days,
+            ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
+            ci_plain=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=0),
+            dockerfile=S.dockerfile_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
+            dockerfile_plain=S.dockerfile_env(pypi_index, npm_registry, go_proxy, age_days=0),
             shell=shell,
             os=os_name,
         )

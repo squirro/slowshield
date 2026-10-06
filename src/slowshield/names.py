@@ -1,4 +1,4 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules and Maven."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven and Cargo."""
 
 from __future__ import annotations
 
@@ -65,6 +65,20 @@ def normalize_maven(name: str) -> str:
 
 def is_valid_maven(name: str) -> bool:
     return 0 < len(name) <= MAVEN_MAX_LEN and _MAVEN_NAME.match(name) is not None and ".." not in name
+
+
+# Crate names as crates.io accepts them: ASCII letters, digits, `-` and `_`, at most 64 characters. crates.io treats
+# names that differ only in case or in `-` versus `_` as the same crate, and so does its own canonical form.
+_CARGO_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def normalize_cargo(name: str) -> str:
+    """crates.io's canonical crate name (`canon_crate_name`): lower case, `-` written as `_`."""
+    return name.strip().lower().replace("-", "_")
+
+
+def is_valid_cargo(name: str) -> bool:
+    return _CARGO_NAME.match(name) is not None
 
 
 def normalize_go(path: str) -> str:

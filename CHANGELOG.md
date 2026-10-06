@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-06
+
+### Added
+- Cargo at `/cargo/`: a sparse registry that replaces crates-io in `$CARGO_HOME/config.toml`
+  ([docs/design/cargo.md](docs/design/cargo.md), https://github.com/squirro/slowshield/issues/16). Cargo.lock keeps
+  crates.io as its source and checksums. Needs cargo 1.68 or later.
+  - Index files pass through byte for byte, except that versions too new or blocked are marked
+    `"yanked":true`, so cargo resolves to an older version. A Cargo.lock that pins one gets `403` with the time it
+    becomes available and the `cargo update --precise` command for the newest version allowed; malware gets `451`.
+    Cargo prints both. Upstream failures are `503`, which cargo retries.
+  - A version's publish time is its `pubtime` in the index, which crates.io sets. The first one seen is kept, so a
+    rewritten index can't move it earlier. No requests to the crates.io API.
+  - Downloads are checked against the index's `cksum` (sha256) and fingerprinted; static.crates.io is always asked
+    for the index's exact spelling of the name.
+  - Crate names match in crates.io's canonical form (lower case, `-` as `_`) in exceptions, advisories and the UI.
+  - `fail_open` is off for Cargo: crates none of whose versions is old enough are held too.
+- The OSV feed also takes RustSec's malware advisories (category `malicious`) that have no `MAL-*` counterpart: most
+  crates RustSec reports as malware never got one. GitHub's malware advisories for Rust are read too.
+- The Setup page has Cargo: the `config.toml`, and a one-line command for CI and Dockerfiles (the official `rust`
+  images set `CARGO_HOME`, so `~/.cargo` isn't read there).
+
+- The Setup page also sets the package managers' own release age, 3 days, where they have one (pip, uv, Poetry,
+  PDM, npm, pnpm, Yarn, Bun), as a second layer: a release then still waits on a machine that goes around
+  SlowShield, or when SlowShield serves a brand-new package because nothing is old enough yet (fail-open). In
+  normal use only SlowShield holds anything, since its delay is longer. A switch turns it off; each tool shows the
+  version it needs, and what older versions do with the setting. Never more than SlowShield's own delay. uv's and
+  PDM's go in `pyproject.toml` only: uv records the setting in `uv.lock` (an environment variable on one machine
+  breaks `uv sync --locked` on another), and PDM doesn't keep its command-line flag.
+
+### Changed
+- Cargo is shown in `#DEA584` (GitHub's Rust colour) in the UI and in Grafana.
+
 ## [0.0.6] - 2026-10-06
 
 ### Added

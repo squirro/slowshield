@@ -130,7 +130,7 @@
         "name": "ecosystem",
         "label": "Ecosystem",
         "type": "custom",
-        "query": "pypi,npm,go,maven",
+        "query": "pypi,npm,go,maven,cargo",
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -161,6 +161,11 @@
           {
             "text": "maven",
             "value": "maven",
+            "selected": false
+          },
+          {
+            "text": "cargo",
+            "value": "cargo",
             "selected": false
           }
         ],
@@ -676,6 +681,21 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#ed8b00"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cargo"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#dea584"
                 }
               }
             ]

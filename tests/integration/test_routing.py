@@ -168,6 +168,7 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "Gradle",
         "sbt",
         "Coursier",
+        "Cargo",
     ]
     assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
     assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
@@ -183,3 +184,21 @@ async def test_setup_page_tool_finder(start_app) -> None:
         in page
     )
     assert "allowInsecureProtocol" not in page and "maven-default-http-blocker" not in page  # HTTPS instance
+
+
+async def test_setup_page_offers_the_package_managers_own_release_age(start_app) -> None:
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("http://slowshield.example.com/ui/setup")).text
+    assert "data-age-toggle checked disabled" in page  # JS enables it; without JS the "on" snippets show
+    # Every snippet that differs is there twice: with the release age, and (hidden) without.
+    assert "export npm_config_min_release_age=3" in page and "PIP_UPLOADED_PRIOR_TO: P3D" in page
+    assert "UV_EXCLUDE_NEWER" not in page and "exclude-newer = &#34;P3D&#34;" in page  # uv: pyproject.toml only
+    on = page.count('data-age="on"')
+    off = page.count('data-age="off" hidden')
+    assert on > off >= 4 + 2 + 7  # 4 shells, CI and Dockerfile, 7 tools that differ (notes add more "on")
+    assert "Release age: npm 11.10 or later" in page and "Release age: Yarn 4.10 or later" in page
+    assert "No release-age setting of its own: SlowShield is the only layer." in page
+    # A SlowShield without a delay doesn't suggest one for the package managers either.
+    lax = await start_app('public_url = "https://slowshield.example.com"\ndefault_delay_days = 0\n')
+    page = (await lax.client.get("http://slowshield.example.com/ui/setup")).text
+    assert "data-age" not in page and "min-release-age" not in page and "UV_EXCLUDE_NEWER" not in page

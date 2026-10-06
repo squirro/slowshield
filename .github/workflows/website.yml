@@ -13,12 +13,14 @@ on:
     paths:
       - "website/**"
       - "brand/**"
+      - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
       - ".github/workflows/website.yml"
   push:
     branches: [main]
     paths:
       - "website/**"
       - "brand/**"
+      - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
       - ".github/workflows/website.yml"
   workflow_dispatch:
 

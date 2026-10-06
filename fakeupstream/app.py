@@ -1,5 +1,5 @@
-"""Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), OSV and GitHub
-endpoints, plus control hooks."""
+"""Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), Maven, crates.io
+(sparse index and static downloads), OSV and GitHub endpoints, plus control hooks."""
 
 from __future__ import annotations
 
@@ -452,10 +452,40 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(hashlib.sha256(rest.encode()).digest() * 8, media_type="application/octet-stream")
         return PlainTextResponse("not found", status_code=404)
 
+    # ---- crates.io ------------------------------------------------------------------------------------
+
+    def crate_index_path(name: str) -> str:
+        n = name.lower()
+        if len(n) <= 2:
+            return f"{len(n)}/{n}"
+        return f"3/{n[0]}/{n}" if len(n) == 3 else f"{n[:2]}/{n[2:4]}/{n}"
+
+    async def cargo_index(request: Request) -> Response:
+        """index.crates.io: one file per crate at its lower-case path, ETag revalidation, 404 for unknown crates."""
+        rest = request.path_params["rest"]
+        if rest == "config.json":
+            return JSONResponse({"dl": f"{base(request)}/cargo-static/crates", "api": base(request)})
+        name = rest.rsplit("/", 1)[-1]
+        crate = state.catalog.crates.get(name)
+        if crate is None or rest != crate_index_path(name):
+            return Response(b"<Error><Code>NoSuchKey</Code></Error>", status_code=404, media_type="application/xml")
+        body = b"\n".join(state.catalog.crate_line(cv) for cv in crate.values()) + b"\n"
+        return _maybe_304(request, body, "text/plain", {"Cache-Control": "public,max-age=600"})
+
+    async def cargo_static(request: Request) -> Response:
+        """static.crates.io: `/crates/<name>/<version>/download`, with the exact name only; 403 for anything else."""
+        name, version = request.path_params["name"], request.path_params["version"]
+        cv = state.catalog.crates.get(name.lower(), {}).get(version)
+        if cv is None or cv.name != name:
+            return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
+        return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
+
     # ---- OSV -----------------------------------------------------------------------------------------
 
     def osv_doc(a: Advisory) -> dict[str, Any]:
         affected: dict[str, Any] = {"package": {"ecosystem": a.ecosystem, "name": a.package}}
+        if a.categories:
+            affected["database_specific"] = {"categories": a.categories, "cvss": None, "informational": None}
         if a.versions:
             affected["versions"] = a.versions
         if a.ranges:
@@ -464,7 +494,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                 events.append({"introduced": introduced or "0"})
                 if fixed:
                     events.append({"fixed": fixed})
-            affected["ranges"] = [{"type": "SEMVER" if a.ecosystem in ("npm", "Go") else "ECOSYSTEM", "events": events}]
+            semver = a.ecosystem in ("npm", "Go", "crates.io")
+            affected["ranges"] = [{"type": "SEMVER" if semver else "ECOSYSTEM", "events": events}]
         doc: dict[str, Any] = {
             "id": a.id,
             "modified": iso(a.modified),
@@ -473,6 +504,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             "details": a.summary,
             "affected": [affected],
         }
+        if a.aliases:
+            doc["aliases"] = a.aliases
         if a.withdrawn:
             doc["withdrawn"] = iso(a.modified)
         return doc
@@ -561,7 +594,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/")):
+        elif not path.startswith(("/go/", "/maven/", "/cargo-static/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -608,6 +641,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                 gh_range=d.get("gh_range"),
                 withdrawn=bool(d.get("withdrawn", False)),
                 summary=d.get("summary", ""),
+                aliases=list(d.get("aliases", [])),
+                categories=list(d.get("categories", [])),
             )
         )
         return JSONResponse({"ok": True})
@@ -630,6 +665,13 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     path: {v: {"stored": gv.stored, "zip_h1": gv.zip_h1} for v, gv in m.versions.items()}
                     for path, m in cat.go.items()
                 },
+                "cargo": {
+                    name: {
+                        v: {"name": cv.name, "pubtime": cv.pubtime, "cksum": cv.blob.digests()["sha256"]}
+                        for v, cv in crate.items()
+                    }
+                    for name, crate in cat.crates.items()
+                },
             }
         )
 
@@ -641,6 +683,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/npm/{rest:path}", npm_post, methods=["POST"]),
         Route("/go/{rest:path}", go, methods=["GET", "HEAD"]),
         Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
+        Route("/cargo-index/{rest:path}", cargo_index, methods=["GET", "HEAD"]),
+        Route("/cargo-static/crates/{name}/{version}/download", cargo_static, methods=["GET", "HEAD"]),
         Route("/sumdb/{rest:path}", sumdb),
         Route("/storage/{rest:path}", storage),
         Route("/osv/{eco}/all.zip", osv_zip),

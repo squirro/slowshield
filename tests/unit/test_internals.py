@@ -380,6 +380,7 @@ def test_osv_ranges_and_advisories() -> None:
     assert adv.specs == [
         BlockSpec("pypi", "evil-pkg"),
         BlockSpec("npm", "x", version="1.0.0"),
+        BlockSpec("cargo", "y"),
         BlockSpec("npm", "r", version_range=">= 2.0.0"),
     ]
     assert osv_to_advisory(OsvVuln(id="GHSA-1")) is None

@@ -5,8 +5,8 @@ your SCA tool's job). They run on the leader worker every `feeds.poll_interval_m
 
 | Feed | Source | Token | Sync |
 |---|---|---|---|
-| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go and Maven | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` documents |
-| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
+| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go, Maven and crates.io, plus RustSec's malware advisories | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` (and `RUSTSEC-*`) documents |
+| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven|rust>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
 
 ## Version semantics
 
@@ -16,6 +16,10 @@ your SCA tool's job). They run on the leader worker every `feeds.poll_interval_m
   the whole package.
 * GitHub `vulnerable_version_range`: `= x` → exact version; `>= 0` / empty → whole package; other ranges are
   evaluated per version.
+* RustSec (in OSV's crates.io data): only advisories categorised `malicious`, and not those that alias a `MAL-*` id.
+  `introduced: 0.0.0-0` without an end blocks the whole crate; an open range from a later version is skipped,
+  because the versions published after crates.io removed the bad ones are not malware
+  ([design/cargo.md](design/cargo.md)).
 * Withdrawn advisories lift their blocks (rows are kept, marked withdrawn, for the audit trail).
 
 ## Missing token → feed off, loudly

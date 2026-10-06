@@ -1,4 +1,5 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, OSV, GitHub advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, OSV, GitHub
+advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -11,6 +12,7 @@ import base64
 import gzip
 import hashlib
 import io
+import json
 import random
 import tarfile
 import zipfile
@@ -202,6 +204,16 @@ def make_jar(group: str, artifact: str, version: str) -> bytes:
     return _zip({"META-INF/MANIFEST.MF": f"Manifest-Version: 1.0\nImplementation-Version: {version}\n".encode()})
 
 
+def make_crate(name: str, version: str, deps: tuple[tuple[str, str], ...] = ()) -> bytes:
+    """A .crate cargo can unpack and build: a gzipped tarball of `<name>-<version>/` with Cargo.toml and src/lib.rs."""
+    stem = f"{name}-{version}"
+    manifest = f'[package]\nname = "{name}"\nversion = "{version}"\nedition = "2021"\n'
+    if deps:
+        manifest += "\n[dependencies]\n" + "".join(f'{dep} = "{req}"\n' for dep, req in deps)
+    lib = f'pub const VERSION: &str = "{version}";\n'
+    return _targz({f"{stem}/Cargo.toml": manifest.encode(), f"{stem}/src/lib.rs": lib.encode()})
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -291,9 +303,19 @@ class MavenArtifact:
 
 
 @dataclass(slots=True)
+class CrateVersion:
+    name: str  # exactly as published (the fake static host is case- and `-`/`_`-sensitive, like the real one)
+    vers: str
+    pubtime: float | None  # None: an index line without `pubtime`
+    blob: Blob
+    yanked: bool = False
+    deps: tuple[tuple[str, str], ...] = ()  # (name, requirement)
+
+
+@dataclass(slots=True)
 class Advisory:
     source: str  # osv | github
-    ecosystem: str  # PyPI | npm | Go (OSV) / pip | npm | go (GitHub)
+    ecosystem: str  # PyPI | npm | Go | Maven | crates.io (OSV) / pip | npm | go | maven | rust (GitHub)
     id: str
     package: str
     modified: float
@@ -302,6 +324,8 @@ class Advisory:
     gh_range: str | None = None
     withdrawn: bool = False
     summary: str = ""
+    aliases: list[str] = field(default_factory=list)
+    categories: list[str] = field(default_factory=list)  # RustSec's database_specific.categories
 
 
 class Catalog:
@@ -313,6 +337,7 @@ class Catalog:
         self.npm: dict[str, NpmPackage] = {}
         self.go: dict[str, GoModule] = {}
         self.maven: dict[tuple[str, str], MavenArtifact] = {}  # (repo, "group/path/artifact") -> artifact
+        self.crates: dict[str, dict[str, CrateVersion]] = {}  # lower-case name -> version -> line
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -448,6 +473,46 @@ class Catalog:
                                     self.now - age * DAY)  # fmt: skip
         art.versions[version] = files
 
+    def add_crate(
+        self,
+        name: str,
+        version: str,
+        age_days: float,
+        *,
+        yanked: bool = False,
+        pubtime: bool = True,
+        deps: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        crate = self.crates.setdefault(name.lower(), {})
+        blob = Blob(key=f"{name}@{version}.crate", data=make_crate(name, version, deps))
+        when = self.now - age_days * DAY if pubtime else None
+        crate[version] = CrateVersion(name, version, when, blob, yanked=yanked, deps=deps)
+
+    def crate_line(self, cv: CrateVersion) -> bytes:
+        """The index line, with crates.io's key order and compact JSON."""
+        line: dict[str, object] = {
+            "name": cv.name,
+            "vers": cv.vers,
+            "deps": [
+                {
+                    "name": dep,
+                    "req": req,
+                    "features": [],
+                    "optional": False,
+                    "default_features": True,
+                    "target": None,
+                    "kind": "normal",
+                }
+                for dep, req in cv.deps
+            ],
+            "cksum": cv.blob.digests()["sha256"],
+            "features": {},
+            "yanked": cv.yanked,
+        }
+        if cv.pubtime is not None:
+            line["pubtime"] = iso_s(cv.pubtime)
+        return json.dumps(line, separators=(",", ":")).encode()
+
     def _build(self) -> None:
         # PyPI
         self.add_pypi("alpha", "1.0.0", 60)
@@ -524,6 +589,21 @@ class Catalog:
         for i in range(25):  # more new versions than one metadata evaluation looks up
             self.add_maven("central", "org.example:busy", f"2.{i}.0", 1)
         self.add_maven("central", "org.example:busy", "1.0.0", 100)
+        # crates.io: index lines carry `pubtime`; names are case- and `-`/`_`-insensitive, downloads are not.
+        self.add_crate("fake_hello", "1.0.0", 100)
+        self.add_crate("fake_hello", "1.0.1", 90, yanked=True)  # yanked upstream
+        self.add_crate("fake_hello", "1.1.0", 30)
+        self.add_crate("fake_hello", "1.2.0", 2)
+        self.add_crate("fake-deps", "0.1.0", 50, deps=(("fake_hello", "^1"),))
+        self.add_crate("Fancy-Name", "1.0.0", 60)
+        self.add_crate("brand-new-crate", "0.1.0", 1 / 24)
+        self.add_crate("evil-crate", "1.0.0", 40)
+        self.add_crate("rustsec-evil", "0.1.0", 50)
+        self.add_crate("partly-crate", "1.0.0", 90)
+        self.add_crate("partly-crate", "1.1.0", 60)
+        self.add_crate("hijacked", "1.0.0", 300)
+        self.add_crate("hijacked", "2.0.0", 200)
+        self.add_crate("untimed", "1.0.0", 0, pubtime=False)
         if self.perf:
             self.add_pypi("big-wheel", "1.0.0", 30, big=100 * 1024 * 1024)
             for i in range(500):
@@ -534,6 +614,7 @@ class Catalog:
             for i in range(500):
                 self.add_go("example.com/many", f"v1.{i // 100}.{i % 100}", 600 - i)
                 self.add_maven("central", "org.example:many", f"1.{i // 100}.{i % 100}", 600 - i, jar=False)
+                self.add_crate("many-crate", f"1.{i // 100}.{i % 100}", 600 - i)
         for pkg in self.npm.values():
             if "latest" not in pkg.tags:
                 pkg.tags["latest"] = list(pkg.versions)[-1]
@@ -662,6 +743,66 @@ class Catalog:
                 summary="org.example:partly 1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "crates.io",
+                "MAL-2026-4001",
+                "evil-crate",
+                n - 7 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in evil-crate (crates.io)",
+            ),
+            Advisory(  # covered by its MAL- alias: not a second block
+                "osv",
+                "crates.io",
+                "RUSTSEC-2026-0002",
+                "evil-crate",
+                n - 7 * DAY,
+                ranges=[("0.0.0-0", None)],
+                summary="malicious crate `evil-crate`",
+                aliases=["MAL-2026-4001"],
+                categories=["malicious"],
+            ),
+            Advisory(  # RustSec only
+                "osv",
+                "crates.io",
+                "RUSTSEC-2026-0001",
+                "rustsec-evil",
+                n - 6 * DAY,
+                ranges=[("0.0.0-0", None)],
+                summary="malicious crate `rustsec-evil`",
+                aliases=["GHSA-rrrr-0001-0001"],
+                categories=["code-execution", "malicious"],
+            ),
+            Advisory(  # an ordinary vulnerability: not a block
+                "osv",
+                "crates.io",
+                "RUSTSEC-2026-0003",
+                "fake_hello",
+                n - 6 * DAY,
+                ranges=[("0.0.0-0", "1.1.0")],
+                summary="Out-of-bounds read in fake_hello",
+                categories=["memory-corruption"],
+            ),
+            Advisory(  # malicious from 2.0.0 on, open-ended: the later versions are not malware, so not a block
+                "osv",
+                "crates.io",
+                "RUSTSEC-2026-0004",
+                "hijacked",
+                n - 5 * DAY,
+                ranges=[("2.0.0", None)],
+                summary="hijacked 2.0.0 was published by an attacker",
+                categories=["malicious"],
+            ),
+            Advisory(
+                "github",
+                "rust",
+                "GHSA-aaaa-0007-0007",
+                "partly-crate",
+                n - 4 * DAY,
+                gh_range="= 1.1.0",
+                summary="partly-crate 1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -681,5 +822,7 @@ class Catalog:
             self.add_go(name, version, age_days)
         elif ecosystem == "maven":
             self.add_maven("central", name, version, age_days)
+        elif ecosystem == "cargo":
+            self.add_crate(name, version, age_days or 0.0)
         else:
             self.add_npm(name, version, age_days or 0.0, tag="latest")

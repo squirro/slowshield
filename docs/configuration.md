@@ -22,7 +22,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |
 | `SLOWSHIELD_DEFAULT_DELAY_DAYS` | `default_delay_days` | float |
 | `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | **deprecated, removed in 0.1**; space/comma separated |
-| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED`, `SLOWSHIELD_MAVEN_ENABLED` | `upstreams.*.enabled` | booleans |
+| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED`, `SLOWSHIELD_MAVEN_ENABLED`, `SLOWSHIELD_CARGO_ENABLED` | `upstreams.*.enabled` | booleans |
 | `SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD` | `enforce_age_on_download` | |
 | `SLOWSHIELD_FAIL_OPEN` | `fail_open` | |
 | `SLOWSHIELD_RECORD_CLIENT_IP` | `record_client_ip` | |
@@ -42,13 +42,14 @@ Local development: `uv run slowshield serve` also loads a `.env` file from the w
 
 One host serves everything, each ecosystem under a path named after its protocol: PyPI at `/pypi/simple/`,
 npm at `/npm/`, Go modules at `/go/` (`GOPROXY`, [design/go.md](design/go.md)), Maven at `/maven/<repo-id>/`
-([design/maven.md](design/maven.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
+([design/maven.md](design/maven.md)), Cargo at `/cargo/` ([design/cargo.md](design/cargo.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
 these and the names reserved for future ecosystems may be used at the root; see
 [design/routing.md](design/routing.md) for the contract and the plan for every ecosystem on the roadmap.
 
 PyPI file links are relative, so they work behind any prefix without trusting the `Host` header. npm
 requires absolute tarball URLs; they are built from `upstreams.npm.public_url`, or `public_url + /npm`,
-never from request headers. The Go module proxy protocol has no URLs in its responses.
+never from request headers. Cargo's `config.json` points downloads at `public_url + /cargo/crates` (or the local
+HTTP origin). The Go module proxy protocol has no URLs in its responses.
 
 ## Go
 
@@ -86,10 +87,26 @@ nightlies = { url = "https://repo.example.com/snapshots", snapshots = true }  # 
 an artifact none of whose versions is old enough is held too. A file's publish time is its `Last-Modified`, or when
 SlowShield first saw its version listed upstream, whichever is earlier ([design/maven.md](design/maven.md)).
 
+## Cargo
+
+```toml
+[upstreams.cargo]
+enabled = true
+fail_open = false
+index_url = "https://index.crates.io"
+download_url = "https://static.crates.io/crates"
+download_hosts = []
+```
+
+Clients use `sparse+<public_url>/cargo/` as a registry that replaces crates-io (the Setup page has the
+`config.toml`). A version's publish time is the `pubtime` on its index line, which crates.io sets; the first one seen
+is kept. `fail_open` is off, as for Maven. `download_hosts` are hosts `download_url` may redirect to (static.crates.io
+doesn't). Changing these needs a restart ([design/cargo.md](design/cargo.md)).
+
 ## Fail-open per ecosystem
 
 `upstreams.<ecosystem>.fail_open` overrides the top-level `fail_open` for one ecosystem; unset, the top-level
-value applies. Maven defaults to `false`, the others to the top-level setting (`true`).
+value applies. Maven and Cargo default to `false`, the others to the top-level setting (`true`).
 
 **Deprecated, removed in 0.1:**
 

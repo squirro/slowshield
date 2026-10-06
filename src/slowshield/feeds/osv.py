@@ -1,8 +1,11 @@
 """OSV malicious-package feed (OpenSSF `MAL-*` advisories) for every served ecosystem. No token required.
 
+For crates.io it also takes the RustSec advisories categorised "malicious" that have no `MAL-*` counterpart: most
+crates RustSec reports as malware never got one.
+
 First sync downloads `<eco>/all.zip` (streamed to disk, read entry by entry with size caps). Later
 syncs read the head of `<eco>/modified_id.csv` (newest first, `<RFC3339>,<ID>` per line) until the
-watermark and fetch only the changed `MAL-*` documents.
+watermark and fetch only the changed `MAL-*` (and `RUSTSEC-*`) documents.
 """
 
 from __future__ import annotations
@@ -50,22 +53,34 @@ class _Range(msgspec.Struct):
     events: list[_Event] = []
 
 
+class _DatabaseSpecific(msgspec.Struct):
+    categories: list[Any] = []  # RustSec: "malicious", "code-execution", ...
+
+
 class _Affected(msgspec.Struct):
     package: _Pkg | None = None
     versions: list[str] = []
     ranges: list[_Range] = []
+    database_specific: _DatabaseSpecific | None = None
 
 
 class OsvVuln(msgspec.Struct):
     id: str
     modified: str = ""
     withdrawn: str | None = None
+    aliases: list[str] = []
     summary: str | None = None
     details: str | None = None
     affected: list[_Affected] = []
 
 
 _decoder = msgspec.json.Decoder(OsvVuln)
+_ZERO = ("0", "0.0.0-0")  # introduced at the very first version (RustSec writes the lowest SemVer)
+
+
+def wanted(vuln_id: str) -> bool:
+    """Documents worth reading: OpenSSF malware, and RustSec advisories (only the malicious ones become blocks)."""
+    return vuln_id.startswith(("MAL-", "RUSTSEC-"))
 
 
 def _ranges_to_specs(ranges: list[_Range]) -> list[str | None]:
@@ -80,16 +95,28 @@ def _ranges_to_specs(ranges: list[_Range]) -> list[str | None]:
                 start = ev.introduced
             elif ev.fixed is not None or ev.last_affected is not None:
                 end = f"< {ev.fixed}" if ev.fixed is not None else f"<= {ev.last_affected}"
-                specs.append(end if start in (None, "0") else f">= {start}, {end}")
+                specs.append(end if start is None or start in _ZERO else f">= {start}, {end}")
                 start = None
         if start is not None:
-            specs.append(None if start == "0" else f">= {start}")
+            specs.append(None if start in _ZERO else f">= {start}")
     return specs
 
 
+def _rustsec_malware(v: OsvVuln) -> bool:
+    """A RustSec advisory categorised "malicious" that no `MAL-*` advisory covers already."""
+    malicious = any(
+        a.database_specific is not None and "malicious" in a.database_specific.categories for a in v.affected
+    )
+    return malicious and not any(alias.startswith("MAL-") for alias in v.aliases)
+
+
 def to_advisory(v: OsvVuln) -> Advisory | None:
-    if not v.id.startswith("MAL-"):
+    rustsec = v.id.startswith("RUSTSEC-")
+    if not (v.id.startswith("MAL-") or rustsec):
         return None
+    if rustsec and not _rustsec_malware(v):
+        # Not (or no longer) a block of ours: lifts the blocks of an advisory that was recategorised.
+        return Advisory("osv", v.id, [], None, None, withdrawn=True)
     specs: list[BlockSpec] = []
     for aff in v.affected:
         if aff.package is None or not aff.package.name:
@@ -102,6 +129,12 @@ def to_advisory(v: OsvVuln) -> Advisory | None:
             specs.extend(BlockSpec(eco, name, version=ver) for ver in dict.fromkeys(aff.versions))
             continue
         rng = _ranges_to_specs(aff.ranges)
+        if rustsec:
+            # RustSec marks a compromised crate as malicious from some version on, with no end: the versions after
+            # crates.io removed the bad ones are not malware. The MAL-* and GitHub advisories cover those cases.
+            rng = [s for s in rng if s is None or "<" in s]
+            if not rng:
+                continue
         if not rng or None in rng:
             specs.append(BlockSpec(eco, name))
         else:
@@ -214,7 +247,7 @@ class OsvFeed:
                 if stop is not None and stop.is_set():
                     return changed, None  # cancelled: do not advance the watermark
                 fname = info.filename.rsplit("/", 1)[-1]
-                if not (fname.startswith("MAL-") and fname.endswith(".json")) or info.file_size > MAX_ENTRY_BYTES:
+                if not (wanted(fname) and fname.endswith(".json")) or info.file_size > MAX_ENTRY_BYTES:
                     continue
                 with zf.open(info) as fh:
                     data = fh.read(MAX_ENTRY_BYTES + 1)
@@ -265,7 +298,7 @@ class OsvFeed:
                         done = True
                         break
                     newest = newest or ts_raw
-                    if vid.startswith("MAL-"):
+                    if wanted(vid):
                         ids[vid] = ts_raw
                 if done:
                     break

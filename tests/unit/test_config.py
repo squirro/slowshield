@@ -193,7 +193,7 @@ def test_valid_public_urls(url: str) -> None:
         '[upstreams.npm]\nmirrors = ["registry.npmjs.org"]',
         '[upstreams.pypi]\nhostnames = ["same"]\n[upstreams.npm]\nhostnames = ["SAME"]',
         '[[exceptions]]\necosystem = "pypi"\npackage = "x"\ndelay_days = -2',
-        '[[exceptions]]\necosystem = "cargo"\npackage = "x"\ndelay_days = 1',
+        '[[exceptions]]\necosystem = "nuget"\npackage = "x"\ndelay_days = 1',
         "unknown_key = 1",
         "this is not toml",
         'database_url = "mysql://x"',

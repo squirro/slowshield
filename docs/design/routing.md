@@ -2,7 +2,8 @@
 
 Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract, the
 deprecation of per-ecosystem hostnames and the new Setup page are implemented. Go is served at `/go/`
-([go.md](go.md)) and Maven at `/maven/` ([maven.md](maven.md)); the other ecosystems are planned.
+([go.md](go.md)), Maven at `/maven/` ([maven.md](maven.md)) and Cargo at `/cargo/` ([cargo.md](cargo.md)); the
+other ecosystems are planned.
 
 SlowShield serves every ecosystem from **one host**, each under a path named after its **protocol**. No
 ecosystem gets its own hostname. This document is the contract for those paths, so that new ecosystems never
@@ -45,8 +46,8 @@ them is added.
 | `/favicon.ico` | redirect to `/ui/static/brand/favicon.ico` (browsers ask for it) |
 | `/v2/` | OCI distribution API (mandated at the root by the spec) |
 | `/.well-known/` | RFC 8615 (e.g. Terraform service discovery, if ever needed) |
-| `/pypi/`, `/npm/`, `/go/`, `/maven/` | served today |
-| `/cargo/`, `/maven/`, `/nuget/`, `/rubygems/`, `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
+| `/pypi/`, `/npm/`, `/go/`, `/maven/`, `/cargo/` | served today |
+| `/nuget/`, `/rubygems/`, `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
 | `/static/`, `/simple/`, `/packages/` | deprecated, removed in 0.1 |
 
 If two protocols ever need the same root path:
@@ -64,7 +65,7 @@ The internal host-routing code stays for that purpose after the PyPI and npm hos
 | PyPI | `/pypi/` (shipped) | `PIP_INDEX_URL`, `UV_DEFAULT_INDEX` | none (relative URLs) | `upload-time` (PEP 700) | OSV PyPI |
 | npm | `/npm/` (shipped) | `npm_config_registry` | tarball URLs | `time` | OSV npm |
 | Go | `/go/` (shipped, [go.md](go.md)) | `go env -w GOPROXY=https://HOST/go` (without `,direct`) | none; checksum DB passed through unchanged | `Last-Modified` of the `.mod` on proxy.golang.org (when the mirror stored it; the module time can be backdated) | OSV Go, GitHub go |
-| Cargo | `/cargo/` (trailing `/` required) | `~/.cargo/config.toml` source replacement | `dl` in `config.json` | `pubtime` | OSV crates.io |
+| Cargo | `/cargo/` (shipped, [cargo.md](cargo.md); `/cargo/<id>/` kept for alternative registries) | `$CARGO_HOME/config.toml` source replacement | `dl` in `config.json`; held versions marked yanked | `pubtime`, never earlier than first seen | OSV crates.io (incl. RustSec), GitHub rust |
 | Maven, Gradle | `/maven/<repo-id>/` (shipped, [maven.md](maven.md): all, central, google, gradle-plugins) | `settings.xml` mirror (`mirrorOf *` → `/maven/all/`); Gradle init script | regenerate checksums of filtered metadata; follow Plugin Portal 303s on the server | `Last-Modified` per file, or first listed | OSV Maven, GitHub maven |
 | NuGet | `/nuget/v3/index.json` | user/machine `NuGet.Config`, nuget.org disabled | every absolute `@id` | registration `published` / catalog feed | OSV NuGet |
 | RubyGems | `/rubygems/` (trailing `/`) | `bundle config --global mirror.https://rubygems.org …`, `~/.gemrc` | none; block the legacy Marshal index | `created_at` | OSV RubyGems |

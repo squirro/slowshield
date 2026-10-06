@@ -53,6 +53,13 @@ gradle_plugins = { url = "https://plugins.gradle.org/m2", download_hosts = ["plu
 # jitpack = { url = "https://jitpack.io" }
 # nightlies = { url = "https://repo.example.com/snapshots", snapshots = true }  # snapshots: no age check
 
+[upstreams.cargo]                      # clients: sparse+<public_url>/cargo/ (docs/design/cargo.md)
+enabled = true
+fail_open = false                      # brand-new crates are held too (typosquats, impersonations)
+index_url = "https://index.crates.io"  # each line's `pubtime` is the publish time
+download_url = "https://static.crates.io/crates"
+download_hosts = []                    # hosts download_url may redirect to
+
 # --- caches -------------------------------------------------------------------------------------
 [cache]
 metadata_max_mb = 1024                 # upstream metadata + rendered responses: one SQLite file (data_dir/

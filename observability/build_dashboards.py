@@ -35,6 +35,7 @@ C = {
     "npm": "#cb3837",
     "go": "#00add8",
     "maven": "#ed8b00",
+    "cargo": "#dea584",
 }
 DECISION_COLORS = {
     "served": C["brand"],
@@ -470,7 +471,7 @@ def dashboard(
 
 
 INSTANCE_VAR = query_var("instance", "Instance", "label_values(slowshield_build_info, instance)")
-ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", ["pypi", "npm", "go", "maven"])
+ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", ["pypi", "npm", "go", "maven", "cargo"])
 
 
 # request-rate helper for native histograms
@@ -667,7 +668,7 @@ def overview() -> dict[str, Any]:
             ],
             unit="reqps",
             stack=True,
-            colors={"pypi": C["pypi"], "npm": C["npm"], "go": C["go"], "maven": C["maven"]},
+            colors={eco: C[eco] for eco in ("pypi", "npm", "go", "maven", "cargo")},
         ),
         12,
         8,
@@ -840,7 +841,7 @@ def security() -> dict[str, Any]:
                     instant=True,
                 ),
             ],
-            colors={"pypi": C["pypi"], "npm": C["npm"], "go": C["go"], "maven": C["maven"]},
+            colors={eco: C[eco] for eco in ("pypi", "npm", "go", "maven", "cargo")},
         ),
         8,
         8,

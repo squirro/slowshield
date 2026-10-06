@@ -130,7 +130,7 @@
         "name": "ecosystem",
         "label": "Ecosystem",
         "type": "custom",
-        "query": "pypi,npm,go",
+        "query": "pypi,npm,go,maven",
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -156,6 +156,11 @@
           {
             "text": "go",
             "value": "go",
+            "selected": false
+          },
+          {
+            "text": "maven",
+            "value": "maven",
             "selected": false
           }
         ],
@@ -1244,6 +1249,21 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#00add8"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "maven"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ed8b00"
                 }
               }
             ]

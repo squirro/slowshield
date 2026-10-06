@@ -1,8 +1,9 @@
 name: Release
 
 # Tag vX.Y.Z -> build both architectures natively (no caches: release artifacts must not depend on
-# shared CI caches) -> push by digest -> e2e + performance gate against the previous release ->
-# promote tags (X.Y.Z, X.Y, X, latest) -> GitHub Release with notes and perf reports.
+# shared CI caches) -> push by digest -> e2e tests and observability smoke test on the pushed images ->
+# promote tags (X.Y.Z, X.Y, X, latest) -> GitHub Release with notes. Performance is compared on pull requests
+# (ci.yml), so the release doesn't run it again.
 # Registry: environment `production`, variable IMAGE_PREFIX (ghcr.io/squirro). For GHCR the job's own
 # GITHUB_TOKEN pushes; REGISTRY_USERNAME / REGISTRY_PASSWORD are only needed for another registry.
 on:
@@ -116,14 +117,14 @@ jobs:
           retention-days: 7
 
   verify:
-    name: Verify e2e & performance gate (${{ matrix.arch }})
+    name: Verify e2e (${{ matrix.arch }})
     needs: [build]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 45
     environment: production
     permissions:
-      contents: read # check out tests and the perf harness
-      packages: read # pull the candidate and the previous release from GHCR
+      contents: read # check out the tests
+      packages: read # pull the candidate from GHCR
     strategy:
       fail-fast: true
       matrix:
@@ -143,9 +144,6 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
-
-      - name: Install k6
-        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
 
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -173,7 +171,7 @@ jobs:
           username: ${{ vars.REGISTRY_USERNAME || github.actor }}
           password: ${{ secrets.REGISTRY_PASSWORD || github.token }}
 
-      - name: Pull candidate and previous release
+      - name: Pull the candidate
         id: images
         env:
           ARCH: ${{ matrix.arch }}
@@ -188,9 +186,6 @@ jobs:
           docker load --input "digests/fakeupstream-${ARCH}.tar"
           echo "app=${IMAGE}@${app_digest}" >> "$GITHUB_OUTPUT"
           echo "caddy=${CADDY_IMAGE}@${caddy_digest}" >> "$GITHUB_OUTPUT"
-          if docker pull --platform "linux/${ARCH}" "${IMAGE}:latest"; then
-            echo "baseline=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Install test dependencies
         run: uv sync --locked
@@ -203,33 +198,12 @@ jobs:
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:release
         run: uv run pytest -m e2e tests/e2e -v
 
-      - name: Performance gate against the previous release
-        env:
-          CANDIDATE: ${{ steps.images.outputs.app }}
-          BASELINE: ${{ steps.images.outputs.baseline }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          baseline_args=()
-          if [ -n "${BASELINE}" ]; then baseline_args=(--baseline "$BASELINE"); fi
-          uv run python -m perf run --gate --candidate "$CANDIDATE" "${baseline_args[@]}" \
-            --fakeupstream slowshield-fakeupstream:release --profile full --rounds 5 --duration 20s \
-            --out "perf/results/release-${ARCH}"
-
       - name: Observability smoke test
         env:
           SLOWSHIELD_IMAGE: ${{ steps.images.outputs.app }}
           SLOWSHIELD_CADDY_IMAGE: ${{ steps.images.outputs.caddy }}
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:release
         run: uv run python observability/smoke.py
-
-      - name: Upload perf results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: perf-release-${{ matrix.arch }}
-          path: perf/results/
-          if-no-files-found: ignore
-          retention-days: 90
 
   publish:
     name: Promote tags & create release
@@ -246,9 +220,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download digests and perf reports
+      - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: digests-*
           path: artifacts
 
       - name: Set up Buildx
@@ -315,19 +290,5 @@ jobs:
             echo
             echo "- \`${IMAGE}:${version}\`"
             echo "- \`${CADDY_IMAGE}:${version}\`"
-            for arch in amd64 arm64; do
-              if [ -f "artifacts/perf-release-${arch}/release-${arch}/report.md" ]; then
-                echo
-                echo "<details><summary>Performance (${arch})</summary>"
-                echo
-                cat "artifacts/perf-release-${arch}/release-${arch}/report.md"
-                echo "</details>"
-              fi
-            done
           } >> notes.md
-          assets=()
-          for arch in amd64 arm64; do
-            f="artifacts/perf-release-${arch}/release-${arch}/results.json"
-            if [ -f "$f" ]; then cp "$f" "perf-${arch}.json"; assets+=("perf-${arch}.json"); fi
-          done
-          gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md "${assets[@]}"
+          gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md

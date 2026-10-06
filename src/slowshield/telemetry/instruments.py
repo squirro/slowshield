@@ -42,7 +42,7 @@ artifact_bytes = meter.create_counter(
 publish_time_lookups = meter.create_counter(
     "slowshield.publish_time.lookups",
     unit="{request}",
-    description="Upstream requests made to learn a version's publish time (Go: Last-Modified of the .mod), by result.",
+    description="Upstream requests made to learn a version's publish time (Last-Modified of a Go .mod / Maven .pom).",
 )
 cache_requests = meter.create_counter(
     "slowshield.cache.requests", unit="{request}", description="Cache lookups by cache and result."

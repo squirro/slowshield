@@ -33,6 +33,7 @@ from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems.artifacts import ArtifactServer
 from slowshield.ecosystems.go.service import GoService
+from slowshield.ecosystems.maven.service import MavenService
 from slowshield.ecosystems.npm.service import NpmService
 from slowshield.ecosystems.pypi.service import PypiService
 from slowshield.feeds import FeedScheduler
@@ -69,6 +70,8 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
         ]
     )
     allowed |= {h.lower() for h in raw.upstreams.go.download_hosts}
+    for repo in raw.upstreams.maven.all_repos().values():
+        allowed |= _hosts([repo.url]) | {h.lower() for h in repo.download_hosts}
     upstream = Upstream(
         user_agent=f"slowshield/{__version__} (+https://github.com/squirro/slowshield)", allowed_hosts=allowed
     )
@@ -155,12 +158,13 @@ class SlowShield:
         pypi = PypiService(ctx) if self.cfg.raw.upstreams.pypi.enabled else None
         npm = NpmService(ctx) if self.cfg.raw.upstreams.npm.enabled else None
         go = GoService(ctx) if self.cfg.raw.upstreams.go.enabled else None
+        maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         from slowshield.ui import UI
 
         ui = UI(ctx)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx)
-        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi, npm, go, ui))
+        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, ui=ui))
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
             self._spawn(self._config_watcher(ctx), "config")
@@ -174,6 +178,7 @@ class SlowShield:
                 "pypi": bool(pypi),
                 "npm": bool(npm),
                 "go": bool(go),
+                "maven": bool(maven),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
             },
@@ -292,7 +297,14 @@ class SlowShield:
     # ---- routing ------------------------------------------------------------------------------------
 
     def _router(
-        self, ctx: AppContext, pypi: PypiService | None, npm: NpmService | None, go: GoService | None, ui: Any
+        self,
+        ctx: AppContext,
+        *,
+        pypi: PypiService | None,
+        npm: NpmService | None,
+        go: GoService | None,
+        maven: MavenService | None,
+        ui: Any,
     ) -> ASGIApp:
         raw = self.cfg.raw
         common: list[Any] = [
@@ -307,6 +319,8 @@ class SlowShield:
             main.append(Mount("/npm", app=npm))
         if go is not None:
             main.append(Mount("/go", app=go))
+        if maven is not None:
+            main.append(Mount("/maven", app=maven))
         main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
         main.extend(ui.routes())
         # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
@@ -469,6 +483,10 @@ def _route_label(path: str) -> str:
             return label
     if path.startswith("/npm/"):
         return "/npm/{package}/-/{file}" if "/-/" in path else "/npm/{package}"
+    if path.startswith("/maven/"):
+        if "/maven-metadata.xml" in path:
+            return "/maven/{repo}/{artifact}/maven-metadata.xml"
+        return "/maven/{repo}/{file}"
     if path.startswith("/go/"):
         if path.endswith("/@v/list"):
             return "/go/{module}/@v/list"

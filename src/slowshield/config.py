@@ -24,8 +24,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go")
+Ecosystem = Literal["pypi", "npm", "go", "maven"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -58,6 +58,7 @@ class ExceptionRule(msgspec.Struct, forbid_unknown_fields=True):
 
 class PypiUpstream(msgspec.Struct, forbid_unknown_fields=True):
     enabled: bool = True
+    fail_open: bool | None = None  # None: the top-level `fail_open`
     hostnames: list[str] = []
     mirrors: list[str] = msgspec.field(default_factory=lambda: ["https://pypi.org"])
     files_url: str = "https://files.pythonhosted.org"
@@ -65,6 +66,7 @@ class PypiUpstream(msgspec.Struct, forbid_unknown_fields=True):
 
 class NpmUpstream(msgspec.Struct, forbid_unknown_fields=True):
     enabled: bool = True
+    fail_open: bool | None = None  # None: the top-level `fail_open`
     hostnames: list[str] = []
     mirrors: list[str] = msgspec.field(default_factory=lambda: ["https://registry.npmjs.org"])
     # Absolute base URL clients use for this registry (tarball URLs are rewritten to it).
@@ -75,6 +77,7 @@ class NpmUpstream(msgspec.Struct, forbid_unknown_fields=True):
 
 class GoUpstream(msgspec.Struct, forbid_unknown_fields=True):
     enabled: bool = True
+    fail_open: bool | None = None  # None: the top-level `fail_open`
     # GOPROXY-protocol mirrors. Publish times are the `Last-Modified` of each version's .mod, which on
     # proxy.golang.org is when the mirror first stored the version (docs/design/go.md).
     mirrors: list[str] = msgspec.field(default_factory=lambda: ["https://proxy.golang.org"])
@@ -85,10 +88,46 @@ class GoUpstream(msgspec.Struct, forbid_unknown_fields=True):
     download_hosts: list[str] = msgspec.field(default_factory=lambda: ["storage.googleapis.com"])
 
 
+class MavenRepo(msgspec.Struct, forbid_unknown_fields=True):
+    url: str
+    # Hosts this repository may redirect downloads to (the Plugin Portal sends files to its artifact store and to
+    # Central). Every file is checked against the repository's checksums wherever it comes from.
+    download_hosts: list[str] = []
+    # Serve -SNAPSHOT versions, without the release-age check (they change by design). Operator repositories only.
+    snapshots: bool = False
+
+
+MAVEN_BUILTIN = ("all", "central", "google", "gradle-plugins")
+
+
+class MavenUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # An artifact none of whose versions is old enough is held too: on Maven, brand-new artifacts are the realistic
+    # attack (typosquats, dependency confusion), and builds pin exact versions anyway (docs/design/maven.md).
+    fail_open: bool | None = False
+    central: MavenRepo = msgspec.field(default_factory=lambda: MavenRepo("https://repo1.maven.org/maven2"))
+    google: MavenRepo = msgspec.field(default_factory=lambda: MavenRepo("https://dl.google.com/dl/android/maven2"))
+    gradle_plugins: MavenRepo = msgspec.field(
+        default_factory=lambda: MavenRepo(
+            "https://plugins.gradle.org/m2", ["plugins-artifacts.gradle.org", "repo.maven.apache.org"]
+        )
+    )
+    # More repositories, served at /maven/<id>/ (for example jitpack = { url = "https://jitpack.io" }).
+    repos: dict[str, MavenRepo] = {}
+
+    def repository(self, repo_id: str) -> MavenRepo | None:
+        builtin = {"central": self.central, "google": self.google, "gradle-plugins": self.gradle_plugins}
+        return builtin.get(repo_id) or self.repos.get(repo_id)
+
+    def all_repos(self) -> dict[str, MavenRepo]:
+        return {"central": self.central, "google": self.google, "gradle-plugins": self.gradle_plugins, **self.repos}
+
+
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
     npm: NpmUpstream = msgspec.field(default_factory=NpmUpstream)
     go: GoUpstream = msgspec.field(default_factory=GoUpstream)
+    maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):
@@ -188,6 +227,11 @@ class LoadedConfig:
                 return v
         v = self._pkg_rules.get((ecosystem, name))
         return self.raw.default_delay_days if v is None else v
+
+    def fail_open_for(self, ecosystem: str) -> bool:
+        """`upstreams.<ecosystem>.fail_open` if set, else the top-level `fail_open`."""
+        value = getattr(self.raw.upstreams, ecosystem).fail_open
+        return self.raw.fail_open if value is None else value
 
     def has_version_rules(self, ecosystem: str, name: str) -> bool:
         return any(k[0] == ecosystem and k[1] == name for k in self._ver_rules)
@@ -298,6 +342,7 @@ def _apply_env(cfg: Config) -> None:
         ("SLOWSHIELD_PYPI_ENABLED", lambda b: setattr(cfg.upstreams.pypi, "enabled", b)),
         ("SLOWSHIELD_NPM_ENABLED", lambda b: setattr(cfg.upstreams.npm, "enabled", b)),
         ("SLOWSHIELD_GO_ENABLED", lambda b: setattr(cfg.upstreams.go, "enabled", b)),
+        ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
@@ -323,6 +368,9 @@ _PUBLIC_URL = re.compile(
 )
 
 
+_HOSTNAME = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+
+
 def _validate(cfg: Config) -> None:
     if cfg.default_delay_days < 0:
         raise ConfigError("default_delay_days must be >= 0")
@@ -343,7 +391,7 @@ def _validate(cfg: Config) -> None:
                 f"{name} must be a plain http(s)://host[:port][/path] URL (no query, credentials or special "
                 f"characters: it appears in copy-paste shell snippets), got {url!r}"
             )
-    for eco in ECOSYSTEMS:
+    for eco in ("pypi", "npm", "go"):
         mirrors = getattr(cfg.upstreams, eco).mirrors
         if not mirrors:
             raise ConfigError(f"upstreams.{eco}.mirrors must not be empty")
@@ -353,8 +401,20 @@ def _validate(cfg: Config) -> None:
     if not cfg.upstreams.go.sumdb_url.startswith(("https://", "http://")):
         raise ConfigError(f"upstreams.go.sumdb_url must be an http(s) URL, got {cfg.upstreams.go.sumdb_url!r}")
     for host in cfg.upstreams.go.download_hosts:
-        if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", host):
+        if not _HOSTNAME.fullmatch(host):
             raise ConfigError(f"upstreams.go.download_hosts entries must be host names, got {host!r}")
+    for repo_id in cfg.upstreams.maven.repos:
+        if repo_id in MAVEN_BUILTIN or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", repo_id):
+            raise ConfigError(
+                f"upstreams.maven.repos: {repo_id!r} must be lower-case letters, digits and dashes, and not one of "
+                f"{', '.join(MAVEN_BUILTIN)}"
+            )
+    for repo_id, repo in cfg.upstreams.maven.all_repos().items():
+        if not repo.url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.maven {repo_id}: url must be an http(s) URL, got {repo.url!r}")
+        for host in repo.download_hosts:
+            if not _HOSTNAME.fullmatch(host):
+                raise ConfigError(f"upstreams.maven {repo_id}: download_hosts entries must be host names, got {host!r}")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
@@ -471,6 +531,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
             changed.append(f"upstreams.{eco}.hostnames")
     if old.upstreams.npm.public_url != new.upstreams.npm.public_url:
         changed.append("upstreams.npm.public_url")
+    changed.extend(  # repositories decide which upstream hosts the client may reach
+        f"upstreams.maven.{name}"
+        for name in ("central", "google", "gradle_plugins", "repos")
+        if getattr(old.upstreams.maven, name) != getattr(new.upstreams.maven, name)
+    )
     if old.cache.artifacts_enabled != new.cache.artifacts_enabled:
         changed.append("cache.artifacts_enabled")
     changed.extend(

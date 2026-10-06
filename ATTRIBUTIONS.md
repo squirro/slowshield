@@ -10,6 +10,7 @@ SlowShield is built on these open-source projects. Thank you to their authors an
 | certifi | 2026.7.22 | Mozilla Public License 2.0 (MPL 2.0) | [link](https://github.com/certifi/python-certifi) |
 | charset-normalizer | 3.5.1 | MIT |  |
 | click | 8.5.0 | BSD-3-Clause | [link](https://github.com/pallets/click/) |
+| defusedxml | 0.7.1 | Python Software Foundation License | [link](https://github.com/tiran/defusedxml) |
 | googleapis-common-protos | 1.75.3 | Apache-2.0 | [link](https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos) |
 | granian | 2.8.3 | BSD License | [link](https://github.com/emmett-framework/granian) |
 | idna | 3.20 | BSD-3-Clause | [link](https://github.com/kjd/idna) |
@@ -38,7 +39,7 @@ SlowShield is built on these open-source projects. Thank you to their authors an
 
 | Source | Used for | Terms |
 |---|---|---|
-| [OSV](https://osv.dev/) | Malicious-package advisories (`MAL-*`) for PyPI, npm and Go | [CC-BY-4.0](https://github.com/google/osv.dev/blob/master/LICENSE) |
+| [OSV](https://osv.dev/) | Malicious-package advisories (`MAL-*`) for PyPI, npm, Go and Maven | [CC-BY-4.0](https://github.com/google/osv.dev/blob/master/LICENSE) |
 | [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) | Origin of the `MAL-*` records OSV redistributes | [Apache-2.0](https://github.com/ossf/malicious-packages/blob/main/LICENSE) |
 | [GitHub Advisory Database](https://github.com/advisories) | `malware` advisories via the REST API | [CC-BY-4.0](https://github.com/github/advisory-database/blob/main/LICENSE.md) |
 

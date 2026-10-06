@@ -305,6 +305,134 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return PlainTextResponse("AccessDenied", status_code=403)
         return _stream(gv.zip, tampered="/go/" + rest in state.tampered, media_type="application/zip")
 
+    # ---- Maven: Central, Google Maven, the Gradle Plugin Portal ------------------------------------------
+
+    def maven_lm(f: Any) -> str:
+        stored = f.stored if f.stored is not None else state.catalog.now + state.clock_offset
+        return email.utils.formatdate(stored, usegmt=True)
+
+    def maven_metadata(art: Any) -> bytes:
+        versions = list(art.versions)
+        release = [v for v in versions if not v.endswith("-SNAPSHOT")]
+        rows = "".join(f"      <version>{v}</version>\n" for v in versions)
+        # Odd documents real repositories could send: a DOCTYPE, no groupId/artifactId, prefixed tags.
+        ids = (
+            ""
+            if art.artifact == "anonymous"
+            else (f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n")
+        )
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
+            f"{ids}  <versioning>\n"
+            f"    <latest>{versions[-1]}</latest>\n    <release>{release[-1] if release else ''}</release>\n"
+            f"    <versions>\n{rows}    </versions>\n    <lastUpdated>20260920000000</lastUpdated>\n"
+            "  </versioning>\n</metadata>\n"
+        )
+        if art.artifact == "doctype":
+            body = body.replace("<metadata>", '<!DOCTYPE metadata [<!ENTITY x "y">]>\n<metadata>', 1)
+        if art.artifact == "prefixed":
+            body = re.sub(r"<(/?)(?!\?)", r"<\1m:", body).replace(
+                "<m:metadata>", '<m:metadata xmlns:m="http://maven.apache.org/METADATA/1.1.0">', 1
+            )
+        return body.encode()
+
+    def maven_snapshot_metadata(art: Any, version: str) -> bytes:
+        """A snapshot version's builds (`<group>/<artifact>/<version>/maven-metadata.xml`)."""
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
+            f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n"
+            f"  <version>{version}</version>\n  <versioning>\n"
+            "    <snapshot>\n      <timestamp>20260920.000000</timestamp>\n      <buildNumber>1</buildNumber>\n"
+            "    </snapshot>\n    <lastUpdated>20260920000000</lastUpdated>\n  </versioning>\n</metadata>\n"
+        ).encode()
+
+    plugin_metadata = (
+        b'<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n  <plugins>\n    <plugin>\n      <name>Fake</name>\n'
+        b"      <prefix>fake</prefix>\n      <artifactId>fake-maven-plugin</artifactId>\n    </plugin>\n  </plugins>\n"
+        b"</metadata>\n"
+    )
+    algos = {"sha1": "sha1", "md5": "md5", "sha256": "sha256", "sha512": "sha512"}
+
+    def maven_find(repo: str, rest: str) -> tuple[Any, str | None, str | None]:
+        """(artifact, version, filename) for a path, or (artifact, None, None) for its metadata."""
+        parts = rest.split("/")
+        if parts[-1].startswith("maven-metadata.xml"):
+            art = state.catalog.maven.get((repo, "/".join(parts[:-1])))
+            if art is None:  # a version's metadata: a snapshot's builds
+                art = state.catalog.maven.get((repo, "/".join(parts[:-2])))
+                return (art, parts[-2], parts[-1]) if art and parts[-2] in art.versions else (None, None, None)
+            return art, None, None
+        if len(parts) < 4:
+            return None, None, None
+        return state.catalog.maven.get((repo, "/".join(parts[:-2]))), parts[-2], parts[-1]
+
+    async def maven(request: Request) -> Response:
+        repo, rest = request.path_params["repo"], request.path_params["rest"]
+        not_found = {"Last-Modified": "Sat, 11 Oct 2025 08:00:00 GMT"} if repo == "central" else {}
+        if repo == "google" and rest == "master-index.xml":
+            groups = sorted({a.group for (r, _), a in state.catalog.maven.items() if r == "google"})
+            body = '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n' + "".join(f"  <{g}/>\n" for g in groups)
+            return Response((body + "</metadata>\n").encode(), media_type="text/xml")
+        if rest == "org/apache/maven/plugins/maven-metadata.xml":
+            return Response(plugin_metadata, media_type="text/xml")
+        if repo == "portal-artifacts":  # <group>/<artifact>/<version>/<sha256>/<file>
+            group, artifact, version, _sha, fname = rest.split("/")
+            art = state.catalog.maven.get(("portal", f"{group.replace('.', '/')}/{artifact}"))
+            f = art.versions.get(version, {}).get(fname) if art else None
+            if f is None:
+                return PlainTextResponse("not found", status_code=404)
+            resp = _stream(f.blob, tampered=False, media_type="application/octet-stream")
+            resp.headers["Last-Modified"] = maven_lm(f)
+            return resp
+        art, version, fname = maven_find(repo, rest)
+        if repo == "portal":
+            if art is None:  # the Plugin Portal answers any Central path with a 303 to Central
+                return Response(status_code=303, headers={"Location": f"/maven/central/{rest}"})
+            if version is not None and fname in art.versions.get(version, {}):
+                f = art.versions[version][fname]
+                sha = f.blob.digests()["sha256"]
+                loc = f"/maven/portal-artifacts/{art.group}/{art.artifact}/{version}/{sha}/{fname}"
+                return Response(status_code=303, headers={"Location": loc, "Last-Modified": maven_lm(f)})
+        if art is None:
+            return PlainTextResponse("not found", status_code=404, headers=not_found)
+        if version is None:
+            body = maven_metadata(art)
+            algo = rest.rsplit(".", 1)[-1] if not rest.endswith(".xml") else None
+            if algo in algos:
+                return PlainTextResponse(hashlib.new(algos[algo], body).hexdigest())
+            return Response(
+                body,
+                media_type="text/xml",
+                headers={"Last-Modified": email.utils.formatdate(state.catalog.now - DAY, usegmt=True)},
+            )
+        if fname and fname.startswith("maven-metadata.xml"):
+            body = maven_snapshot_metadata(art, version)
+            algo = fname.rsplit(".", 1)[-1] if not fname.endswith(".xml") else None
+            return (
+                PlainTextResponse(hashlib.new(algos[algo], body).hexdigest())
+                if algo in algos
+                else Response(body, media_type="text/xml")
+            )
+        files = art.versions.get(version, {})
+        algo = next((a for a in algos if fname.endswith("." + a)), None)
+        base = fname[: -len(algo) - 1] if algo else fname
+        f = files.get(base)
+        if f is None:
+            return PlainTextResponse("not found", status_code=404, headers=not_found)
+        if algo:
+            digest = hashlib.new(algo, b"".join(f.blob.chunks())).hexdigest()
+            return PlainTextResponse(digest, headers={"Last-Modified": maven_lm(f)})
+        headers = {"Last-Modified": maven_lm(f)}
+        if repo == "central":  # Central sends its checksums as headers
+            data = b"".join(f.blob.chunks())
+            headers["x-checksum-sha1"] = hashlib.sha1(data, usedforsecurity=False).hexdigest()
+            headers["x-checksum-md5"] = hashlib.md5(data, usedforsecurity=False).hexdigest()
+        resp = _stream(
+            f.blob, tampered=f"/maven/{repo}/{rest}" in state.tampered, media_type="application/java-archive"
+        )
+        resp.headers.update(headers)
+        return resp
+
     async def sumdb(request: Request) -> Response:
         rest = request.path_params["rest"]
         note = "go.sum database tree\n2000000\nZmFrZXRyZWVoYXNo\n\n— sum.golang.org fakesignature\n"
@@ -433,7 +561,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith("/go/"):
+        elif not path.startswith(("/go/", "/maven/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -512,6 +640,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/npm/{rest:path}", npm, methods=["GET"]),
         Route("/npm/{rest:path}", npm_post, methods=["POST"]),
         Route("/go/{rest:path}", go, methods=["GET", "HEAD"]),
+        Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
         Route("/sumdb/{rest:path}", sumdb),
         Route("/storage/{rest:path}", storage),
         Route("/osv/{eco}/all.zip", osv_zip),

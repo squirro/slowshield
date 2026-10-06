@@ -62,6 +62,9 @@ const SCENARIOS = {
   // requests that dominate `go mod download`.
   go_list: () => http.get(`${TARGET}/go/example.com/many/@v/list`),
   go_mod: () => http.get(`${TARGET}/go/example.com/hello/@v/v1.0.0.mod`),
+  // Maven: filtered metadata of a 500-version artifact, and a cached jar (Maven builds fetch many small files).
+  maven_metadata: () => http.get(`${TARGET}/maven/all/org/example/many/maven-metadata.xml`),
+  maven_jar: () => http.get(`${TARGET}/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar`),
   dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();

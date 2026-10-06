@@ -15,6 +15,11 @@ mirrors = ["http://fakeupstream:9000/npm"]
 mirrors = ["http://fakeupstream:9000/go"]
 sumdb_url = "http://fakeupstream:9000/sumdb"
 
+[upstreams.maven]
+central = { url = "http://fakeupstream:9000/maven/central" }
+google = { url = "http://fakeupstream:9000/maven/google" }
+gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
+
 [cache]
 artifacts_enabled = true
 artifacts_max_gb = 1

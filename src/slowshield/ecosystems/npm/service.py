@@ -305,7 +305,7 @@ class NpmService:
             now=now,
             delay_for=lambda ver: cfg.delay_days_for(ECO, doc.name, ver),
             is_blocked=lambda ver: blocks.match(ECO, ver) is not None,
-            fail_open=cfg.raw.fail_open,
+            fail_open=cfg.fail_open_for(ECO),
         )
         # Preserve upstream order (chronological for npmjs) for byte-stable output.
         allowed = {c.item for c in ev.allowed}

@@ -15,7 +15,7 @@ DATA_SOURCES = """
 
 | Source | Used for | Terms |
 |---|---|---|
-| [OSV](https://osv.dev/) | Malicious-package advisories (`MAL-*`) for PyPI, npm and Go | [CC-BY-4.0](https://github.com/google/osv.dev/blob/master/LICENSE) |
+| [OSV](https://osv.dev/) | Malicious-package advisories (`MAL-*`) for PyPI, npm, Go and Maven | [CC-BY-4.0](https://github.com/google/osv.dev/blob/master/LICENSE) |
 | [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) | Origin of the `MAL-*` records OSV redistributes | [Apache-2.0](https://github.com/ossf/malicious-packages/blob/main/LICENSE) |
 | [GitHub Advisory Database](https://github.com/advisories) | `malware` advisories via the REST API | [CC-BY-4.0](https://github.com/github/advisory-database/blob/main/LICENSE.md) |
 

@@ -40,6 +40,7 @@ def main() -> None:
         render(BRAND / "app-icon.svg", s).save(PNG / f"icon-{s}.png", optimize=True)
     render(BRAND / "social-preview.svg", 1280, 640).save(PNG / "social-preview.png", optimize=True)
     render(BRAND / "readme-banner.svg", 1200, 280).save(PNG / "readme-banner.png", optimize=True)
+    render(BRAND / "x-header.svg", 1500, 500).convert("RGB").save(PNG / "x-header.png", optimize=True)  # x.com header
     for name in ("mark.svg", "mark-dark.svg", "favicon.svg", "wordmark.svg", "wordmark-dark.svg"):
         shutil.copyfile(BRAND / name, UI / name)
     shutil.copyfile(PNG / "favicon.ico", UI / "favicon.ico")

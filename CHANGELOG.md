@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Maven repositories at `/maven/` for Maven, Gradle, sbt and Coursier ([docs/design/maven.md](docs/design/maven.md),
+  https://github.com/squirro/slowshield/issues/18). `/maven/all/` serves Maven Central and Google Maven behind one
+  URL for a `settings.xml` mirror; `/maven/central/`, `/maven/google/` and `/maven/gradle-plugins/` serve each
+  repository (Gradle's init script uses those), and operator repositories go under `/maven/<id>/`.
+  - `maven-metadata.xml` leaves out versions that are too new or blocked, with `<latest>`/`<release>` and the
+    checksum files recomputed. Files that are too new get `425 Too Early`, which Maven and Gradle show as the reason
+    and re-request on the next build. Malware gets `451`; upstream failures `503`, never a `404` Maven would cache.
+  - A file's publish time is its `Last-Modified` on the repository, or when SlowShield first saw the version listed,
+    whichever is earlier, so a file added to an old version later is held on its own.
+  - Downloads are checked against Central's `x-checksum-sha1`, the `.sha1` file, or the sha256 in the Plugin
+    Portal's path, and fingerprinted. Responses carry `X-Checksum-Sha1`, so Maven skips checksum requests.
+  - OSV and GitHub malware advisories for Maven feed the blocklist, matched in Maven's version order (`1.0` = `1.0.0`).
+  - Metadata SlowShield can't filter is refused with `503`, never passed on unfiltered.
+  - A cached file is judged again by its own recorded `Last-Modified` (migration `0004_artifact_published`), so it is
+    held again when the policy gets stricter, without a request upstream.
+- `fail_open` per ecosystem (`upstreams.<ecosystem>.fail_open`). Maven defaults to off: brand-new artifacts are held.
+- The Setup page has Maven (`settings.xml`), Gradle (init script), sbt and Coursier.
+
+### Changed
+- Maven is shown in Java orange `#ED8B00` (Maven's own red is too close to npm's), in the UI and in Grafana.
+- CI: the performance comparison on pull requests (k6 against the base branch, and the micro benchmarks) can be
+  skipped with the `skip-perf` label. Releases no longer run a performance gate against the previous release,
+  only the end-to-end tests and the observability smoke test on the release images.
+
 ## [0.0.5] - 2026-10-05
 
 ### Added

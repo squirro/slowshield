@@ -21,6 +21,7 @@ what got stopped. Patient, verified packages pass through the dotted side. Tagli
 | `lockup-horizontal(-dark).svg`, `lockup-stacked(-dark).svg`, `wordmark(-dark).svg` | Mark and name; all text outlined |
 | `social-preview.svg`, `png/social-preview.png` | 1280 × 640 GitHub / Open Graph image |
 | `readme-banner(-dark).svg` | The README header (light and dark `<picture>`) |
+| `x-header.svg`, `png/x-header.png` | 1500 × 500 x.com header: “Patience is the best malware scanner.” |
 | `tokens.css` | Colours (light, dark, `.ss-light` / `.ss-dark` scopes), fonts, radii |
 | `fonts/` | Schibsted Grotesk (SIL OFL 1.1): the variable TTF used to outline the wordmark, a Latin WOFF2 for the website |
 | `palette.html` | Palette tables with measured contrast, included into the guide |

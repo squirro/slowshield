@@ -2,7 +2,7 @@
 name = "slowshield"
 dynamic = []
 version = "0.0.5"
-description = "Supply-chain defence proxy for PyPI, npm and Go modules: delays new releases, blocks known malware, detects tampering."
+description = "Supply-chain defence proxy for PyPI, npm, Go modules and Maven: delays new releases, blocks known malware, detects tampering."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -28,6 +28,7 @@ dependencies = [
   "opentelemetry-sdk>=1.40",
   "opentelemetry-exporter-otlp-proto-http>=1.40",
   "python-dotenv>=1.1.0",
+  "defusedxml>=0.7.1",
 ]
 
 [project.scripts]

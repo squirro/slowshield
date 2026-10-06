@@ -1,4 +1,4 @@
-# Regression gate for release builds (perf/runner.py). A metric regresses when the median moves past
+# Regression gate for `perf run --gate` (perf/runner.py). A metric regresses when the median moves past
 # its threshold AND, with >= 5 rounds per side, the difference is statistically significant
 # (two-sided Mann-Whitney U, p < alpha). Regressions are re-measured once before the gate fails.
 

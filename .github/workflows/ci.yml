@@ -154,6 +154,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read # check out the repository (and main for the perf baseline)
+      pull-requests: read # read the pull request's labels (skip-perf)
     strategy:
       fail-fast: false
       matrix:
@@ -214,12 +215,30 @@ jobs:
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:ci
         run: uv run pytest -m e2e tests/e2e -v
 
-      - name: Install k6
+      # The performance comparison runs on every pull request unless it has the skip-perf label. The label is
+      # read live rather than from the event, so adding it and re-running the job is enough.
+      - name: Performance comparison wanted?
+        id: perf
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx skip-perf; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::skip-perf label: no performance comparison or micro benchmarks"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install k6
+        if: steps.perf.outputs.run == 'true'
         uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
 
       - name: Check out the base branch (perf baseline)
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -228,7 +247,7 @@ jobs:
 
       - name: Build baseline image
         id: baseline
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -239,7 +258,7 @@ jobs:
           fi
 
       - name: Performance comparison against the base branch (informational)
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         continue-on-error: true
         env:
           PERF_BASELINE: ${{ steps.baseline.outputs.image }}
@@ -251,6 +270,7 @@ jobs:
             --out "perf/results/pr"
 
       - name: Micro benchmarks
+        if: github.event_name != 'pull_request' || steps.perf.outputs.run == 'true'
         run: uv run python -m perf micro --repeat 5 --out perf/results/micro.json
 
       - name: Upload perf results

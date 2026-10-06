@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +44,15 @@ BRAND_DOWNLOADS = (
 TOKENS_MARKER = "/* @tokens */"
 PALETTE_MARKER = "<!-- @palette -->"
 SPRITE_MARKER = "<!-- @sprite -->"
+# Client snippets come from the same file as the product's Setup page, filled in for the laptop quick start.
+SNIPPETS = HERE.parent / "src" / "slowshield" / "ui" / "snippets.toml"
+SNIPPET_MARKER = re.compile(r"<!-- @snippet ([a-z]+)\.([a-z-]+) -->")
+SITE_URLS = {
+    "pypi": "http://localhost:8080/pypi/simple/",
+    "npm": "http://localhost:8080/npm/",
+    "go": "http://localhost:8080/go",
+    "py_pkg": "requests",
+}
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # html + css + js, uncompressed
 HEADERS = HERE / "_headers"
@@ -71,6 +82,27 @@ def fail(errors: list[str]) -> None:
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
     sys.exit(1)
+
+
+def load_snippets() -> dict[str, str]:
+    """`shell.<id>` and `try.<name>` from snippets.toml, with the laptop URLs filled in."""
+    data = tomllib.loads(SNIPPETS.read_text(encoding="utf-8"))
+    raw = {f"shell.{s['id']}": s["code"] for s in data["shell"]} | {f"try.{k}": v for k, v in data["try"].items()}
+    out = {}
+    for key, template in raw.items():
+        code = template
+        for name, value in SITE_URLS.items():
+            code = code.replace("{" + name + "}", value)
+        out[key] = code.strip("\n")
+    return out
+
+
+def snippet(snippets: dict[str, str], m: re.Match[str], page: str, errors: list[str]) -> str:
+    key = f"{m.group(1)}.{m.group(2)}"
+    if key not in snippets:
+        errors.append(f"{page}: unknown snippet {key!r} (not in {SNIPPETS.name})")
+        return m.group(0)
+    return html.escape(snippets[key], quote=False)
 
 
 def check_headers(out: Path, html_files: list[Path]) -> list[str]:
@@ -125,10 +157,16 @@ def build(out: Path) -> None:
         css.read_text(encoding="utf-8").replace(TOKENS_MARKER, (BRAND / "tokens.css").read_text(encoding="utf-8"))
     )
     sprite = (BRAND / "sprite.html").read_text(encoding="utf-8")
+    snippets = load_snippets()
+    snippet_errors: list[str] = []
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
-        if SPRITE_MARKER in text:
-            page.write_text(text.replace(SPRITE_MARKER, sprite), encoding="utf-8")
+        new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
+        new = new.replace(SPRITE_MARKER, sprite)
+        if new != text:
+            page.write_text(new, encoding="utf-8")
+    if snippet_errors:
+        fail(snippet_errors)
     guide = out / "brand" / "index.html"
     if guide.is_file():
         guide.write_text(

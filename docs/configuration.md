@@ -21,8 +21,8 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_DATABASE_PATH`, `DATABASE_URL` | `database_path` | `DATABASE_URL` takes `sqlite:/path` |
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |
 | `SLOWSHIELD_DEFAULT_DELAY_DAYS` | `default_delay_days` | float |
-| `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | space/comma separated |
-| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED` | `upstreams.*.enabled` | booleans |
+| `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | **deprecated, removed in 0.1**; space/comma separated |
+| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED`, `SLOWSHIELD_MAVEN_ENABLED` | `upstreams.*.enabled` | booleans |
 | `SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD` | `enforce_age_on_download` | |
 | `SLOWSHIELD_FAIL_OPEN` | `fail_open` | |
 | `SLOWSHIELD_RECORD_CLIENT_IP` | `record_client_ip` | |
@@ -40,15 +40,70 @@ Local development: `uv run slowshield serve` also loads a `.env` file from the w
 
 ## Routing
 
-* **Single host** (no `hostnames` configured): PyPI at `/pypi/simple/` (and, for compatibility, at
-  `/simple/`), npm at `/npm/`, the UI at `/`.
-* **Per-ecosystem hosts**: requests whose `Host` matches `upstreams.pypi.hostnames` are served as a
-  PyPI index at the root (`/simple/…`, `/packages/…`); `upstreams.npm.hostnames` are served as an npm
-  registry at the root. Any other host gets the UI plus the prefixed routes.
+One host serves everything, each ecosystem under a path named after its protocol: PyPI at `/pypi/simple/`,
+npm at `/npm/`, Go modules at `/go/` (`GOPROXY`, [design/go.md](design/go.md)), Maven at `/maven/<repo-id>/`
+([design/maven.md](design/maven.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
+these and the names reserved for future ecosystems may be used at the root; see
+[design/routing.md](design/routing.md) for the contract and the plan for every ecosystem on the roadmap.
 
 PyPI file links are relative, so they work behind any prefix without trusting the `Host` header. npm
-requires absolute tarball URLs; they are built from `upstreams.npm.public_url` (or the first npm
-hostname, or `public_url + /npm`), never from request headers.
+requires absolute tarball URLs; they are built from `upstreams.npm.public_url`, or `public_url + /npm`,
+never from request headers. The Go module proxy protocol has no URLs in its responses.
+
+## Go
+
+```toml
+[upstreams.go]
+enabled = true
+mirrors = ["https://proxy.golang.org"]
+sumdb_url = "https://sum.golang.org"
+download_hosts = ["storage.googleapis.com"]
+```
+
+A version's publish time is the `Last-Modified` of its `.mod` on the mirror, which on proxy.golang.org is when the
+mirror first stored it ([design/go.md](design/go.md)). A mirror that fronts proxy.golang.org (Athens,
+Artifactory) reports its own storage time, which is later, so versions are held a little longer. `sumdb_url` is
+the checksum database proxied at `/go/sumdb/sum.golang.org/`. `download_hosts` are the only hosts the mirrors may
+redirect a download to: proxy.golang.org sends large zips to signed Cloud Storage URLs.
+
+## Maven
+
+```toml
+[upstreams.maven]
+enabled = true
+fail_open = false
+central = { url = "https://repo1.maven.org/maven2" }
+google = { url = "https://dl.google.com/dl/android/maven2" }
+gradle_plugins = { url = "https://plugins.gradle.org/m2", download_hosts = ["plugins-artifacts.gradle.org", "repo.maven.apache.org"] }
+
+[upstreams.maven.repos]
+jitpack = { url = "https://jitpack.io" }                                    # served at /maven/jitpack/
+nightlies = { url = "https://repo.example.com/snapshots", snapshots = true }  # snapshots, without an age check
+```
+
+`/maven/all/` serves Google Maven's groups from Google and everything else from Central: point Maven's
+`<mirrorOf>*</mirrorOf>` there. `fail_open` (per ecosystem; `null` means the top-level setting) is off for Maven:
+an artifact none of whose versions is old enough is held too. A file's publish time is its `Last-Modified`, or when
+SlowShield first saw its version listed upstream, whichever is earlier ([design/maven.md](design/maven.md)).
+
+## Fail-open per ecosystem
+
+`upstreams.<ecosystem>.fail_open` overrides the top-level `fail_open` for one ecosystem; unset, the top-level
+value applies. Maven defaults to `false`, the others to the top-level setting (`true`).
+
+**Deprecated, removed in 0.1:**
+
+* Per-ecosystem hostnames (`upstreams.pypi.hostnames`, `upstreams.npm.hostnames`): requests whose `Host`
+  matches are served as a PyPI index or npm registry at the root of that host. npm tarball links on such a
+  host use `https://<first npm hostname>`; everywhere else they use the path form.
+* The root PyPI alias (`/simple/…`, `/packages/…`) on deployments without hostnames, from the Rust version.
+* The old UI asset path `/static/…` (redirects to `/ui/static/…`).
+
+All of them still work, log a startup warning (hostnames) and are counted in
+`slowshield_legacy_routing_requests_total{route}`. To migrate, point clients at the path URLs (the Setup page
+shows them) and re-lock, or replace `https://pypi.example.com/` with `https://<host>/pypi/` and
+`https://npm.example.com/` with `https://<host>/npm/` in lockfiles. Once the counter stays at zero, the
+deployment is ready for 0.1.
 
 ## Hot reload
 

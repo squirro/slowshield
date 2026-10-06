@@ -20,6 +20,9 @@ const JSON_ACCEPT = { headers: { Accept: "application/vnd.pypi.simple.v1+json" }
 const HTML_ACCEPT = { headers: { Accept: "text/html" } };
 const CORGI = { headers: { Accept: "application/vnd.npm.install-v1+json" } };
 const FULL = { headers: { Accept: "application/json" } };
+// k6 counts every status >= 400 as a failed request. For the blocked request 451 is the success and
+// anything else (a 200 serves the malware) the failure; setup() requests keep the default.
+const BLOCKED = { ...JSON_ACCEPT, responseCallback: http.expectedStatuses(451) };
 
 // Index URLs are relative ("../../packages/..") to the project page; resolve them against /pypi/.
 function resolve(url) {
@@ -35,6 +38,8 @@ function discover() {
     const wheel = files.find((f) => f.filename.endsWith(".whl")) || files[0];
     if (wheel) out.small = resolve(wheel.url);
   }
+  // The dashboard moved from / to /ui/; A/B runs compare images on both sides of that change.
+  out.dashboard = http.get(`${TARGET}/ui/`, { redirects: 0 }).status === 200 ? `${TARGET}/ui/` : `${TARGET}/`;
   const big = http.get(`${TARGET}/pypi/simple/big-wheel/`, JSON_ACCEPT);
   if (big.status === 200) {
     const files = big.json("files") || [];
@@ -52,8 +57,15 @@ const SCENARIOS = {
   npm_huge_corgi: () => http.get(`${TARGET}/npm/huge-packument`, CORGI),
   artifact_cached: (d) => http.get(d.small),
   artifact_big: (d) => http.get(d.big, { responseType: "none", timeout: "120s" }),
-  blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, JSON_ACCEPT),
-  dashboard: () => http.get(`${TARGET}/`),
+  blocked: () => http.get(`${TARGET}/pypi/simple/malware-pkg/`, BLOCKED),
+  // Go: a 500-version list (the versions' publish times are known after the warm-up), and the cached go.mod
+  // requests that dominate `go mod download`.
+  go_list: () => http.get(`${TARGET}/go/example.com/many/@v/list`),
+  go_mod: () => http.get(`${TARGET}/go/example.com/hello/@v/v1.0.0.mod`),
+  // Maven: filtered metadata of a 500-version artifact, and a cached jar (Maven builds fetch many small files).
+  maven_metadata: () => http.get(`${TARGET}/maven/all/org/example/many/maven-metadata.xml`),
+  maven_jar: () => http.get(`${TARGET}/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar`),
+  dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();
     if (r < 0.45) return http.get(`${TARGET}/pypi/simple/alpha/`, JSON_ACCEPT);

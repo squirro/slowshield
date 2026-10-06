@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +28,9 @@ from perf.stats import mann_whitney_p, median, relative_change
 ROOT = Path(__file__).resolve().parent
 K6_SCRIPT = ROOT / "k6" / "scenarios.js"
 PORT = 18080
+UPSTREAM_PORT = 18099  # fakeupstream, published only to wait for /healthz
+CONFIG = ROOT / "slowshield.toml"
+_GO_SECTION = re.compile(r"(?ms)^# Releases before Go and Maven support.*?(?=^\[feeds\])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,12 +56,19 @@ PROFILES: dict[str, list[Scenario]] = {
         Scenario("blocked", "latency", rate=300),
         Scenario("dashboard", "latency", rate=30),
         Scenario("mixed", "throughput", vus=32),
+        Scenario("go_list", "throughput", vus=32),
+        Scenario("go_mod", "latency", rate=300),
+        Scenario("maven_metadata", "throughput", vus=32),
+        Scenario("maven_jar", "latency", rate=300),
     ],
     "quick": [
         Scenario("pypi_simple_json", "throughput", vus=32),
         Scenario("npm_packument_corgi", "throughput", vus=32),
         Scenario("artifact_cached", "throughput", vus=32),
         Scenario("mixed", "latency", rate=200),
+        Scenario("blocked", "latency", rate=200),
+        Scenario("go_mod", "throughput", vus=32),
+        Scenario("maven_jar", "throughput", vus=32),
     ],
 }
 
@@ -153,6 +164,39 @@ def _wait_ready(url: str, timeout: float = 60.0) -> float:
     raise TimeoutError(f"{url} not ready after {timeout}s")
 
 
+def _wait_blocked(url: str, timeout: float = 120.0) -> None:
+    """Wait until the malware feed is loaded and `url` answers 451. The `blocked` scenario measures the
+    451 path; a round started earlier would be served 200s and report every request as an error."""
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.pypi.simple.v1+json"})
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        try:
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except urllib.error.HTTPError as exc:
+            if exc.code == 451:
+                return
+        except urllib.error.URLError, OSError:
+            pass
+        time.sleep(0.5)
+    raise TimeoutError(f"{url} not blocked after {timeout}s: the malware feed did not load")
+
+
+def _diagnose(container: str) -> None:
+    """A failed run removes its container: print what it knew first (logs, feed status) for the CI log."""
+    logs = subprocess.run(["docker", "logs", "--tail", "60", container], capture_output=True, text=True, check=False)
+    print(f"--- {container}: last log lines\n{logs.stdout}{logs.stderr}", flush=True)
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/ui/feeds", timeout=5) as resp:
+            page = resp.read().decode(errors="replace")
+        text = " ".join(re.sub(r"<[^>]+>", " ", page).split())
+        start = text.find("OSV malicious packages")
+        osv = text[start : start + 400] if start >= 0 else "(no OSV section)"
+        print(f"--- {container}: feeds page: {osv}", flush=True)
+    except urllib.error.URLError, OSError, ValueError:
+        print(f"--- {container}: feeds page not reachable", flush=True)
+
+
 class Harness:
     def __init__(
         self,
@@ -175,14 +219,17 @@ class Harness:
         self.network = f"slowshield-perf-{os.getpid()}"
         self.now = int(time.time())
         self.taskset = shutil.which("taskset") if platform.system() == "Linux" else None
+        self._configs: dict[str, Path] = {}
 
     def __enter__(self) -> Harness:
         sh("docker", "network", "create", self.network)
         sh(
             "docker", "run", "-d", "--rm", "--name", f"{self.network}-up", "--network", self.network,
-            "--network-alias", "fakeupstream", *self._cpuset(self.load_cpus),
+            "--network-alias", "fakeupstream", *self._cpuset(self.load_cpus), "-p", f"127.0.0.1:{UPSTREAM_PORT}:9000",
             self.fakeupstream, "--host", "0.0.0.0", "--port", "9000", "--perf", "--now", str(self.now),
         )  # fmt: skip
+        # SlowShield syncs its feeds right at startup: an upstream still starting would fail that sync.
+        _wait_ready(f"http://127.0.0.1:{UPSTREAM_PORT}/healthz")
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -194,6 +241,22 @@ class Harness:
     def _cpuset(self, cpus: str) -> list[str]:
         return ["--cpuset-cpus", cpus] if platform.system() == "Linux" and cpus else []
 
+    def _config_for(self, image: str) -> Path:
+        """perf/slowshield.toml, without the Go upstream for an image that rejects it (a baseline from before Go
+        support). Its Go scenarios then fail and are reported as new, without a comparison."""
+        if image not in self._configs:
+            probe = subprocess.run(
+                ["docker", "run", "--rm", "-v", f"{CONFIG}:/c.toml:ro", image, "check-config", "--config", "/c.toml"],
+                capture_output=True,
+                check=False,
+            )
+            path = CONFIG
+            if probe.returncode != 0:
+                path = Path(tempfile.gettempdir()) / f"slowshield-perf-{os.getpid()}-nogo.toml"
+                path.write_text(_GO_SECTION.sub("", CONFIG.read_text()))
+            self._configs[image] = path
+        return self._configs[image]
+
     def run_image(self, image: str, rnd: int, scenarios: list[Scenario]) -> tuple[ImageRun, list[Sample]]:
         name = f"{self.network}-ss"
         volume = f"{name}-data-{rnd}-{abs(hash(image)) % 10_000}"
@@ -203,7 +266,7 @@ class Harness:
             *self._cpuset(self.server_cpus), "--memory", self.memory, "--pids-limit", "256",
             "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "-p", f"127.0.0.1:{PORT}:8080",
-            "-v", f"{volume}:/data", "-v", f"{ROOT / 'slowshield.toml'}:/etc/slowshield/config.toml:ro",
+            "-v", f"{volume}:/data", "-v", f"{self._config_for(image)}:/etc/slowshield/config.toml:ro",
             "-e", "SLOWSHIELD_CONFIG=/etc/slowshield/config.toml", "-e", f"SLOWSHIELD_WORKERS={self.workers}",
             "-e", "SLOWSHIELD_LOG_LEVEL=warning", image,
         )  # fmt: skip
@@ -211,10 +274,15 @@ class Harness:
             _wait_ready(f"http://127.0.0.1:{PORT}/readyz")
             startup = time.perf_counter() - t0
             cg = _cgroup_dir(cid)
+            # Before the warmup, so its large downloads do not compete with the first feed sync.
+            _wait_blocked(f"http://127.0.0.1:{PORT}/pypi/simple/malware-pkg/")
             self._warmup()
             samples = [self._k6(image, rnd, sc, cg) for sc in scenarios]
             rss = _mem_peak(cg, name)
             return ImageRun(image, rnd, startup, rss), samples
+        except Exception:
+            _diagnose(name)
+            raise
         finally:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)
             subprocess.run(["docker", "volume", "rm", "-f", volume], capture_output=True, check=False)
@@ -232,6 +300,10 @@ class Harness:
             ("/npm/huge-packument", "application/vnd.npm.install-v1+json"),
             ("/npm/@acme%2fwidget", "application/vnd.npm.install-v1+json"),
             ("/npm/tagged", "application/json"),
+            ("/go/example.com/many/@v/list", "text/plain"),
+            ("/go/example.com/hello/@v/v1.0.0.mod", "text/plain"),  # verified and cached on the first request
+            ("/maven/all/org/example/many/maven-metadata.xml", "text/xml"),
+            ("/maven/all/org/example/hello/1.0.0/hello-1.0.0.jar", "*/*"),
             ("/", "text/html"),
         ):
             req = urllib.request.Request(base + path, headers={"Accept": accept})
@@ -379,7 +451,9 @@ def evaluate(res: Results, thresholds: dict[str, Any]) -> list[Finding]:
     for scn, mode in keys:
         lim = _limits(thresholds, scn)
         a = [s for s in res.samples if s.image == cand and s.scenario == scn and s.mode == mode]
-        b = [s for s in res.samples if s.image == base and s.scenario == scn and s.mode == mode]
+        # A baseline that does not serve the scenario yet (Go before its release) answers mostly with errors:
+        # the scenario is new, so it is reported without a comparison (its own error rate is still checked).
+        b = [s for s in res.samples if s.image == base and s.scenario == scn and s.mode == mode and s.error_rate < 0.5]
         label = f"{scn}:{mode}"
         if mode == "throughput":
             compare(label, "rps", [s.rps for s in a], [s.rps for s in b], lim["throughput_drop"], higher_is_worse=False)

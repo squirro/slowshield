@@ -30,7 +30,7 @@ Selected with one variable everywhere (`SLOWSHIELD_TLS_MODE` / `tls.mode`):
 | `files` | Certificates from your own PKI / cert-manager | `TLS_CERT_FILE`, `TLS_KEY_FILE` (Compose/Podman) or `tls.existingSecret` (Helm) |
 
 **Local testing:** with `SLOWSHIELD_LOCAL_HTTP=on` (the Compose default) Caddy also answers
-`http://localhost`, `http://127.0.0.1` and `http://[::1]` over plain HTTP, so pip, uv and npm on the same machine
+`http://localhost`, `http://127.0.0.1` and `http://[::1]` over plain HTTP, so pip, uv, npm, go and Maven on the same machine
 work without trusting the internal CA. Requests for any other hostname are still redirected to HTTPS. Turn it
 off on a shared server; Podman and Helm leave it off.
 

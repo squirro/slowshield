@@ -18,8 +18,11 @@
   --tamper-soft: #f4e0ef;
   --ok: #107445;
   --ok-soft: #deece5;
-  --pypi: #2f6fb3;
+  /* Ecosystems: their logos' primary colours, the same in both themes. */
+  --pypi: #3775a9;
   --npm: #cb3837;
+  --go: #00add8;
+  --maven: #ed8b00; /* Java orange: Maven's own red is almost npm's */
   --grid: #eaedf6;
   --radius: 10px;
   --shadow: 0 1px 2px rgb(10 15 36 / 6%), 0 1px 1px rgb(10 15 36 / 4%);
@@ -30,11 +33,11 @@
 /* Night Field (brand/tokens.css). Held is violet in this palette; the soft tints match the badge rule (14% / 22%). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
+    --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --grid: #181f35; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --pypi: #6fa6e6; --npm: #ef6b6a; --grid: #181f35; color-scheme: dark;
+  --bg: #060915; --surface: #0d1222; --surface-2: #151b30; --border: #1f2742; --text: #e6eafb; --muted: #98a2c4; --primary: #7f95ff; --primary-2: #92a4fe; --primary-soft: #262f53; --hold: #a99bff; --hold-bright: #5b5690; --hold-soft: #2f3053; --danger: #ff6f7e; --danger-soft: #422636; --tamper: #f27bd6; --tamper-soft: #3f294a; --ok: #4fd48a; --ok-soft: #1c3d39; --grid: #181f35; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -51,6 +54,7 @@ h2 { font-size: 1rem; margin: 0; }
 h3 { font-size: 0.95rem; }
 .muted { color: var(--muted); }
 .small { font-size: 0.82rem; }
+[hidden] { display: none !important; } /* components set display; hidden must still win */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: 16px; top: 8px; background: var(--surface); padding: 6px 10px; z-index: 10; }
@@ -144,6 +148,8 @@ tr.withdrawn { opacity: 0.55; }
 
 .eco { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; color: #fff; vertical-align: 1px; }
 .eco-pypi { background: var(--pypi); } .eco-npm { background: var(--npm); }
+.eco-go { background: var(--go); color: #000; } /* white on Gopher Blue is unreadable; Go's brand pairs it with black */
+.eco-maven { background: var(--maven); color: #000; }
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ev-blocked, .st-blocked, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
 .ev-tampered, .ev-integrity_mismatch, .st-tampered { background: var(--tamper-soft); color: var(--tamper); }
@@ -177,6 +183,39 @@ tr.withdrawn { opacity: 0.55; }
   color: var(--text); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
 .copy.done { color: var(--ok); }
 
+/* Setup page: numbered steps, shell tabs, tool finder */
+.setup-steps { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+.setup-steps > .card { margin-bottom: 0; }
+.step { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; margin-right: 6px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary); font-size: 0.85em; }
+.tablist { display: inline-flex; flex-wrap: wrap; max-width: 100%; gap: 4px; padding: 4px; margin: 4px 0 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); }
+.tablist [role="tab"] { border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.82rem; font-weight: 600;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.tablist [role="tab"][aria-selected="true"] { background: var(--primary); color: var(--surface); }
+.tablist [role="tab"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tool-search { display: flex; flex-direction: column; gap: 4px; max-width: 420px; margin: 4px 0 10px; }
+.tool-search span { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.tool-search input { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); }
+.tool-search input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.tool-picks { display: grid; gap: 8px; margin: 2px 0 8px; }
+.tool-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tool-group-label { min-width: 7.5em; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); }
+.tool-pick { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit;
+  font-size: 0.85rem; font-weight: 500; line-height: 1.4; padding: 4px 14px; border-radius: 999px; cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s; }
+.tool-pick:hover, .tool-pick:focus-visible { border-color: var(--primary); background: var(--primary-soft); color: var(--primary);
+  outline: none; }
+/* auto-fit: a single match spans the card, several share it */
+.tool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; }
+.tool h3 { font-size: 0.95rem; margin: 8px 0 6px; }
+.snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
+.grid-2 > .snippet { align-self: start; }
+.card p code { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }
+
 .prose h1 { font-size: 1.3rem; } .prose h2 { font-size: 1.1rem; margin-top: 18px; } .prose table { border-collapse: collapse; }
 .prose td, .prose th { border: 1px solid var(--border); padding: 4px 8px; }
 
@@ -186,6 +225,8 @@ tr.withdrawn { opacity: 0.55; }
 .chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
 .chart .hover { fill: transparent; } .chart .hover:hover { fill: color-mix(in srgb, var(--text) 6%, transparent); }
 .s-pypi { fill: var(--pypi); background: var(--pypi); } .s-npm { fill: var(--npm); background: var(--npm); }
+.s-go { fill: var(--go); background: var(--go); }
+.s-maven { fill: var(--maven); background: var(--maven); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
 .s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }
 .s-age_gated { fill: var(--hold); background: var(--hold); } .s-blocked { fill: var(--danger); background: var(--danger); }

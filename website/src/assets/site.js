@@ -55,22 +55,60 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 }
 
-// Scrollytelling: the step closest to the middle of the viewport drives the pinned diagram.
-const figure = document.querySelector(".story-figure");
-const steps = [...document.querySelectorAll(".step")];
-if (figure && steps.length && "IntersectionObserver" in window) {
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        const n = e.target.dataset.step;
-        figure.dataset.step = n;
-        steps.forEach((s) => s.classList.toggle("active", s === e.target));
+// Scrollytelling: each chapter of How it works has its own pinned diagram, driven by the step at the reading line.
+// data-step picks that step's layers and --p (0 to 1: how far the reading line is through the step) plays it, so the
+// diagram follows the scroll in both directions. Before a chapter's first step its diagram rests (data-rest, --p 0);
+// after its last it keeps that step's end. With reduced motion, --p stays 1 and every step shows how it ends.
+const chapters = [...document.querySelectorAll(".chapter")].map((chapter) => ({
+  figure: chapter.querySelector(".story-figure"),
+  steps: [...chapter.querySelectorAll(".step")],
+  tag: document.querySelector(`.how-title .tag[data-for="${chapter.dataset.chapter}"]`),
+})).filter((c) => c.figure && c.steps.length);
+if (chapters.length) {
+  // The reading line: the middle of the pinned diagram, or on narrow screens (diagram pinned at the top) halfway
+  // between it and the bottom.
+  const narrow = window.matchMedia("(max-width: 900px)");
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    const vh = window.innerHeight;
+    for (const { figure, steps, tag } of chapters) {
+      const pinnedTop = parseFloat(getComputedStyle(figure).top) || 0;  // also where the pinned title ends
+      const pinnedBottom = pinnedTop + figure.offsetHeight;
+      const line = narrow.matches ? (pinnedBottom + vh) / 2 : pinnedTop + figure.offsetHeight / 2;
+      // The chapter's tag fades in over the last 12% of a screen before its diagram pins, and out as it leaves.
+      const off = Math.abs(figure.getBoundingClientRect().top - pinnedTop) / (0.12 * vh);
+      if (tag) tag.style.setProperty("--show", clamp(1 - off).toFixed(3));
+      let step = figure.dataset.rest;
+      let progress = 0;
+      for (const s of steps) {
+        const r = s.getBoundingClientRect();
+        const inside = r.top <= line && r.bottom > line;
+        s.classList.toggle("active", inside);
+        if (r.top > line) continue;
+        step = s.dataset.step;
+        progress = Math.min(1, (line - r.top) / r.height);
       }
-    },
-    { rootMargin: "-45% 0px -45% 0px", threshold: 0 },
-  );
-  steps.forEach((s) => io.observe(s));
+      figure.dataset.step = step;
+      figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
+      if (narrow.matches) continue;
+      // Wide screens: below the reading line, a step's text fades in and rises as it comes within 0.5 to 0.2
+      // viewport heights of it; above, it fades out over the last 80 px before its top reaches the pinned title.
+      for (const s of steps) {
+        const r = s.getBoundingClientRect();
+        const d = (r.top + r.height / 2 - line) / vh;
+        const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
+        const above = clamp((s.firstElementChild.getBoundingClientRect().top - pinnedTop) / 80);
+        s.style.setProperty("--in", (below * above).toFixed(3));
+        s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
+      }
+    }
+  };
+  const queue = () => { if (!frame) frame = requestAnimationFrame(update); };
+  window.addEventListener("scroll", queue, { passive: true });
+  window.addEventListener("resize", queue);
+  update();
 }
 
 // Tabs (Get started).

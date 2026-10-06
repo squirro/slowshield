@@ -6,28 +6,28 @@
 <meta name="htmx-config" content="includeIndicatorCSS:false history:false">
 <meta name="color-scheme" content="light dark">
 <title>{% block title %}{{ title|default("Overview") }}{% endblock %} · SlowShield</title>
-<link rel="icon" href="/static/brand/favicon.ico" sizes="any">
-<link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
-<script src="/static/vendor/htmx.min.js?v={{ htmx_version }}" defer></script>
-<script src="/static/app.js?v={{ version }}" defer></script>
+<link rel="icon" href="/ui/static/brand/favicon.ico" sizes="any">
+<link rel="icon" href="/ui/static/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/ui/static/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+<script src="/ui/static/vendor/htmx.min.js?v={{ htmx_version }}" defer></script>
+<script src="{{ asset('app.js') }}" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
-  <a class="brand" href="/" aria-label="SlowShield home">
-    <img class="logo logo-light" src="/static/brand/mark.svg" alt="" width="28" height="28">
-    <img class="logo logo-dark" src="/static/brand/mark-dark.svg" alt="" width="28" height="28">
-    <img class="wordmark-img logo-light" src="/static/brand/wordmark.svg" alt="SlowShield" width="101" height="20">
-    <img class="wordmark-img logo-dark" src="/static/brand/wordmark-dark.svg" alt="SlowShield" width="101" height="20">
+  <a class="brand" href="/ui/" aria-label="SlowShield home">
+    <img class="logo logo-light" src="/ui/static/brand/mark.svg" alt="" width="28" height="28">
+    <img class="logo logo-dark" src="/ui/static/brand/mark-dark.svg" alt="" width="28" height="28">
+    <img class="wordmark-img logo-light" src="/ui/static/brand/wordmark.svg" alt="SlowShield" width="101" height="20">
+    <img class="wordmark-img logo-dark" src="/ui/static/brand/wordmark-dark.svg" alt="SlowShield" width="101" height="20">
   </a>
   <nav aria-label="Main">
     {% set nav = [
-      ("/", "Overview"), ("/ui/packages", "Packages"), ("/ui/leaderboards", "Leaderboards"),
+      ("/ui/", "Overview"), ("/ui/packages", "Packages"), ("/ui/leaderboards", "Leaderboards"),
       ("/ui/security", "Security"), ("/ui/blocklist", "Blocklist"), ("/ui/feeds", "Feeds"), ("/ui/setup", "Setup")] %}
     {% for href, label in nav %}
-      <a href="{{ href }}"{% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>
+      <a href="{{ href }}"{% if (href == "/ui/" and path == "/ui/") or (href != "/ui/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
   <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle dark mode">◐</button>

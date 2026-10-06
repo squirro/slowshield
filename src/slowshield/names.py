@@ -1,4 +1,4 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508) and npm."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules and Maven."""
 
 from __future__ import annotations
 
@@ -40,3 +40,47 @@ def is_valid_npm(name: str) -> bool:
 def npm_basename(name: str) -> str:
     """`@scope/pkg` -> `pkg` (tarball files are named `<basename>-<version>.tgz`)."""
     return name.rsplit("/", 1)[-1]
+
+
+# Go module paths (decoded, case-sensitive) as golang.org/x/mod/module.CheckPath accepts them: a lower-case
+# first element with a dot (a domain), then elements of letters, digits and `-._~` that neither start nor end
+# with a dot. Windows-reserved element names are refused too.
+_GO_FIRST = re.compile(r"^[a-z0-9.-]+$")
+_GO_ELEM = re.compile(r"^[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?$")
+_GO_MAJOR = re.compile(r"^v(?:0|1|0\d+)$")  # /v0, /v1 and /v01 are not major-version suffixes
+_WINDOWS = frozenset({"con", "prn", "aux", "nul", *(f"{d}{i}" for d in ("com", "lpt") for i in range(1, 10))})
+GO_MAX_LEN = 1024
+
+
+# Maven coordinates `groupId:artifactId`, as Maven Central accepts them: dot-separated groupId segments and an
+# artifactId of letters, digits and `_-.` (matched exactly; Maven is case-sensitive here).
+_MAVEN_PART = r"[A-Za-z0-9_-](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?"
+_MAVEN_NAME = re.compile(rf"^{_MAVEN_PART}:{_MAVEN_PART}$")
+MAVEN_MAX_LEN = 512
+
+
+def normalize_maven(name: str) -> str:
+    return name.strip()
+
+
+def is_valid_maven(name: str) -> bool:
+    return 0 < len(name) <= MAVEN_MAX_LEN and _MAVEN_NAME.match(name) is not None and ".." not in name
+
+
+def normalize_go(path: str) -> str:
+    """Go module paths are matched exactly (case-sensitive; the proxy protocol's `!` escaping is decoded first)."""
+    return path.strip()
+
+
+@lru_cache(maxsize=65536)
+def is_valid_go(path: str) -> bool:
+    if not (0 < len(path) <= GO_MAX_LEN) or path.startswith("-"):
+        return False
+    elems = path.split("/")
+    first = elems[0]
+    if "." not in first or not _GO_FIRST.match(first):
+        return False
+    for elem in elems:
+        if not _GO_ELEM.match(elem) or elem.split(".", 1)[0].lower() in _WINDOWS:
+            return False
+    return len(elems) == 1 or not _GO_MAJOR.match(elems[-1])

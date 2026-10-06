@@ -11,7 +11,9 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    ├── tracing + security headers middleware
    ├── host router ── PyPI service  (ecosystems/pypi)  ─┐
    │               ├─ npm service   (ecosystems/npm)   ─┤── policy (policy.py) ── blocklist (blocklist.py)
-   │               └─ UI            (ui/)               │                      └─ config exceptions
+   │               ├─ Go service    (ecosystems/go)    ─┤                      └─ config exceptions
+   │               ├─ Maven service (ecosystems/maven) ─┤
+   │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)
    ├── artifact server (ecosystems/artifacts.py) ── on-disk verified cache (cache/artifacts.py)
    ├── upstream client (upstream.py: pyreqwest, HTTP/2, no open redirects, size caps)
@@ -45,10 +47,38 @@ tarball URL rewrite, so every field, signature and attestation survives. `latest
 the highest allowed stable version; other tags whose target is filtered disappear. Abbreviated
 (corgi) documents are produced for clients that ask for them.
 
+## Request flow: Go
+
+`/go/` speaks the GOPROXY protocol ([design/go.md](design/go.md)). Paths are validated and the `!` case-encoding
+decoded; anything outside the protocol is 404.
+
+1. Package-level blocklist hit → `451` (text/plain, which the go command prints).
+2. Publish time of the version: `package_versions` (known from earlier), else a `HEAD .mod` with
+   `Disable-Module-Fetch: true` to the mirror, whose `Last-Modified` is when the mirror first stored the version. A
+   version the mirror doesn't have yet is fetched once; its clock starts then.
+3. `@v/list`: versions are checked newest first until one is old enough; too-new and blocked ones are left out.
+   `.info`, `.mod`, `.zip`: version block → `451`, too new → `403` + `Retry-After`, unless the module fails open.
+4. `.mod` and `.zip` go through the artifact server, checked against the `h1:` hashes from the cached
+   `sum.golang.org` lookup. `/go/sumdb/sum.golang.org/…` is passed through unchanged.
+
+## Request flow: Maven
+
+`/maven/<repo-id>/` serves the standard Maven layout ([design/maven.md](design/maven.md)); `/maven/all/` sends
+Google Maven's groups to Google and the rest to Central. Paths outside the layout are 404.
+
+1. Blocklist hit → `451`.
+2. `maven-metadata.xml`: versions are checked newest first (Maven's version order) with a `HEAD` of each unseen
+   version's `.pom` until one is old enough; too-new and blocked versions are left out, `<latest>`/`<release>`
+   recomputed, the checksum files computed from the filtered body.
+3. A file: a version known to be too new → `425` without an upstream request; otherwise the file's own
+   `Last-Modified` (or the version's first-listed time, if earlier) decides when the upstream response arrives.
+   The download is checked against the repository's checksum and the first-seen fingerprint.
+
 ## Integrity
 
 Artifacts are streamed to the client while sha256 (always), blake2b-256 (PyPI path), sha512 / sha1
-(npm `dist.integrity` / `shasum`) are computed and the bytes are teed to `/data/cache/tmp`. The last
+(npm `dist.integrity` / `shasum`) are computed and the bytes are teed to `/data/cache/tmp`. A Go zip's `h1:` covers
+the files inside it, so it is computed from the temp file once the body is complete. The last
 chunk is withheld until all digests match the registry's published values and the first-seen
 fingerprint; on a mismatch the response is aborted and the event recorded. Verified bodies are
 fsync'ed and renamed into the content-addressed cache.

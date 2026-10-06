@@ -84,6 +84,8 @@ def test_host_parsing() -> None:
     ("path", "label"),
     [
         ("/", "/"),
+        ("/ui/", "/ui/"),
+        ("/ui/static/app.css", "/ui/static/{asset}"),
         ("/healthz", "/healthz"),
         ("/pypi/simple/requests/", "/pypi/simple/{project}/"),
         ("/pypi/packages/aa/bb/x.whl", "/pypi/packages/{file}"),

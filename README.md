@@ -5,7 +5,8 @@
   </picture>
 </p>
 
-SlowShield is a supply-chain defence proxy for **PyPI** and **npm**. It sits between your developers,
+SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules** and **Maven** (Maven, Gradle, sbt).
+It sits between your developers,
 CI and production builds and the public registries, and:
 
 - **holds new releases back** for a configurable number of days (default 7), so the community and the
@@ -19,19 +20,20 @@ CI and production builds and the public registries, and:
   ready-made Grafana dashboards and alerts.
 
 ```
-pip / uv / poetry / npm / pnpm / yarn / bun
+pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle
                  │  HTTPS (TLS 1.3, HTTP/2, HTTP/3)
                  ▼
           Caddy (TLS, H3)  ──────────────── certificates: ACME, your files, or internal CA
                  │
           SlowShield (Python 3.15, Granian)
           ├─ blocklist      OSV + GitHub malware advisories (sync every hour)
-          ├─ release age    per file (PyPI) / per version (npm), exceptions, fail-open
+          ├─ release age    per file (PyPI, Maven) / per version (npm, Go), exceptions, fail-open
           ├─ integrity      registry digests + trust-on-first-use fingerprint, verified cache
           └─ telemetry      OTLP → Alloy → Prometheus / Loki / Tempo → Grafana
                  │  HTTP/2
                  ▼
-     pypi.org · files.pythonhosted.org · registry.npmjs.org
+     pypi.org · files.pythonhosted.org · registry.npmjs.org · proxy.golang.org · sum.golang.org
+     repo1.maven.org · dl.google.com (Google Maven) · plugins.gradle.org
 ```
 
 ## Quick start
@@ -40,18 +42,26 @@ Try it on your laptop: one container, plain HTTP on localhost, nothing kept afte
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
-pip install --index-url http://localhost:8080/pypi/simple/ requests
 ```
 
-The dashboard is at `http://localhost:8080`. Releases younger than a week are held back; known malware is
-refused with HTTP 451. To send pip, uv and npm through it in every new terminal (bash shown; use `~/.zshrc`
-for zsh, or `set -Ux NAME value` in fish):
+The dashboard is at `http://localhost:8080`. In a second terminal, install something through it (in a throwaway
+virtualenv, because Homebrew and current Linux Pythons refuse pip installs outside one):
+
+```bash
+python3 -m venv /tmp/slowshield-try
+/tmp/slowshield-try/bin/pip install --index-url http://localhost:8080/pypi/simple/ requests
+```
+
+Releases younger than a week are held back; known malware is refused with HTTP 451. To send pip, uv, npm and
+go through it in every new terminal (bash on Linux shown; on macOS bash reads `~/.bash_profile` and zsh
+`~/.zshrc`; in fish use `set -Ux NAME value`):
 
 ```bash
 cat >> ~/.bashrc <<'EOF'
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/
 export UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/
 export npm_config_registry=http://localhost:8080/npm/
+export GOPROXY=http://localhost:8080/go
 EOF
 source ~/.bashrc
 ```
@@ -81,11 +91,13 @@ attached); pin a release or a digest in production.
 pip config set global.index-url https://slowshield.example.com/pypi/simple/
 export UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
 npm config set registry https://slowshield.example.com/npm/
+go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", which would go around SlowShield
+# Maven: a mirror in ~/.m2/settings.xml; Gradle: an init script in ~/.gradle/init.d/ (both on the Setup page)
 ```
 
-The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn
-and Bun with your hostnames. Per-ecosystem hostnames (`pypi.example.com/simple/`,
-`npm.example.com/`) are supported too.
+The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
+Bun, Go, Maven, Gradle, sbt and Coursier with your URLs. Every ecosystem lives under a path on the one host
+([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:
 

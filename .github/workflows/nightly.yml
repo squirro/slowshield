@@ -1,7 +1,8 @@
 name: Nightly
 
-# Slower, broader checks: Kubernetes (kind + Helm), the full observability stack, live installs from
-# the real PyPI/npm through the proxy, and a GIL vs free-threaded (3.15t) performance comparison.
+# Slower, broader checks: Kubernetes (kind + Helm), the full observability stack, live checks against the
+# real registries (including the Go mirror behaviour publish times rely on), and a GIL vs free-threaded (3.15t)
+# performance comparison.
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -54,7 +55,7 @@ jobs:
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:nightly
         run: uv run python observability/smoke.py
 
-      - name: Live smoke test against pypi.org and registry.npmjs.org
+      - name: Live checks against the real registries
         env:
           SLOWSHIELD_IMAGE: slowshield:nightly
         run: uv run pytest -m live tests/e2e -v
@@ -75,7 +76,9 @@ jobs:
           kubectl get pods -o wide
           kubectl port-forward svc/slowshield 18443:443 >/tmp/pf.log 2>&1 &
           for _ in $(seq 1 30); do curl -fsSk https://localhost:18443/healthz && break; sleep 2; done
-          curl -fsSk -H 'Accept: application/vnd.pypi.simple.v1+json' https://localhost:18443/pypi/simple/requests/ | head -c 300
+          # To a file, not into `head`: under pipefail, head closing the pipe early fails curl (exit 23).
+          curl -fsSk -H 'Accept: application/vnd.pypi.simple.v1+json' -o /tmp/requests.json https://localhost:18443/pypi/simple/requests/
+          grep -q '"name":"requests"' /tmp/requests.json && head -c 300 /tmp/requests.json
           kubectl get pod -l app.kubernetes.io/name=slowshield -o jsonpath='{.items[0].spec.securityContext}'
 
   free-threaded:

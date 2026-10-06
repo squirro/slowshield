@@ -8,10 +8,10 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | PyPI | index URL (pip, uv, Poetry, PDM) | PEP 700 `upload-time` (server) | sha256 in index, lockfiles | **live** | |
 | npm (+pnpm, Yarn, Bun) | `registry` / `npmRegistryServer` / bunfig | `time` map (server) | `dist.integrity`, signatures | **live** | Yarn Berry ignores `.npmrc` |
 | Cargo | `source.crates-io.replace-with` → sparse | `pubtime` (server) | index `cksum` → Cargo.lock | easy | unsigned line-JSON index |
-| Go modules | `GOPROXY` (no `,direct`) | `.info` Time is **commit time** → use index.golang.org `Timestamp` | go.sum + sum.golang.org (only `.mod`/`.zip`) | easy | spec: lists and `.info` are not authenticated, filtering allowed; MVS → refuse, don't hide |
+| Go modules | `GOPROXY` (no `,direct`) | `.info` Time is **commit time** → the `Last-Modified` of the `.mod` on proxy.golang.org (when the mirror stored it; equals the index.golang.org `Timestamp`) | go.sum + sum.golang.org (only `.mod`/`.zip`) | **live** | spec: lists and `.info` are not authenticated, filtering allowed; MVS → refuse, don't hide. Tailing index.golang.org was rejected: ~100k entries/day, see [design/go.md](../design/go.md) |
 | NuGet | `nuget.config` `<clear/>` + source | registration `published` | repo signature inside `.nupkg`; lockfile SHA512 | easy | filter flat-container `index.json` too |
 | RubyGems | `bundle config mirror.…` | compact index `created_at` | sha256 per version; Gemfile.lock CHECKSUMS | medium | `/versions` stores MD5 of each info file → rewrite consistently |
-| Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | medium | exact pins → refuse, not downgrade |
+| Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | **live** | exact pins → refuse (`425`), not downgrade; see [design/maven.md](../design/maven.md) |
 | OCI images | containerd `hosts.toml`, podman `registries.conf`; dockerd mirrors only Docker Hub | none in the API; image `created` is builder-set | digests; cosign/notation bound to digest | medium | mutable tags → keep tag→digest history |
 | Terraform / OpenTofu providers | `provider_installation { network_mirror }` | `published-at` / `published` | lockfile `h1:`/`zh:` | easy | modules from git are hard |
 | Helm | `helm repo add` | index.yaml `created` (indexer) | `digest`, optional `.prov` | easy | every publisher hosts its own repo |
@@ -36,7 +36,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 ## Cross-cutting
 
 * **Who sets the timestamp matters more than whether there is one.** Server-set: PyPI, npm, crates, RubyGems,
-  NuGet, pub, JSR, Hex, CRAN, index.golang.org. Author/builder-set: Go `.info`, Packagist, conda, apk, RPM, OCI
+  NuGet, pub, JSR, Hex, CRAN, index.golang.org and proxy.golang.org's `Last-Modified`. Author/builder-set: Go `.info`, Packagist, conda, apk, RPM, OCI
   `created`, Helm, git. → build one **first-seen ledger** shared by all adapters.
 * **Signed metadata can't be filtered** (apt, apk, Homebrew, Hex, Nix, dnf with `repo_gpgcheck`): refuse at
   download (fail closed), opt-in re-signing with an org key, or rely on the client's own gate.
@@ -50,8 +50,8 @@ per-version publish time, and metadata it can filter without breaking a signatur
 
 ## Proposed phases
 
-1. **Next:** Cargo, Go, NuGet, RubyGems; compatibility tests for pnpm/Yarn/Bun.
-2. **Then:** Maven/Gradle, OCI pull-through, Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains.
+1. **Next:** Cargo, NuGet, RubyGems (Go shipped); compatibility tests for pnpm/Yarn/Bun.
+2. **Then:** OCI pull-through (Maven/Gradle shipped), Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains.
 3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).
 4. **Opt-in only:** apt/dnf/apk re-signing, Hex/Homebrew refuse-at-download, GitHub Releases forward proxy.
 

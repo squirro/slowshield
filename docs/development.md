@@ -6,7 +6,7 @@ uv run pytest                             # unit + integration tests, coverage g
 uv run pytest -m e2e tests/e2e            # needs built images and E2E=1 (see tests/e2e)
 uv run ruff check . && uv run ruff format --check . && uv run ty check
 uv run python -m perf micro               # hot-path micro benchmarks
-uv run python -m fakeupstream --port 9000 # deterministic fake PyPI/npm/OSV/GitHub for manual testing
+uv run python -m fakeupstream --port 9000 # deterministic fake PyPI/npm/Go/OSV/GitHub for manual testing
 ```
 
 Run a local instance against the fake registries:

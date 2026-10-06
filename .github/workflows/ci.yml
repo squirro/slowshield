@@ -17,8 +17,41 @@ env:
   ZIZMOR_VERSION: "1.30.1"
 
 jobs:
+  # The website has its own workflow (website.yml). When every changed file is under website/, the jobs
+  # below are skipped and only `CI passed` reports; manual runs and pushes without a known base run all.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # diff the pushed or proposed commits
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Anything outside website/?
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          code=true
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            changed="$(git diff --name-only "$BASE" "$GITHUB_SHA")"
+            if [ -n "$changed" ] && ! grep -qv '^website/' <<<"$changed"; then code=false; fi
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "Changes outside website/: ${code}" >> "$GITHUB_STEP_SUMMARY"
+
   lint:
     name: Lint, types & workflow audit
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -74,6 +107,8 @@ jobs:
 
   test:
     name: Tests (${{ matrix.arch }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -113,11 +148,13 @@ jobs:
 
   images:
     name: Images, e2e & perf (${{ matrix.arch }})
-    needs: [lint]
+    needs: [changes, lint]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     permissions:
       contents: read # check out the repository (and main for the perf baseline)
+      pull-requests: read # read the pull request's labels (skip-perf)
     strategy:
       fail-fast: false
       matrix:
@@ -178,12 +215,35 @@ jobs:
           FAKEUPSTREAM_IMAGE: slowshield-fakeupstream:ci
         run: uv run pytest -m e2e tests/e2e -v
 
-      - name: Install k6
+      # The performance comparison runs on every pull request unless it has the skip-perf label or is a release
+      # pull request (branch release-*: version bumps only). The label is read live rather than from the event,
+      # so adding it and re-running the job is enough.
+      - name: Performance comparison wanted?
+        id: perf
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" == release-* ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release pull request: no performance comparison or micro benchmarks"
+          elif gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx skip-perf; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::skip-perf label: no performance comparison or micro benchmarks"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install k6
+        if: steps.perf.outputs.run == 'true'
         uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
 
       - name: Check out the base branch (perf baseline)
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -192,7 +252,7 @@ jobs:
 
       - name: Build baseline image
         id: baseline
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -203,7 +263,7 @@ jobs:
           fi
 
       - name: Performance comparison against the base branch (informational)
-        if: github.event_name == 'pull_request'
+        if: steps.perf.outputs.run == 'true'
         continue-on-error: true
         env:
           PERF_BASELINE: ${{ steps.baseline.outputs.image }}
@@ -215,6 +275,7 @@ jobs:
             --out "perf/results/pr"
 
       - name: Micro benchmarks
+        if: github.event_name != 'pull_request' || steps.perf.outputs.run == 'true'
         run: uv run python -m perf micro --repeat 5 --out perf/results/micro.json
 
       - name: Upload perf results
@@ -225,3 +286,28 @@ jobs:
           path: perf/results/
           if-no-files-found: ignore
           retention-days: 30
+
+  # The one required status check on main. A skipped matrix job reports under its unexpanded name
+  # ("Tests (${{ matrix.arch }})"), so requiring the jobs themselves would block website-only changes.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [changes, lint, test, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every job passed, or was skipped for a website-only change
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "changes outside website/: ${CODE:-unknown}; job results: ${RESULTS}"
+          for result in $RESULTS; do
+            case "$result" in
+              success) ;;
+              skipped) [ "$CODE" = false ] || { echo "a job was skipped although code changed"; exit 1; } ;;
+              *) echo "a job ended with: ${result}"; exit 1 ;;
+            esac
+          done

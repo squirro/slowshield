@@ -3,11 +3,18 @@
 ## The rule
 
 A release becomes installable `delay_days` after it was published (default 7). The publish time is
-taken from the registry: PyPI's per-file `upload-time` (PEP 700) and npm's `time[<version>]`.
+taken from the registry: PyPI's per-file `upload-time` (PEP 700), npm's `time[<version>]`, and for Go the
+`Last-Modified` of the version's `.mod` on proxy.golang.org, which is when the mirror first stored it. Go's own
+`.info` `Time` is the commit time, which the author sets, and is never used ([design/go.md](design/go.md)). Maven
+uses each file's `Last-Modified` on the repository, or when SlowShield first saw the version listed in the upstream
+metadata, whichever is earlier ([design/maven.md](design/maven.md)).
 
 * **PyPI is evaluated per file.** Uploading a new wheel to an old release does not make it
   installable early — each file waits for its own delay.
-* **npm is evaluated per version.**
+* **Maven is evaluated per file** (a classifier added to an old version later waits on its own), and its metadata
+  per version. Too-new files get `425 Too Early`: Maven and Gradle show only the status line.
+* **npm and Go are evaluated per version.** Go builds the exact versions go.mod requires, so a requirement that
+  is too new fails with `403` instead of picking an older version.
 * A file or version **without a publish time is treated as too new.**
 
 ## What clients see
@@ -31,7 +38,8 @@ taken from the registry: PyPI's per-file `upload-time` (PEP 700) and npm's `time
 If **no** non-blocked file/version of a package is old enough (a brand-new package), SlowShield serves
 all non-blocked ones instead of failing the install, adds `X-SlowShield-Fail-Open: 1`, and records a
 `fail_open` event. Blocked versions are never served, even when failing open. Disable with
-`fail_open = false` for strict environments.
+`fail_open = false` for strict environments, or per ecosystem with `upstreams.<ecosystem>.fail_open`. Maven defaults
+to off: there, brand-new artifacts are the realistic attack (typosquats, dependency confusion).
 
 ## Exceptions
 

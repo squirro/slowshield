@@ -32,7 +32,7 @@ async def test_github_disabled_without_token(running: Running) -> None:
     assert running.ctx.feeds["github"].reason == "missing_token"
     page = await running.client.get("/ui/feeds")
     assert "Needs a token" in page.text and "GITHUB_TOKEN_FILE" in page.text
-    dash = await running.client.get("/")
+    dash = await running.client.get("/ui/")
     assert "no API token configured" in dash.text
 
 
@@ -45,7 +45,7 @@ async def test_osv_full_snapshot_and_serving_effects(running: Running) -> None:
     assert ("npm", "@evil/thing", "1.0.0", None) in osv
     assert not any(name in ("alpha", "withdrawn-pkg", "left-pad-ng") for _, name, _, _ in osv)  # non-MAL / withdrawn
     st = running.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'osv:%' ORDER BY source")
-    assert [s for s, _ in st] == ["osv:PyPI", "osv:npm"] and all(w for _, w in st)
+    assert [s for s, _ in st] == ["osv:Go", "osv:Maven", "osv:PyPI", "osv:npm"] and all(w for _, w in st)
     assert running.ctx.feeds["osv"].entries == len(osv)
 
     r = await running.client.get("/pypi/simple/malware-pkg/", headers={"Accept": JSON_V1})
@@ -138,7 +138,7 @@ async def test_github_feed_with_token(start_app, monkeypatch) -> None:
     assert not any(n == "withdrawn-npm" for _, n, _, _ in gh)
     assert run.fake.control("hits", prefix="/github/").get("/github/advisories", 0) > 3
     state = run.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'github:%'")
-    assert len(state) == 2
+    assert len(state) == 4  # pip, npm, go, maven
 
     doc = (await run.client.get("/pypi/simple/partly-bad/", headers={"Accept": JSON_V1})).json()
     assert doc["versions"] == ["1.0.0", "1.3.0"]
@@ -208,6 +208,21 @@ async def test_feed_sync_failure_is_recorded(running: Running) -> None:
     await running.drain()
     sched.refresh_status()
     assert running.ctx.feeds["osv"].reason == "error"
+
+
+async def test_failed_sync_is_retried_with_backoff(running: Running) -> None:
+    sched = _scheduler(running)
+    interval = running.ctx.cfg.raw.feeds.poll_interval_minutes * 60
+    running.fake.control("fail", prefix="/osv", status=503)
+    await sched.run_once()
+    # Unreachable registry: retry after 1, 2, 4 ... minutes, never later than the poll interval.
+    assert sched.next_delay(60) == (60, 120)
+    assert sched.next_delay(120) == (120, 240)
+    assert sched.next_delay(interval) == (interval, interval)
+    running.fake.control("fail", prefix="/osv", status=0)
+    await sched.run_once()
+    assert running.ctx.feeds["osv"].reason == "ok"
+    assert sched.next_delay(240) == (interval, 60)  # back to the normal interval, backoff reset
 
 
 async def test_removed_malicious_version_is_still_refused_and_recorded(running: Running) -> None:

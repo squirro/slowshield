@@ -1,4 +1,4 @@
-"""Serving artifacts (wheels, sdists, npm tarballs): cache hit -> zero-copy file; miss -> verified stream.
+"""Serving artifacts (wheels, sdists, npm tarballs, Go modules): cache hit -> zero-copy file; miss -> verified stream.
 
 On a miss the body is streamed to the client while being hashed and teed into the cache. The final
 chunk is held back until every digest has been checked, so a client never receives a complete
@@ -8,11 +8,13 @@ against the announced Content-Length), the event is recorded and the temp file d
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from starlette.responses import FileResponse, Response
 from starlette.types import Receive, Scope, Send
@@ -53,6 +55,17 @@ class ArtifactRequest:
     upstream_url: str
     expected: Expected
     content_type: str = "application/octet-stream"
+    # A check that needs the whole body (the Go zip `h1:` hashes the files inside the zip): called with the
+    # spooled temp file before the final chunk is released; returns a problem description, or None.
+    check_file: Callable[[Path], str | None] | None = None
+    upstream_digest: str | None = None  # recorded when `expected` carries no sha256/sha512
+    error: Callable[..., Response] = field(default=error)  # error responses, in the format the client reads
+    # Called once the upstream response has arrived, before anything is sent: may fill `expected` from its headers
+    # and URL, and returns a refusal (sent instead; nothing is streamed) or extra response headers.
+    on_upstream: Callable[[StreamResponse], Awaitable[Response | dict[str, str] | None]] | None = None
+    # Extra headers for a cache hit, from what was recorded on the first download.
+    hit_headers: Callable[[ArtifactRecord], dict[str, str]] | None = None
+    published: float | None = None  # when the registry stored the file, if known: recorded for later cache hits
 
 
 @dataclass(slots=True)
@@ -61,6 +74,8 @@ class ArtifactRecord:
     size: int | None
     tampered: bool
     legacy: bool = False
+    upstream_digest: str | None = None
+    published: float | None = None
 
 
 class StreamedArtifact:
@@ -110,7 +125,7 @@ AsgiResponse = Response | StreamedArtifact
 
 
 def _tamper_response(req: ArtifactRequest) -> Response:
-    return error(
+    return req.error(
         451,
         "tamper_detected",
         artifact=req.key,
@@ -131,12 +146,14 @@ class ArtifactServer:
 
     def record_for(self, ecosystem: str, key: str) -> ArtifactRecord | None:
         row = self.db.readers.one(
-            "SELECT sha256, size, tampered, upstream_digest FROM artifacts WHERE ecosystem = ? AND path = ?",
+            "SELECT sha256, size, tampered, upstream_digest, published FROM artifacts WHERE ecosystem = ? AND path = ?",
             (ecosystem, key),
         )
         if row is None:
             return None
-        return ArtifactRecord(row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST)
+        return ArtifactRecord(
+            row[0], row[1], bool(row[2]), legacy=row[3] == LEGACY_DIGEST, upstream_digest=row[3], published=row[4]
+        )
 
     async def serve(
         self,
@@ -150,7 +167,7 @@ class ArtifactServer:
         rec = self.record_for(req.ecosystem, req.key)
         if rec is not None and rec.tampered:
             self.recorder.decision(req.ecosystem, "artifact", "tampered")
-            return error(
+            return req.error(
                 451,
                 "tamper_detected",
                 artifact=req.key,
@@ -165,6 +182,7 @@ class ArtifactServer:
             self.recorder.decision(req.ecosystem, "artifact", "served")
             if method != "HEAD":
                 self.recorder.download(req.ecosystem, req.package, req.version, cached.size, cache_hit=True)
+            extra = req.hit_headers(rec) if req.hit_headers is not None and rec is not None else {}
             return FileResponse(
                 cached.path,
                 media_type=cached.content_type or req.content_type,
@@ -172,6 +190,7 @@ class ArtifactServer:
                     "Cache-Control": IMMUTABLE_CACHE_CONTROL,
                     "ETag": f'"{cached.sha256}"',
                     "X-SlowShield-Cache": "hit",
+                    **extra,
                 },
                 filename=None,
                 stat_result=None,
@@ -194,16 +213,27 @@ class ArtifactServer:
         except UpstreamError as exc:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
-            return error(502, "upstream_error", detail=exc.detail)
+            return req.error(502, "upstream_error", detail=exc.detail)
         if up.status in (404, 410):
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "not_found")
-            return error(404, "not_found")
+            return req.error(404, "not_found")
         if not 200 <= up.status < 300:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
-            return error(502, "upstream_error", detail=f"upstream returned {up.status}")
+            return req.error(502, "upstream_error", detail=f"upstream returned {up.status}")
 
+        extra: dict[str, str] = {}
+        if req.on_upstream is not None:
+            try:
+                verdict = await req.on_upstream(up)
+            except BaseException:
+                await stack.aclose()
+                raise
+            if isinstance(verdict, Response):
+                await stack.aclose()
+                return verdict
+            extra = verdict or {}
         size = req.expected.size or up.content_length
         if req.expected.size is None and up.content_length is not None:
             req.expected.size = up.content_length
@@ -212,6 +242,7 @@ class ArtifactServer:
             "Content-Type": content_type,
             "Cache-Control": IMMUTABLE_CACHE_CONTROL,
             "X-SlowShield-Cache": "miss",
+            **extra,
         }
         if size is not None:
             out_headers["Content-Length"] = str(size)
@@ -229,6 +260,10 @@ class ArtifactServer:
                     yield pending
                 pending = chunk
             problems = verifier.problems()
+            if req.check_file is not None and tee is not None and not problems:
+                problem = await asyncio.to_thread(req.check_file, tee.path)
+                if problem:
+                    problems.append(problem)
             if verifier.tofu_mismatch():
                 independently_verified = not problems and bool(
                     req.expected.sha256 or req.expected.sha512 or req.expected.blake2b_256
@@ -243,7 +278,7 @@ class ArtifactServer:
                 await self._integrity_mismatch(req, verifier, client_ip, problems)
                 raise IntegrityAbort(
                     req.key,
-                    error(502, "integrity_mismatch", artifact=req.key, detail="; ".join(problems)),
+                    req.error(502, "integrity_mismatch", artifact=req.key, detail="; ".join(problems)),
                 )
             stored = await self._remember(req, verifier)
             if stored is not None and stored != verifier.sha256:
@@ -295,16 +330,30 @@ class ArtifactServer:
         """Insert-or-keep the TOFU digest; returns the digest now on record."""
         now = self.clock.now()
         sha = verifier.sha256
-        digest = req.expected.sha256 or (req.expected.sha512.hex() if req.expected.sha512 else None)
+        e = req.expected
+        digest = e.sha256 or (e.sha512.hex() if e.sha512 else None) or req.upstream_digest
 
         def op(conn):  # type: ignore[no-untyped-def]
             conn.execute(
                 "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, upstream_digest, size, "
-                "first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "first_seen, last_seen, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (ecosystem, path) DO UPDATE SET last_seen = excluded.last_seen, "
                 "sha256 = coalesce(artifacts.sha256, excluded.sha256), size = coalesce(artifacts.size, excluded.size), "
-                "upstream_digest = coalesce(artifacts.upstream_digest, excluded.upstream_digest)",
-                (req.ecosystem, req.key, req.package, req.version, req.filename, sha, digest, verifier.size, now, now),
+                "upstream_digest = coalesce(artifacts.upstream_digest, excluded.upstream_digest), "
+                "published = coalesce(artifacts.published, excluded.published)",
+                (
+                    req.ecosystem,
+                    req.key,
+                    req.package,
+                    req.version,
+                    req.filename,
+                    sha,
+                    digest,
+                    verifier.size,
+                    now,
+                    now,
+                    req.published,
+                ),
             )
             row = conn.execute(
                 "SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (req.ecosystem, req.key)
@@ -319,7 +368,8 @@ class ArtifactServer:
             extra={"artifact": req.key, "legacy_sha256": req.expected.tofu_sha256, "sha256": verifier.sha256},
         )
         sha = verifier.sha256
-        digest = req.expected.sha256 or (req.expected.sha512.hex() if req.expected.sha512 else None)
+        e = req.expected
+        digest = e.sha256 or (e.sha512.hex() if e.sha512 else None) or req.upstream_digest
 
         def op(conn):  # type: ignore[no-untyped-def]
             conn.execute(

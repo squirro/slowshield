@@ -17,7 +17,7 @@ from opentelemetry import context as otel_context
 from opentelemetry import propagate
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route, Router
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -32,6 +32,8 @@ from slowshield.config import ConfigHolder, LoadedConfig, load
 from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems.artifacts import ArtifactServer
+from slowshield.ecosystems.go.service import GoService
+from slowshield.ecosystems.maven.service import MavenService
 from slowshield.ecosystems.npm.service import NpmService
 from slowshield.ecosystems.pypi.service import PypiService
 from slowshield.feeds import FeedScheduler
@@ -61,10 +63,15 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
             *raw.upstreams.pypi.mirrors,
             raw.upstreams.pypi.files_url,
             *raw.upstreams.npm.mirrors,
+            *raw.upstreams.go.mirrors,
+            raw.upstreams.go.sumdb_url,
             raw.feeds.osv_base_url,
             raw.feeds.github_api_url,
         ]
     )
+    allowed |= {h.lower() for h in raw.upstreams.go.download_hosts}
+    for repo in raw.upstreams.maven.all_repos().values():
+        allowed |= _hosts([repo.url]) | {h.lower() for h in repo.download_hosts}
     upstream = Upstream(
         user_agent=f"slowshield/{__version__} (+https://github.com/squirro/slowshield)", allowed_hosts=allowed
     )
@@ -133,6 +140,7 @@ class SlowShield:
         self._scheduler: FeedScheduler | None = None
         self._ready = False
         self._handler: ASGIApp = PlainTextResponse("starting", status_code=503)
+        self.root_routes: tuple[Any, ...] = ()  # the main host's routes, checked against slowshield.routing
 
     # ---- lifespan --------------------------------------------------------------------------------
 
@@ -149,12 +157,14 @@ class SlowShield:
             log.warning(w)
         pypi = PypiService(ctx) if self.cfg.raw.upstreams.pypi.enabled else None
         npm = NpmService(ctx) if self.cfg.raw.upstreams.npm.enabled else None
+        go = GoService(ctx) if self.cfg.raw.upstreams.go.enabled else None
+        maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         from slowshield.ui import UI
 
         ui = UI(ctx)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx)
-        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi, npm, ui))
+        self._handler = SecurityHeadersMiddleware(self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, ui=ui))
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
             self._spawn(self._config_watcher(ctx), "config")
@@ -167,6 +177,8 @@ class SlowShield:
                 "version": __version__,
                 "pypi": bool(pypi),
                 "npm": bool(npm),
+                "go": bool(go),
+                "maven": bool(maven),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
             },
@@ -284,38 +296,64 @@ class SlowShield:
 
     # ---- routing ------------------------------------------------------------------------------------
 
-    def _router(self, ctx: AppContext, pypi: PypiService | None, npm: NpmService | None, ui: Any) -> ASGIApp:
+    def _router(
+        self,
+        ctx: AppContext,
+        *,
+        pypi: PypiService | None,
+        npm: NpmService | None,
+        go: GoService | None,
+        maven: MavenService | None,
+        ui: Any,
+    ) -> ASGIApp:
         raw = self.cfg.raw
         common: list[Any] = [
             Route("/healthz", self.healthz, methods=["GET"]),
             Route("/readyz", self.readyz, methods=["GET"]),
         ]
+        # Every first path segment is part of the root contract (slowshield.routing, docs/design/routing.md).
         main: list[Any] = [*common]
         if pypi is not None:
             main.append(Mount("/pypi", app=pypi.router()))
         if npm is not None:
             main.append(Mount("/npm", app=npm))
-        main.append(Mount("/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
+        if go is not None:
+            main.append(Mount("/go", app=go))
+        if maven is not None:
+            main.append(Mount("/maven", app=maven))
+        main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
         main.extend(ui.routes())
-        if pypi is not None and not raw.upstreams.pypi.hostnames and not raw.upstreams.npm.hostnames:
-            # Single-host deployments also answer at the root (compatible with the Rust version).
+        # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
+        # (single-host deployments only).
+        main.append(Route("/static/{path:path}", _legacy_static, methods=["GET", "HEAD"]))
+        root_alias = pypi is not None and not raw.upstreams.pypi.hostnames and not raw.upstreams.npm.hostnames
+        if root_alias and pypi is not None:
             main.extend(pypi.routes())
         main_router = Router(main, redirect_slashes=False)
+        self.root_routes = tuple(main)
 
-        host_map: dict[str, ASGIApp] = {}
+        # Deprecated, removed in 0.1: per-ecosystem hostnames (host routing). New ecosystems never get one.
+        host_map: dict[str, tuple[ASGIApp, str]] = {}
         if pypi is not None:
             pypi_router = Router([*common, *pypi.routes()], redirect_slashes=False)
             for h in raw.upstreams.pypi.hostnames:
-                host_map[h.lower()] = pypi_router
+                host_map[h.lower()] = (pypi_router, "pypi-hostname")
         if npm is not None:
             for h in raw.upstreams.npm.hostnames:
-                host_map[h.lower()] = _with_common(common, npm)
-        if not host_map:
-            return main_router
+                host_map[h.lower()] = (_with_common(common, npm), "npm-hostname")
 
         async def dispatch(scope: Scope, receive: Receive, send: Send) -> None:
-            app = host_map.get(_host(scope), main_router)
-            await app(scope, receive, send)
+            path = scope.get("path", "")
+            hit = host_map.get(_host(scope)) if host_map else None
+            if hit is not None:
+                app, legacy = hit
+                if path not in ("/healthz", "/readyz"):
+                    instruments.legacy_routing.add(1, {"route": legacy})
+                await app(scope, receive, send)
+                return
+            if root_alias and path.startswith(("/simple", "/packages/")):
+                instruments.legacy_routing.add(1, {"route": "root-simple"})
+            await main_router(scope, receive, send)
 
         return dispatch
 
@@ -369,6 +407,13 @@ def _host(scope: Scope) -> str:
     return ""
 
 
+async def _legacy_static(request: Request) -> Response:
+    """Deprecated, removed in 0.1: UI assets moved from /static/ to /ui/static/."""
+    instruments.legacy_routing.add(1, {"route": "static"})
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(f"/ui/static/{request.path_params['path']}{query}", 301)
+
+
 def _with_common(common: list[Any], app: ASGIApp) -> ASGIApp:
     router = Router([*common, Mount("", app=app)], redirect_slashes=False)
     return router
@@ -420,13 +465,15 @@ _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/simple/", "/simple/{project}/"),
     ("/packages/", "/packages/{file}"),
     ("/npm/-/", "/npm/-/{endpoint}"),
+    ("/go/sumdb/", "/go/sumdb/{endpoint}"),
+    ("/ui/static/", "/ui/static/{asset}"),
     ("/static/", "/static/{asset}"),
     ("/ui/", "/ui/{page}"),
 )
 
 
 def _route_label(path: str) -> str:
-    if path in ("/", "/healthz", "/readyz", "/simple/", "/pypi/simple/"):
+    if path in ("/", "/ui/", "/healthz", "/readyz", "/simple/", "/pypi/simple/"):
         return path
     for prefix, label in _ROUTE_PREFIXES:
         if path.startswith(prefix):
@@ -436,6 +483,19 @@ def _route_label(path: str) -> str:
             return label
     if path.startswith("/npm/"):
         return "/npm/{package}/-/{file}" if "/-/" in path else "/npm/{package}"
+    if path.startswith("/maven/"):
+        if "/maven-metadata.xml" in path:
+            return "/maven/{repo}/{artifact}/maven-metadata.xml"
+        return "/maven/{repo}/{file}"
+    if path.startswith("/go/"):
+        if path.endswith("/@v/list"):
+            return "/go/{module}/@v/list"
+        if path.endswith("/@latest"):
+            return "/go/{module}/@latest"
+        ext = path.rsplit(".", 1)[-1]
+        if "/@v/" in path and ext in ("info", "mod", "zip"):
+            return f"/go/{{module}}/@v/{{version}}.{ext}"
+        return "/go/{path}"
     if "/-/" in path:
         return "/{package}/-/{file}"
     return "/{package}"

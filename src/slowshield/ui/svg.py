@@ -6,6 +6,7 @@ the result in `Markup` is safe.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from html import escape
 
@@ -50,18 +51,17 @@ def stacked_bars(
     plot_w, plot_h = width - pad_l - 4, height - pad_b - pad_t
     n = max(1, len(buckets))
     totals = [sum(series.get(s, {}).get(b, 0) for s in order) for b in buckets]
-    peak = max(totals) if totals and max(totals) > 0 else 1
+    ticks = axis_ticks(max(totals, default=0))
+    peak = ticks[-1]  # the axis ends at the top tick, so every gridline sits exactly at its label
     bw = plot_w / n
     parts = [
         f'<svg class="chart" viewBox="0 0 {width} {height}" preserveAspectRatio="none" role="img" '
         f'aria-label="{escape(title)}">'
     ]
-    for frac in (0.25, 0.5, 0.75, 1.0):
-        y = pad_t + plot_h - frac * plot_h
+    for tick in ticks:
+        y = pad_t + plot_h - tick / peak * plot_h
         parts.append(f'<line class="grid" x1="{pad_l}" y1="{y:.1f}" x2="{width - 4}" y2="{y:.1f}"/>')
-        parts.append(
-            f'<text class="axis" x="{pad_l - 6}" y="{y + 4:.1f}" text-anchor="end">{_short(peak * frac)}</text>'
-        )
+        parts.append(f'<text class="axis" x="{pad_l - 6}" y="{y + 4:.1f}" text-anchor="end">{_short(tick)}</text>')
     label_every = max(1, n // 8)
     for i, b in enumerate(buckets):
         x = pad_l + i * bw
@@ -98,6 +98,21 @@ def hbar(value: float, peak: float, *, width: int = 160, height: int = 10, cls: 
         f'<rect class="fill" width="{w:.1f}" height="{height}" rx="3"/>'
     )
     return Markup(_open(cls, width, height) + body + "</svg>")  # noqa: S704 - numeric only
+
+
+def axis_ticks(peak: float, target: int = 4) -> list[float]:
+    """At most `target` evenly spaced, round tick values from one step up to at least `peak`.
+
+    Steps are 1, 2 or 5 times a power of ten (and 2.5 from 25 on), never below 1: the charts count requests and
+    downloads, so a fractional tick would only repeat a neighbour's rounded label.
+    """
+    if peak <= 0:
+        return [1.0]
+    raw = peak / target
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw and (m != 2.5 or mag >= 10))
+    step = max(1.0, step)
+    return [step * i for i in range(1, math.ceil(peak / step - 1e-9) + 1)]
 
 
 def _short(v: float) -> str:

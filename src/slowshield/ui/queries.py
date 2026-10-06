@@ -6,6 +6,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from slowshield.ecosystems import ECOSYSTEMS
+
 FIVE_MIN = 300
 HOUR = 3600
 DAY = 86400
@@ -78,7 +80,7 @@ def _rows(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> l
 
 
 def _eco_clause(eco: str | None, col: str = "ecosystem") -> tuple[str, tuple[Any, ...]]:
-    if eco in ("pypi", "npm"):
+    if eco in ECOSYSTEMS:
         return f" AND {col} = ?", (eco,)
     return "", ()
 
@@ -148,7 +150,7 @@ def kpis(conn: sqlite3.Connection, w: Window, eco: str | None = None) -> dict[st
 
 def series_downloads(conn: sqlite3.Connection, w: Window, eco: str | None = None) -> dict[str, dict[int, int]]:
     ec, ep = _eco_clause(eco)
-    out: dict[str, dict[int, int]] = {"pypi": {}, "npm": {}}
+    out: dict[str, dict[int, int]] = {e: {} for e in ECOSYSTEMS}
     for bucket, ecosystem, serves in _rows(
         conn,
         f"SELECT bucket, ecosystem, sum(serves) FROM {w.table} WHERE bucket >= ? AND bucket < ?{ec} "
@@ -230,7 +232,7 @@ def package_page(
 ) -> tuple[list[sqlite3.Row], int]:
     where = ["1=1"]
     params: list[Any] = []
-    if eco in ("pypi", "npm"):
+    if eco in ECOSYSTEMS:
         where.append("p.ecosystem = ?")
         params.append(eco)
     if q:
@@ -370,7 +372,7 @@ def events_page(
     if type_:
         where.append("type = ?")
         params.append(type_)
-    if eco in ("pypi", "npm"):
+    if eco in ECOSYSTEMS:
         where.append("ecosystem = ?")
         params.append(eco)
     if q:
@@ -408,7 +410,7 @@ def blocklist_page(
     if q:
         where.append("name LIKE ? ESCAPE '\\'")
         params.append("%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
-    if eco in ("pypi", "npm"):
+    if eco in ECOSYSTEMS:
         where.append("ecosystem = ?")
         params.append(eco)
     if source in ("osv", "github"):

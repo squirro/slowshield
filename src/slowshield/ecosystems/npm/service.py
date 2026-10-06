@@ -305,7 +305,7 @@ class NpmService:
             now=now,
             delay_for=lambda ver: cfg.delay_days_for(ECO, doc.name, ver),
             is_blocked=lambda ver: blocks.match(ECO, ver) is not None,
-            fail_open=cfg.raw.fail_open,
+            fail_open=cfg.fail_open_for(ECO),
         )
         # Preserve upstream order (chronological for npmjs) for byte-stable output.
         allowed = {c.item for c in ev.allowed}
@@ -408,14 +408,16 @@ class NpmService:
         return Response(body, media_type=fmt if fmt == ABBREVIATED else "application/json", headers=headers)
 
     def public_base(self, request: Request) -> str:
-        """Base for tarball URLs: the configured public URL, or http://localhost when the client used local HTTP."""
+        """Base for tarball URLs. Requests under /npm/ get `<public_url>/npm` (or http://localhost/npm when the
+        client used local HTTP), so lockfiles record path URLs. Requests on a deprecated npm hostname keep that
+        host (removed in 0.1)."""
         cfg = self.ctx.cfg
-        npm = cfg.raw.upstreams.npm
-        if not (npm.public_url or npm.hostnames):
+        via_hostname = not request.scope.get("root_path", "").endswith("/npm")
+        if not cfg.raw.upstreams.npm.public_url and not via_hostname:
             local = local_http_origin(request.scope, cfg.raw.local_http, cfg.trusted_networks)
             if local:
                 return f"{local}/npm"
-        return cfg.npm_public_base()
+        return cfg.npm_public_base(via_hostname=via_hostname)
 
     async def version_manifest(self, request: Request, name: str, spec: str) -> Response:
         v = await self._resolve(request, name, "metadata")

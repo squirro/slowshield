@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from slowshield.ui import snippets
+
 if TYPE_CHECKING:
     from tests.e2e.conftest import Stack
 
@@ -73,7 +75,7 @@ def test_http2_and_modern_tls(stack: Stack) -> None:
 
 
 def test_security_headers(stack: Stack) -> None:
-    status, headers, _ = stack.get("/")
+    status, headers, _ = stack.get("/ui/")
     assert status == 200
     assert headers["strict-transport-security"].startswith("max-age=63072000")
     assert "default-src 'none'" in headers["content-security-policy"]
@@ -257,3 +259,110 @@ def test_npm_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     assert lock["packages"]["node_modules/left-pad-ng"]["version"] == "1.0.0"
     # 0.2.0 is ten days old (latest); 0.3.0-beta.1 (`next`) is held back.
     assert lock["packages"]["node_modules/@acme/widget"]["version"] == "0.2.0"
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="go not installed")
+def test_go_downloads_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    env = {
+        **os.environ,
+        "SSL_CERT_FILE": str(stack.ca_file),
+        "GOPROXY": f"{stack.base}/go",
+        "GOSUMDB": "off",  # the fake checksum database is not signed by sum.golang.org's key
+        "GOPATH": str(tmp_path / "gopath"),
+        "GOMODCACHE": str(tmp_path / "modcache"),
+        "GOFLAGS": "-modcacherw",
+        "GOTOOLCHAIN": "local",
+        "GOENV": "off",
+    }
+    ok = subprocess.run(
+        ["go", "mod", "download", "-json", "example.com/hello@latest"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert ok.returncode == 0, ok.stderr
+    assert json.loads(ok.stdout)["Version"] == "v1.1.0"  # v1.2.0 was stored by the mirror two days ago
+    held = subprocess.run(
+        ["go", "mod", "download", "example.com/hello@v1.2.0"], env=env, capture_output=True, text=True, check=False
+    )
+    assert held.returncode != 0
+    assert "403 Forbidden" in held.stderr and "is too new" in held.stderr  # our text/plain body, printed by go
+
+
+MAVEN_IMAGE = "maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320"
+MAVEN_SETTINGS = """<settings><mirrors><mirror>
+  <!-- replaces Maven's built-in blocker of http:// repositories: the test talks plain HTTP inside the stack -->
+  <id>maven-default-http-blocker</id><mirrorOf>*</mirrorOf>
+  <url>http://localhost:8080/maven/all/</url><blocked>false</blocked>
+</mirror></mirrors></settings>
+"""
+
+
+def _parent_pom(version: str) -> str:
+    return (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
+        f"<parent><groupId>org.example</groupId><artifactId>bom</artifactId><version>{version}</version>"
+        "<relativePath/></parent><artifactId>child</artifactId><packaging>pom</packaging></project>"
+    )
+
+
+def test_maven_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Maven against the stack: a parent POM is resolved while the model is built, with no plugins needed (the
+    fake registry has none). 1.0.0 is 100 days old; 1.1.0 two days, so Maven reports a 425."""
+    (tmp_path / "settings.xml").write_text(MAVEN_SETTINGS)
+    (tmp_path / "ok.xml").write_text(_parent_pom("1.0.0"))
+    (tmp_path / "new.xml").write_text(_parent_pom("1.1.0"))
+
+    def mvn(pom: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", MAVEN_IMAGE, "mvn", "-B", "-s", "/w/settings.xml",
+             "-Dmaven.repo.local=/tmp/m2", "-f", f"/w/{pom}", "validate"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = mvn("ok.xml")
+    assert ok.returncode == 0, ok.stdout[-3000:]
+    held = mvn("new.xml")
+    assert held.returncode != 0
+    assert "status code: 425, reason phrase: Too Early (425)" in held.stdout, held.stdout[-3000:]
+
+
+GRADLE_IMAGE = "gradle:9.8.0-jdk21@sha256:4debe478645a3ad9208f3403ac021859fdf4d1a819d59970d75309b098f28f76"
+
+
+def _gradle_project(root: Path, version: str) -> None:
+    root.mkdir()
+    (root / "settings.gradle").write_text(f"rootProject.name = 'try-{version}'\n")
+    (root / "build.gradle").write_text(
+        "plugins { id 'java' }\nrepositories { mavenCentral() }\n"
+        f"dependencies {{ implementation 'org.example:hello:{version}' }}\n"
+        "tasks.register('resolve') { doLast { configurations.compileClasspath.files.each { println it.name } } }\n"
+    )
+
+
+def test_gradle_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Gradle with the Setup page's init script, which points mavenCentral() at SlowShield. 1.0.0 of
+    org.example:hello is 100 days old; 1.2.0 two days, so Gradle reports a 425."""
+    (tmp_path / "init.gradle").write_text(snippets.gradle_init("http://localhost:8080/maven"))
+    for version in ("1.0.0", "1.2.0"):
+        _gradle_project(tmp_path / version, version)
+
+    def gradle(version: str) -> subprocess.CompletedProcess[str]:
+        # Gradle writes into the project (build/reports), so it works on a copy inside the container.
+        script = (
+            f"cp -r /w/{version} /tmp/project && gradle --no-daemon --no-configuration-cache -q -g /tmp/gradle-home "
+            "-I /w/init.gradle -p /tmp/project resolve"
+        )
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", GRADLE_IMAGE, "-c", script],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = gradle("1.0.0")
+    assert ok.returncode == 0 and "hello-1.0.0.jar" in ok.stdout, (ok.stdout + ok.stderr)[-3000:]
+    held = gradle("1.2.0")
+    assert held.returncode != 0
+    assert "Received status code 425 from server" in held.stderr, held.stderr[-3000:]

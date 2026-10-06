@@ -26,16 +26,32 @@ stats_retention_days = 400
 # --- upstream registries -------------------------------------------------------------------------
 [upstreams.pypi]
 enabled = true
-hostnames = []                         # e.g. ["pypi.slowshield.example.com"] for per-ecosystem hosts
+hostnames = []                         # deprecated, removed in 0.1: clients use <public_url>/pypi/simple/
 mirrors = ["https://pypi.org"]         # PEP 691 JSON-capable indexes, tried in order
 files_url = "https://files.pythonhosted.org"
 
 [upstreams.npm]
 enabled = true
-hostnames = []                         # e.g. ["npm.slowshield.example.com"]
+hostnames = []                         # deprecated, removed in 0.1: clients use <public_url>/npm/
 mirrors = ["https://registry.npmjs.org"]
 # public_url = "https://slowshield.example.com/npm"  # base for rewritten tarball URLs (defaults below)
 audit_passthrough = true               # forward `npm audit` bulk advisory queries
+
+[upstreams.go]                         # clients: GOPROXY=<public_url>/go (docs/design/go.md)
+enabled = true
+mirrors = ["https://proxy.golang.org"] # GOPROXY-protocol mirrors; publish time = Last-Modified of each .mod
+sumdb_url = "https://sum.golang.org"   # checksum database, proxied at /go/sumdb/sum.golang.org/
+download_hosts = ["storage.googleapis.com"]  # where the mirror may redirect large zips
+
+[upstreams.maven]                      # clients: <public_url>/maven/all/ (docs/design/maven.md)
+enabled = true
+fail_open = false                      # brand-new artifacts are held too (typosquats, dependency confusion)
+central = { url = "https://repo1.maven.org/maven2" }
+google = { url = "https://dl.google.com/dl/android/maven2" }
+gradle_plugins = { url = "https://plugins.gradle.org/m2", download_hosts = ["plugins-artifacts.gradle.org", "repo.maven.apache.org"] }
+# [upstreams.maven.repos]              # more repositories, served at /maven/<id>/
+# jitpack = { url = "https://jitpack.io" }
+# nightlies = { url = "https://repo.example.com/snapshots", snapshots = true }  # snapshots: no age check
 
 # --- caches -------------------------------------------------------------------------------------
 [cache]
@@ -43,7 +59,7 @@ metadata_max_mb = 1024                 # upstream metadata + rendered responses:
                                        # metadata-cache.db) shared by all workers, kept in the OS page cache
 metadata_memory_mb = 64                # parsed metadata and small responses in process memory, in total
                                        # across all workers (each worker holds its share)
-artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs
+artifacts_enabled = true               # verified on-disk cache of wheels/sdists/tarballs/Go modules
 artifacts_max_gb = 20                  # LRU eviction above 90% of this
 scrub_interval_hours = 24              # re-hash cached files to detect disk corruption
 

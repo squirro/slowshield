@@ -14,6 +14,16 @@ files_url = "http://fakeupstream:9000/files"
 mirrors = ["http://fakeupstream:9000/npm"]
 public_url = "http://127.0.0.1:18080/npm"
 
+# Releases before Go and Maven support reject these sections; perf/runner.py leaves them out for them.
+[upstreams.go]
+mirrors = ["http://fakeupstream:9000/go"]
+sumdb_url = "http://fakeupstream:9000/sumdb"
+
+[upstreams.maven]
+central = { url = "http://fakeupstream:9000/maven/central" }
+google = { url = "http://fakeupstream:9000/maven/google" }
+gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
+
 [feeds]
 poll_interval_minutes = 60
 osv_base_url = "http://fakeupstream:9000/osv"

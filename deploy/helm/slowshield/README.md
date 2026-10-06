@@ -41,7 +41,8 @@ helm install slowshield deploy/helm/slowshield \
 |---|---|---|
 | `hostnames` | `[slowshield.example.com]` | Caddy site addresses |
 | `publicUrl` | `https://<first hostname>` | Used for npm tarball URLs and setup snippets |
-| `ecosystems.{pypi,npm}.hostnames` | `[]` | Optional per-ecosystem host routing |
+| `ecosystems.{pypi,npm,go,maven}.enabled` | `true` | Serve that ecosystem at `/pypi/simple/`, `/npm/`, `/go/` or `/maven/` |
+| `ecosystems.{pypi,npm}.hostnames` | `[]` | Deprecated (removed in 0.1): per-ecosystem host routing; clients use `/pypi/simple/` and `/npm/` |
 | `config` | see values.yaml | `config.toml` (delays, exceptions, cache, feeds) |
 | `feeds.github.existingSecret` / `.token` | `""` | GitHub Advisory feed token (feed stays off without it) |
 | `telemetry.otlpEndpoint` | `""` | OTLP/HTTP endpoint (e.g. Alloy); also enables Caddy tracing |

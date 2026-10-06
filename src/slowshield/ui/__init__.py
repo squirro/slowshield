@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import math
 import os
 from datetime import UTC, datetime
-from functools import partial
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
@@ -22,16 +23,18 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
-from slowshield import names as N
 from slowshield.context import AppContext
+from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
+from slowshield.ui import snippets as S
 from slowshield.ui import svg
 from slowshield.web import is_loopback_host, local_http_origin
 
 TEMPLATES = Path(__file__).parent / "templates"
+STATIC = Path(__file__).parent / "static"
 HTMX_VERSION = "4.0.0"
-ECO_LABEL = {"pypi": "PyPI", "npm": "npm"}
+ECO_LABEL = LABELS
 EVENT_LABEL = {
     "blocked": "Blocked",
     "tampered": "Tampered",
@@ -100,6 +103,14 @@ def safe_href(url: str | None) -> str:
     return url if isinstance(url, str) and url.startswith("https://") else "#"
 
 
+@cache
+def asset(name: str) -> str:
+    """URL of a UI asset, versioned by its content: a changed file never comes from a browser's stale cache, even
+    when the release version stays the same (dev builds)."""
+    digest = hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:12]
+    return f"/ui/static/{name}?v={digest}"
+
+
 def fmt_pct(x: float | None) -> str:
     return "—" if x is None else f"{x * 100:.1f}%"
 
@@ -118,9 +129,11 @@ class UI:
         env.filters.update(bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href)
         cast(dict[str, Any], env.globals).update(
             version=__version__,
+            asset=asset,
             build=build_info(),
             htmx_version=HTMX_VERSION,
             eco_label=ECO_LABEL,
+            ecosystems=ECOSYSTEMS,
             event_label=EVENT_LABEL,
             decision_label=DECISION_LABEL,
             sparkline=svg.sparkline,
@@ -135,8 +148,10 @@ class UI:
 
     def routes(self) -> list[Route]:
         return [
-            Route("/", self.dashboard),
-            Route("/ui", lambda r: RedirectResponse("/", 302)),
+            # The UI lives entirely under /ui/ (root contract, slowshield.routing); / only points there.
+            Route("/", lambda r: RedirectResponse("/ui/", 302)),
+            Route("/ui", lambda r: RedirectResponse("/ui/", 302)),
+            Route("/ui/", self.dashboard),
             Route("/ui/partials/dashboard", self.dashboard_partial),
             Route("/ui/packages", self.packages),
             Route("/ui/partials/packages", self.packages_partial),
@@ -150,7 +165,7 @@ class UI:
             Route("/ui/feeds", self.feeds),
             Route("/ui/setup", self.setup),
             Route("/ui/about", self.about),
-            Route("/favicon.ico", lambda r: RedirectResponse("/static/brand/favicon.ico", 301)),
+            Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
 
     def _ago(self, ts: float | None) -> str:
@@ -174,8 +189,7 @@ class UI:
             "feeds": self.ctx.feeds,
             "feed_warnings": [f for f in self.ctx.feeds.values() if f.reason in ("missing_token", "error")],
             "cfg": cfg.raw,
-            "pypi_enabled": cfg.raw.upstreams.pypi.enabled,
-            "npm_enabled": cfg.raw.upstreams.npm.enabled,
+            "enabled": {eco: getattr(cfg.raw.upstreams, eco).enabled for eco in IDS},
             "now": self.ctx.clock.now(),
         }
         base.update(context)
@@ -192,7 +206,7 @@ class UI:
     @staticmethod
     def _eco(request: Request) -> str | None:
         e = request.query_params.get("eco")
-        return e if e in ("pypi", "npm") else None
+        return e if e in ECOSYSTEMS else None
 
     @staticmethod
     def _page(request: Request) -> int:
@@ -221,9 +235,9 @@ class UI:
 
         data = await self._q(collect)
         buckets = w.buckets()
-        dl_series = {k: v for k, v in data["dl"].items() if k in ("pypi", "npm")}
+        dl_series = {k: v for k, v in data["dl"].items() if k in ECOSYSTEMS}
         traffic = svg.stacked_bars(
-            buckets, dl_series, step=w.step, order=["pypi", "npm"], labels=ECO_LABEL, title="Downloads per ecosystem"
+            buckets, dl_series, step=w.step, order=list(IDS), labels=ECO_LABEL, title="Downloads per ecosystem"
         )
         decisions = svg.stacked_bars(
             buckets,
@@ -285,9 +299,10 @@ class UI:
     async def package_detail(self, request: Request) -> Response:
         eco = request.path_params["eco"]
         raw_name = request.path_params["name"]
-        if eco not in ("pypi", "npm"):
+        info = ECOSYSTEMS.get(eco)
+        if info is None:
             return self._render("not_found.html.j2", request, what="ecosystem")
-        name = N.normalize_pypi(raw_name) if eco == "pypi" else N.normalize_npm(raw_name)
+        name = info.normalize(raw_name)
         w = Q.window(request.query_params.get("range") or "90d", self.ctx.clock.now())
         cfg = self.ctx.cfg
         blocks = self.ctx.blocklist.for_package(eco, name)
@@ -334,7 +349,6 @@ class UI:
             height=160,
         )
         held = sum(1 for v in versions if v["status"] == "held")
-        upstream_url = f"https://pypi.org/project/{name}/" if eco == "pypi" else f"https://www.npmjs.com/package/{name}"
         return self._render(
             "package.html.j2",
             request,
@@ -349,7 +363,8 @@ class UI:
             package_block=blocks.package_block,
             delay=cfg.delay_days_for(eco, name),
             default_delay=cfg.raw.default_delay_days,
-            upstream_url=upstream_url,
+            upstream_url=info.page_url(name),
+            upstream_site=info.registry_site,
             w=w,
         )
 
@@ -478,12 +493,12 @@ class UI:
         cfg = self.ctx.cfg
         raw = cfg.raw
         base = cfg.public_base()
-        pypi_index = (
-            f"https://{raw.upstreams.pypi.hostnames[0]}/simple/"
-            if raw.upstreams.pypi.hostnames
-            else f"{base}/pypi/simple/"
-        )
+        # Path URLs only: per-ecosystem hostnames are deprecated (removed in 0.1) and only get a notice.
+        pypi_index = f"{base}/pypi/simple/"
         npm_registry = cfg.npm_public_base() + "/"
+        go_proxy = f"{base}/go"
+        maven_base = f"{base}/maven"
+        legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
         if local is None and raw.local_http:
@@ -492,19 +507,28 @@ class UI:
                 local = f"http://{'[' + host + ']' if ':' in host else host}"
         secure = None
         if local:
-            secure = {"pypi": pypi_index, "npm": npm_registry}
-            if not raw.upstreams.pypi.hostnames:
-                pypi_index = f"{local}/pypi/simple/"
-            if not (raw.upstreams.npm.hostnames or raw.upstreams.npm.public_url):
+            secure = {"pypi": pypi_index, "npm": npm_registry, "go": go_proxy, "maven": f"{maven_base}/all/"}
+            pypi_index = f"{local}/pypi/simple/"
+            go_proxy = f"{local}/go"
+            maven_base = f"{local}/maven"
+            if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
+        snippets = S.for_instance(pypi_index, npm_registry, go_proxy)
+        os_name = _client_os(request)
+        shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
             "setup.html.j2",
             request,
             pypi_index=pypi_index,
             npm_registry=npm_registry,
-            base=base,
-            plain_http=pypi_index.startswith("http://") or npm_registry.startswith("http://"),
+            go_proxy=go_proxy,
+            maven_repo=f"{maven_base}/all/",
+            legacy_hosts=legacy_hosts,
             secure=secure,
+            snippets=snippets,
+            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base),
+            shell=shell,
+            os=os_name,
         )
 
     async def about(self, request: Request) -> Response:
@@ -513,6 +537,19 @@ class UI:
             text = _read_doc(name)
             docs[name] = Markup(self.md.render(text)) if text else None  # noqa: S704 - markdown-it with html disabled
         return self._render("about.html.j2", request, docs=docs, info=build_info())
+
+
+def _client_os(request: Request) -> str:
+    """mac, linux, windows or "", from the client hint or the User-Agent: preselects the Setup page's shell tab
+    (app.js then prefers the visitor's last choice)."""
+    probe = (request.headers.get("sec-ch-ua-platform", "").strip('"') or request.headers.get("user-agent", "")).lower()
+    if "mac" in probe or "iphone" in probe or "ipad" in probe:
+        return "mac"
+    if "windows" in probe:
+        return "windows"
+    if ("linux" in probe or "x11" in probe) and "android" not in probe:
+        return "linux"
+    return ""
 
 
 def _qs(base: dict[str, Any], **changes: Any) -> str:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+
+from slowshield.app import STATIC_DIR
 from slowshield.ecosystems.pypi.project import JSON_V1
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
@@ -9,11 +12,11 @@ from slowshield.feeds.osv import OsvFeed
 from tests.conftest import Running
 
 PAGES = [
-    "/",
-    "/?range=1h",
-    "/?range=24h",
-    "/?range=30d&eco=pypi",
-    "/?range=bogus&eco=bogus",
+    "/ui/",
+    "/ui/?range=1h",
+    "/ui/?range=24h",
+    "/ui/?range=30d&eco=pypi",
+    "/ui/?range=bogus&eco=bogus",
     "/ui/partials/dashboard?range=90d",
     "/ui/packages",
     "/ui/packages?q=al&sort=bytes&eco=pypi&page=1",
@@ -73,7 +76,7 @@ async def test_empty_database_pages_render(running: Running) -> None:
 
 
 async def test_security_headers_and_csp(running: Running) -> None:
-    r = await running.client.get("/")
+    r = await running.client.get("/ui/")
     h = r.headers
     csp = h["content-security-policy"]
     assert "script-src 'self'" in csp and "'unsafe-inline'" not in csp and "'unsafe-eval'" not in csp
@@ -97,12 +100,12 @@ async def test_hostile_feed_text_is_escaped(running: Running) -> None:
 
 async def test_dashboard_reflects_activity(running: Running) -> None:
     await _populate(running)
-    r = await running.client.get("/?range=24h")
+    r = await running.client.get("/ui/?range=24h")
     assert "alpha" in r.text and "Top packages" in r.text
     assert "Malware blocked" in r.text
     for label in ("Upstream traffic saved", "Fetched from upstream", "Upstream requests saved"):
         assert label in r.text
-    r = await running.client.get("/?range=1h")
+    r = await running.client.get("/ui/?range=1h")
     assert "alpha" in r.text and 'aria-current="true">1h<' in r.text
     r = await running.client.get("/ui/packages/pypi/alpha")
     assert "Held back" in r.text and "2.0.0" in r.text and "countdown" in r.text
@@ -128,15 +131,20 @@ async def test_csv_export_neutralises_formulas(running: Running) -> None:
 
 
 async def test_static_assets_and_favicon(running: Running) -> None:
-    css = await running.client.get("/static/app.css")
+    css = await running.client.get("/ui/static/app.css")
     assert css.status_code == 200 and "--primary" in css.text
-    js = await running.client.get("/static/vendor/htmx.min.js")
+    js = await running.client.get("/ui/static/vendor/htmx.min.js")
     assert js.status_code == 200 and len(js.content) > 10_000
     fav = await running.client.get("/favicon.ico", follow_redirects=False)
-    assert fav.status_code == 301 and fav.headers["location"] == "/static/brand/favicon.ico"
+    assert fav.status_code == 301 and fav.headers["location"] == "/ui/static/brand/favicon.ico"
     for asset in ("favicon.ico", "favicon.svg", "mark.svg", "mark-dark.svg", "apple-touch-icon.png"):
-        assert (await running.client.get(f"/static/brand/{asset}")).status_code == 200, asset
-    assert (await running.client.get("/ui", follow_redirects=False)).status_code == 302
+        assert (await running.client.get(f"/ui/static/brand/{asset}")).status_code == 200, asset
+    page = (await running.client.get("/ui/")).text
+    assert '"/static/' not in page
+    # Versioned by content, not release: a rebuilt asset is never served from a stale browser cache.
+    for name in ("app.css", "app.js"):
+        digest = hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        assert f'"/ui/static/{name}?v={digest}"' in page, name
 
 
 async def test_health_endpoints(running: Running) -> None:

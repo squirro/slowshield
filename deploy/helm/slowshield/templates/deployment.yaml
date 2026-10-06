@@ -63,6 +63,10 @@ spec:
               value: {{ .Values.ecosystems.pypi.enabled | quote }}
             - name: SLOWSHIELD_NPM_ENABLED
               value: {{ .Values.ecosystems.npm.enabled | quote }}
+            - name: SLOWSHIELD_GO_ENABLED
+              value: {{ .Values.ecosystems.go.enabled | quote }}
+            - name: SLOWSHIELD_MAVEN_ENABLED
+              value: {{ .Values.ecosystems.maven.enabled | quote }}
             {{- with .Values.ecosystems.pypi.hostnames }}
             - name: SLOWSHIELD_PYPI_HOSTNAMES
               value: {{ join " " . | quote }}

@@ -296,7 +296,7 @@ def social_preview() -> str:
     p = DARK
     title, _ = wordmark(470, 250, 104, p)
     tag, _ = text_el(TAGLINE, 650, 42, 474, 318, p["brand"])
-    l1, _ = text_el("Supply-chain shield for PyPI and npm.", 400, 30, 474, 392, p["ink"])
+    l1, _ = text_el("Supply-chain shield for PyPI, npm, Go and Maven.", 400, 30, 474, 392, p["ink"])
     l2, _ = text_el("Known-bad is blocked. Brand-new is held back.", 400, 30, 474, 436, p["muted"])
     foot, _ = text_el("slowshield.org  ·  open source, Apache-2.0", 500, 22, 474, 560, p["muted"])
     inner = (
@@ -316,7 +316,7 @@ def readme_banner(p: dict[str, str], dark: bool) -> str:
     title, _ = wordmark(x, 132, 64, p)
     tag, _ = text_el(TAGLINE, 650, 26, x + 2, 176, p["brand"])
     sub, _ = text_el(
-        "A supply-chain shield for PyPI and npm: known-bad is blocked, brand-new is held back.",
+        "A supply-chain shield for PyPI, npm, Go and Maven: known-bad is blocked, brand-new is held back.",
         400,
         19,
         x + 2,
@@ -330,6 +330,66 @@ def readme_banner(p: dict[str, str], dark: bool) -> str:
         + title + tag + sub
     )  # fmt: skip
     return svg(inner, 1200, 280, "SlowShield: safety through patience")
+
+
+X_LINE = ("Patience is the best", "malware scanner.")
+
+
+def x_header() -> str:
+    """x.com header (1500 x 500): the line, and the website's held-back step (How it works) without the small print.
+
+    X shows it at about 600 px wide, so the labels are large, and the profile picture covers the lower left
+    (about x 50..400, y 320..500), so that stays empty.
+    """
+    p = DARK
+    ok, held, bad, line, surface = p["available"], p["held"], p["blocked"], p["line"], p["surface"]
+    l1, _ = text_el(X_LINE[0], 750, 66, 110, 192, p["ink"], tracking=-0.012)
+    l2, _ = text_el(X_LINE[1], 750, 66, 110, 272, p["brand"], tracking=-0.012)
+    out = []
+
+    def label(text: str, x: float, y: float, size: float, color: str, wght: int = 600) -> None:
+        out.append(text_el(text, wght, size, x, y, color, anchor="middle")[0])
+
+    def box(x: float, y: float, w: float, h: float, r: float) -> None:
+        out.append(f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="{f(r)}" fill="{surface}" stroke="{line}" '
+                   f'stroke-width="1.5"/>')  # fmt: skip
+
+    # the maintainer and the attacker publish to the registry
+    out.append(f'<path d="M72 86 C112 88 140 110 150 136" fill="none" stroke="{line}" stroke-width="2.5"/>')
+    out.append(
+        f'<path d="M70 296 C110 290 140 276 150 256" fill="none" stroke="{mix(bad, line, 0.6)}" stroke-width="2.5"/>'
+    )
+    for cy, ring, fill, name, color in ((80, ok, p["muted"], "maintainer", p["ink"]), (306, bad, bad, "attacker", bad)):
+        out.append(f'<g transform="translate(44 {cy})"><circle r="28" fill="{surface}" stroke="{ring}" stroke-width="2"/>'
+                   f'<circle cy="-7" r="8" fill="{fill}"/><path d="M-14 17 Q-14 4 0 4 Q14 4 14 17 Z" fill="{fill}"/></g>')  # fmt: skip
+        label(name, 44, cy + 56, 19, color, 650)
+    # the registry's releases: two old ones, the maintainer's 2.4.0, the attacker's 2.4.1
+    box(92, 136, 140, 120, 16)
+    label("registry", 162, 186, 21, p["ink"], 650)
+    for x, c, op in ((111, p["muted"], ".55"), (139, p["muted"], ".55"), (167, ok, "1"), (195, bad, "1")):
+        out.append(f'<rect x="{x}" y="206" width="18" height="18" rx="4" fill="{c}" opacity="{op}"/>')
+    # 2.4.1 waits in front of SlowShield; the machines get what is old enough
+    out.append(f'<path d="M232 196 H318" stroke="{held}" stroke-width="2.5"/>')
+    out.append(
+        f'<circle cx="276" cy="196" r="19" fill="none" stroke="{held}" stroke-width="2.2" stroke-dasharray="4 5"/>'
+    )
+    out.append(f'<rect x="267" y="187" width="18" height="18" rx="4" fill="{bad}"/>')
+    out.append(f'<g transform="translate(318 152) scale(1.375)">{mark_body("mark", "m", fill=p["brand"])}</g>')
+    label("SlowShield", 362, 270, 21, p["ink"], 650)
+    for y, name in ((76, "laptop"), (196, "CI runner"), (316, "prod build")):
+        d = "M406 196 H488" if y == 196 else f"M406 196 C447 196 447 {y} 488 {y}"
+        out.append(f'<path d="{d}" fill="none" stroke="{ok}" stroke-width="2.5"/>')
+        box(488, y - 24, 120, 48, 12)
+        label(name, 548, y + 7, 19, p["ink"])
+        out.append(f'<g transform="translate(606 {y - 22})"><circle r="10" fill="{ok}"/><path d="M-4.5 0.5 L-1.5 3.5 L4.5 -3" '
+                   f'fill="none" stroke="{surface}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>')  # fmt: skip
+    inner = (
+        f'<defs><radialGradient id="g" cx="0.78" cy="0.45" r="0.55"><stop offset="0" stop-color="{p["brand"]}" '
+        f'stop-opacity=".2"/><stop offset="1" stop-color="{p["brand"]}" stop-opacity="0"/></radialGradient></defs>'
+        f'<rect width="1500" height="500" fill="{p["ground"]}"/><rect width="1500" height="500" fill="url(#g)"/>'
+        + l1 + l2 + f'<g transform="translate(812 52)">{"".join(out)}</g>'
+    )  # fmt: skip
+    return svg(inner, 1500, 500, "SlowShield: patience is the best malware scanner")
 
 
 def sprite_html() -> str:
@@ -435,6 +495,7 @@ def main() -> None:
         "social-preview.svg": social_preview(),
         "readme-banner.svg": readme_banner(LIGHT, dark=False),
         "readme-banner-dark.svg": readme_banner(DARK, dark=True),
+        "x-header.svg": x_header(),
     }
     for name, markup in files.items():
         check(markup, name)

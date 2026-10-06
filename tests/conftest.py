@@ -55,6 +55,13 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
         "upstreams": {
             "pypi": {"mirrors": [f"{fake_url}/pypi"], "files_url": f"{fake_url}/files"},
             "npm": {"mirrors": [f"{fake_url}/npm"]},
+            "go": {"mirrors": [f"{fake_url}/go"], "sumdb_url": f"{fake_url}/sumdb"},
+            "maven": {
+                "central": {"url": f"{fake_url}/maven/central"},
+                "google": {"url": f"{fake_url}/maven/google"},
+                "gradle_plugins": {"url": f"{fake_url}/maven/portal"},
+                "repos": {"snapshots": {"url": f"{fake_url}/maven/snapshots", "snapshots": True}},
+            },
         },
         "feeds": {"osv_base_url": f"{fake_url}/osv", "github_api_url": f"{fake_url}/github"},
     }

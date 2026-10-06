@@ -1,11 +1,14 @@
-"""Starlette app serving the fake catalog as PyPI, npm, OSV and GitHub endpoints, plus control hooks."""
+"""Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), OSV and GitHub
+endpoints, plus control hooks."""
 
 from __future__ import annotations
 
 import asyncio
+import email.utils
 import hashlib
 import io
 import json
+import re
 import time
 import zipfile
 from collections import Counter
@@ -20,9 +23,10 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response, Strea
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from fakeupstream.catalog import DAY, Advisory, Blob, Catalog, iso, iso_s, pep503
+from fakeupstream.catalog import DAY, Advisory, Blob, Catalog, GoModule, GoVersion, iso, iso_s, pep503
 
 JSON_V1 = "application/vnd.pypi.simple.v1+json"
+_PSEUDO = re.compile(r"-(?:0\.)?\d{14}-[0-9a-f]{12}(?:\+incompatible)?$")
 
 
 class State:
@@ -38,6 +42,7 @@ class State:
         self.failures: dict[str, int] = {}
         self.hits: Counter[str] = Counter()
         self.last_headers: dict[str, dict[str, str]] = {}
+        self.clock_offset = 0.0  # added to the catalog's `now` when the Go mirror stores a version
 
 
 def _etag(body: bytes) -> str:
@@ -225,6 +230,228 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         await request.body()
         return JSONResponse({"audited": True})
 
+    # ---- Go: module mirror (proxy.golang.org) and checksum database (sum.golang.org) ---------------------
+
+    def go_unescape(value: str) -> str:
+        return re.sub(r"!([a-z])", lambda m: m.group(1).upper(), value)
+
+    def go_store(gv: GoVersion) -> None:
+        """The mirror fetches a version the first time anyone asks for it without Disable-Module-Fetch."""
+        if gv.stored is None:
+            gv.stored = state.catalog.now + state.clock_offset
+
+    def go_lookup(module: GoModule, ver: str) -> GoVersion | None:
+        gv = module.versions.get(ver)
+        if gv is None and module.head and ver in ("main", "master", "HEAD", module.head.rsplit("-", 1)[-1][:7]):
+            gv = module.versions[module.head]  # a branch or commit query resolves to the pseudo-version
+        return gv
+
+    def go_info(gv: GoVersion) -> bytes:
+        return json.dumps({"Version": gv.version, "Time": iso_s(gv.commit)}).encode()
+
+    async def go(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        cache_only = request.headers.get("disable-module-fetch") == "true"
+        if rest.endswith("/@latest"):
+            esc, kind, ver = rest[: -len("/@latest")], "latest", ""
+        else:
+            esc, _, file = rest.partition("/@v/")
+            if file == "list":
+                kind, ver = "list", ""
+            else:
+                ver, _, kind = file.rpartition(".")
+        module = state.catalog.go.get(go_unescape(esc))
+        if module is None:
+            return PlainTextResponse(
+                f"not found: module {go_unescape(esc)}: repository does not exist", status_code=404
+            )
+        if kind == "list":
+            tags = [v for v, gv in module.versions.items() if gv.stored is not None and not _PSEUDO.search(v)]
+            return PlainTextResponse("".join(f"{v}\n" for v in tags))
+        if kind == "latest":
+            tags = [gv for v, gv in module.versions.items() if not _PSEUDO.search(v)]
+            gv = tags[-1] if tags else (module.versions[module.head] if module.head else None)
+            if gv is None:
+                return PlainTextResponse("not found: no matching versions", status_code=404)
+            go_store(gv)
+            return Response(go_info(gv), media_type="application/json")
+        gv = go_lookup(module, go_unescape(ver))
+        if gv is None:
+            return PlainTextResponse(f"not found: {module.path}@{go_unescape(ver)}: invalid version", status_code=404)
+        if gv.stored is None:
+            if cache_only:
+                return PlainTextResponse("not found: temporarily unavailable", status_code=404)
+            go_store(gv)
+        headers = {"Last-Modified": email.utils.formatdate(gv.stored or 0.0, usegmt=True)}
+        if module.path == "example.com/nolm":
+            headers = {}
+        if kind == "info":
+            return Response(go_info(gv), media_type="application/json")
+        if kind not in ("mod", "zip"):
+            return PlainTextResponse("not found", status_code=404)
+        blob = gv.zip if kind == "zip" else gv.mod
+        if kind == "zip" and module.path == "example.com/redirected":  # like proxy.golang.org for large zips
+            return Response(status_code=302, headers={**headers, "Location": f"/storage/{rest}?Signature=fake"})
+        resp = _stream(blob, tampered="/go/" + rest in state.tampered, media_type="application/zip")
+        resp.headers.update(headers)
+        return resp
+
+    async def storage(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        esc, _, file = rest.partition("/@v/")
+        module = state.catalog.go.get(go_unescape(esc))
+        gv = module.versions.get(go_unescape(file.removesuffix(".zip"))) if module else None
+        if gv is None or request.query_params.get("Signature") != "fake":
+            return PlainTextResponse("AccessDenied", status_code=403)
+        return _stream(gv.zip, tampered="/go/" + rest in state.tampered, media_type="application/zip")
+
+    # ---- Maven: Central, Google Maven, the Gradle Plugin Portal ------------------------------------------
+
+    def maven_lm(f: Any) -> str:
+        stored = f.stored if f.stored is not None else state.catalog.now + state.clock_offset
+        return email.utils.formatdate(stored, usegmt=True)
+
+    def maven_metadata(art: Any) -> bytes:
+        versions = list(art.versions)
+        release = [v for v in versions if not v.endswith("-SNAPSHOT")]
+        rows = "".join(f"      <version>{v}</version>\n" for v in versions)
+        # Odd documents real repositories could send: a DOCTYPE, no groupId/artifactId, prefixed tags.
+        ids = (
+            ""
+            if art.artifact == "anonymous"
+            else (f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n")
+        )
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
+            f"{ids}  <versioning>\n"
+            f"    <latest>{versions[-1]}</latest>\n    <release>{release[-1] if release else ''}</release>\n"
+            f"    <versions>\n{rows}    </versions>\n    <lastUpdated>20260920000000</lastUpdated>\n"
+            "  </versioning>\n</metadata>\n"
+        )
+        if art.artifact == "doctype":
+            body = body.replace("<metadata>", '<!DOCTYPE metadata [<!ENTITY x "y">]>\n<metadata>', 1)
+        if art.artifact == "prefixed":
+            body = re.sub(r"<(/?)(?!\?)", r"<\1m:", body).replace(
+                "<m:metadata>", '<m:metadata xmlns:m="http://maven.apache.org/METADATA/1.1.0">', 1
+            )
+        return body.encode()
+
+    def maven_snapshot_metadata(art: Any, version: str) -> bytes:
+        """A snapshot version's builds (`<group>/<artifact>/<version>/maven-metadata.xml`)."""
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n'
+            f"  <groupId>{art.group}</groupId>\n  <artifactId>{art.artifact}</artifactId>\n"
+            f"  <version>{version}</version>\n  <versioning>\n"
+            "    <snapshot>\n      <timestamp>20260920.000000</timestamp>\n      <buildNumber>1</buildNumber>\n"
+            "    </snapshot>\n    <lastUpdated>20260920000000</lastUpdated>\n  </versioning>\n</metadata>\n"
+        ).encode()
+
+    plugin_metadata = (
+        b'<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n  <plugins>\n    <plugin>\n      <name>Fake</name>\n'
+        b"      <prefix>fake</prefix>\n      <artifactId>fake-maven-plugin</artifactId>\n    </plugin>\n  </plugins>\n"
+        b"</metadata>\n"
+    )
+    algos = {"sha1": "sha1", "md5": "md5", "sha256": "sha256", "sha512": "sha512"}
+
+    def maven_find(repo: str, rest: str) -> tuple[Any, str | None, str | None]:
+        """(artifact, version, filename) for a path, or (artifact, None, None) for its metadata."""
+        parts = rest.split("/")
+        if parts[-1].startswith("maven-metadata.xml"):
+            art = state.catalog.maven.get((repo, "/".join(parts[:-1])))
+            if art is None:  # a version's metadata: a snapshot's builds
+                art = state.catalog.maven.get((repo, "/".join(parts[:-2])))
+                return (art, parts[-2], parts[-1]) if art and parts[-2] in art.versions else (None, None, None)
+            return art, None, None
+        if len(parts) < 4:
+            return None, None, None
+        return state.catalog.maven.get((repo, "/".join(parts[:-2]))), parts[-2], parts[-1]
+
+    async def maven(request: Request) -> Response:
+        repo, rest = request.path_params["repo"], request.path_params["rest"]
+        not_found = {"Last-Modified": "Sat, 11 Oct 2025 08:00:00 GMT"} if repo == "central" else {}
+        if repo == "google" and rest == "master-index.xml":
+            groups = sorted({a.group for (r, _), a in state.catalog.maven.items() if r == "google"})
+            body = '<?xml version="1.0" encoding="UTF-8"?>\n<metadata>\n' + "".join(f"  <{g}/>\n" for g in groups)
+            return Response((body + "</metadata>\n").encode(), media_type="text/xml")
+        if rest == "org/apache/maven/plugins/maven-metadata.xml":
+            return Response(plugin_metadata, media_type="text/xml")
+        if repo == "portal-artifacts":  # <group>/<artifact>/<version>/<sha256>/<file>
+            group, artifact, version, _sha, fname = rest.split("/")
+            art = state.catalog.maven.get(("portal", f"{group.replace('.', '/')}/{artifact}"))
+            f = art.versions.get(version, {}).get(fname) if art else None
+            if f is None:
+                return PlainTextResponse("not found", status_code=404)
+            resp = _stream(f.blob, tampered=False, media_type="application/octet-stream")
+            resp.headers["Last-Modified"] = maven_lm(f)
+            return resp
+        art, version, fname = maven_find(repo, rest)
+        if repo == "portal":
+            if art is None:  # the Plugin Portal answers any Central path with a 303 to Central
+                return Response(status_code=303, headers={"Location": f"/maven/central/{rest}"})
+            if version is not None and fname in art.versions.get(version, {}):
+                f = art.versions[version][fname]
+                sha = f.blob.digests()["sha256"]
+                loc = f"/maven/portal-artifacts/{art.group}/{art.artifact}/{version}/{sha}/{fname}"
+                return Response(status_code=303, headers={"Location": loc, "Last-Modified": maven_lm(f)})
+        if art is None:
+            return PlainTextResponse("not found", status_code=404, headers=not_found)
+        if version is None:
+            body = maven_metadata(art)
+            algo = rest.rsplit(".", 1)[-1] if not rest.endswith(".xml") else None
+            if algo in algos:
+                return PlainTextResponse(hashlib.new(algos[algo], body).hexdigest())
+            return Response(
+                body,
+                media_type="text/xml",
+                headers={"Last-Modified": email.utils.formatdate(state.catalog.now - DAY, usegmt=True)},
+            )
+        if fname and fname.startswith("maven-metadata.xml"):
+            body = maven_snapshot_metadata(art, version)
+            algo = fname.rsplit(".", 1)[-1] if not fname.endswith(".xml") else None
+            return (
+                PlainTextResponse(hashlib.new(algos[algo], body).hexdigest())
+                if algo in algos
+                else Response(body, media_type="text/xml")
+            )
+        files = art.versions.get(version, {})
+        algo = next((a for a in algos if fname.endswith("." + a)), None)
+        base = fname[: -len(algo) - 1] if algo else fname
+        f = files.get(base)
+        if f is None:
+            return PlainTextResponse("not found", status_code=404, headers=not_found)
+        if algo:
+            digest = hashlib.new(algo, b"".join(f.blob.chunks())).hexdigest()
+            return PlainTextResponse(digest, headers={"Last-Modified": maven_lm(f)})
+        headers = {"Last-Modified": maven_lm(f)}
+        if repo == "central":  # Central sends its checksums as headers
+            data = b"".join(f.blob.chunks())
+            headers["x-checksum-sha1"] = hashlib.sha1(data, usedforsecurity=False).hexdigest()
+            headers["x-checksum-md5"] = hashlib.md5(data, usedforsecurity=False).hexdigest()
+        resp = _stream(
+            f.blob, tampered=f"/maven/{repo}/{rest}" in state.tampered, media_type="application/java-archive"
+        )
+        resp.headers.update(headers)
+        return resp
+
+    async def sumdb(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        note = "go.sum database tree\n2000000\nZmFrZXRyZWVoYXNo\n\n— sum.golang.org fakesignature\n"
+        if rest == "latest":
+            return PlainTextResponse(note)
+        if rest.startswith("lookup/"):
+            esc, _, ver = rest[len("lookup/") :].rpartition("@")
+            module = state.catalog.go.get(go_unescape(esc))
+            gv = module.versions.get(go_unescape(ver)) if module else None
+            if module is None or gv is None:
+                return PlainTextResponse(f"not found: {rest[7:]}: invalid version", status_code=404)
+            go_store(gv)
+            m, v = module.path, gv.version
+            body = f"{gv.record}\n{m} {v} {gv.zip_h1}\n{m} {v}/go.mod {gv.mod_h1}\n\n"
+            return PlainTextResponse(body + note)
+        if rest.startswith("tile/"):
+            return Response(hashlib.sha256(rest.encode()).digest() * 8, media_type="application/octet-stream")
+        return PlainTextResponse("not found", status_code=404)
+
     # ---- OSV -----------------------------------------------------------------------------------------
 
     def osv_doc(a: Advisory) -> dict[str, Any]:
@@ -237,7 +464,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                 events.append({"introduced": introduced or "0"})
                 if fixed:
                     events.append({"fixed": fixed})
-            affected["ranges"] = [{"type": "SEMVER" if a.ecosystem == "npm" else "ECOSYSTEM", "events": events}]
+            affected["ranges"] = [{"type": "SEMVER" if a.ecosystem in ("npm", "Go") else "ECOSYSTEM", "events": events}]
         doc: dict[str, Any] = {
             "id": a.id,
             "modified": iso(a.modified),
@@ -332,7 +559,11 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
 
     async def ctl_tamper(request: Request) -> Response:
         path = request.query_params["path"]
-        state.tampered.add(path.removeprefix("/files") if path.startswith("/files/") else path.removeprefix("/npm"))
+        if path.startswith("/files/"):
+            path = path.removeprefix("/files")
+        elif not path.startswith(("/go/", "/maven/")):
+            path = path.removeprefix("/npm")
+        state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
 
     async def ctl_latency(request: Request) -> Response:
@@ -350,7 +581,14 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
 
     async def ctl_publish(request: Request) -> Response:
         q = request.query_params
-        state.catalog.publish(q.get("ecosystem", "pypi"), q["name"], q["version"], float(q.get("age_days", "0")))
+        age = q.get("age_days", "0")
+        state.catalog.publish(
+            q.get("ecosystem", "pypi"), q["name"], q["version"], None if age == "none" else float(age)
+        )
+        return JSONResponse({"ok": True})
+
+    async def ctl_clock(request: Request) -> Response:
+        state.clock_offset = float(request.query_params.get("offset", "0"))
         return JSONResponse({"ok": True})
 
     async def ctl_advisory(request: Request) -> Response:
@@ -388,6 +626,10 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     for name, p in cat.pypi.items()
                 },
                 "npm": {name: list(p.versions) for name, p in cat.npm.items()},
+                "go": {
+                    path: {v: {"stored": gv.stored, "zip_h1": gv.zip_h1} for v, gv in m.versions.items()}
+                    for path, m in cat.go.items()
+                },
             }
         )
 
@@ -397,6 +639,10 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/files/packages/{path:path}", pypi_file),
         Route("/npm/{rest:path}", npm, methods=["GET"]),
         Route("/npm/{rest:path}", npm_post, methods=["POST"]),
+        Route("/go/{rest:path}", go, methods=["GET", "HEAD"]),
+        Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
+        Route("/sumdb/{rest:path}", sumdb),
+        Route("/storage/{rest:path}", storage),
         Route("/osv/{eco}/all.zip", osv_zip),
         Route("/osv/{eco}/modified_id.csv", osv_csv),
         Route("/osv/{eco}/{id}.json", osv_one),
@@ -407,6 +653,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/_control/fail", ctl_fail, methods=["POST"]),
         Route("/_control/publish", ctl_publish, methods=["POST"]),
         Route("/_control/advisory", ctl_advisory, methods=["POST"]),
+        Route("/_control/clock", ctl_clock, methods=["POST"]),
         Route("/_control/hits", ctl_hits),
         Route("/_control/info", ctl_info),
         Route("/healthz", lambda r: PlainTextResponse("ok")),

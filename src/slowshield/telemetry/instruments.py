@@ -39,6 +39,11 @@ security_events = meter.create_counter(
 artifact_bytes = meter.create_counter(
     "slowshield.artifact.bytes", unit="By", description="Artifact bytes served, by source (cache/upstream)."
 )
+publish_time_lookups = meter.create_counter(
+    "slowshield.publish_time.lookups",
+    unit="{request}",
+    description="Upstream requests made to learn a version's publish time (Last-Modified of a Go .mod / Maven .pom).",
+)
 cache_requests = meter.create_counter(
     "slowshield.cache.requests", unit="{request}", description="Cache lookups by cache and result."
 )
@@ -47,6 +52,11 @@ cache_evictions = meter.create_counter(
 )
 feed_sync_duration = meter.create_histogram(
     "slowshield.feed.sync.duration", unit="s", description="Duration of threat-feed synchronisation runs."
+)
+legacy_routing = meter.create_counter(
+    "slowshield.legacy_routing.requests",
+    unit="{request}",
+    description="Requests through deprecated routing, removed in 0.1: per-ecosystem hostnames, /simple/, /static/.",
 )
 feed_errors = meter.create_counter("slowshield.feed.errors", unit="{error}", description="Feed sync failures.")
 feed_changes = meter.create_counter(

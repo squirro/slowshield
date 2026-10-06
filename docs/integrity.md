@@ -1,7 +1,7 @@
 # Integrity & tamper detection
 
-Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`) is checked
-on the way through:
+Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`, container
+image manifest and blob) is checked on the way through:
 
 | Check | PyPI | npm | Go | Maven | Cargo |
 |---|---|---|---|---|---|
@@ -28,6 +28,19 @@ install fails), the temp file is discarded and an event is recorded:
   artifact is marked and every later request gets `451 tamper_detected` until an operator investigates.
 
 Upstream error responses (non-2xx) are never hashed.
+
+## Container images
+
+Image content is addressed by digest, so the digest is the check ([design/oci.md](design/oci.md)):
+
+* **Manifests** must hash to the requested digest, or to `Docker-Content-Digest` for a tag, and are kept by digest.
+  A mismatch is never served.
+* **Blobs** are checked against their digest while streaming, with the last chunk held back, like every artifact. A
+  mismatch is a `tampered` event and a `403`.
+* **Redirects** to a CDN are followed only to the registry's `download_hosts`, and the registry token is never sent
+  there.
+* **Takedowns.** A cached manifest is re-checked upstream at most every 5 minutes while it is pulled; one the
+  registry removed is refused from then on.
 
 ## Verified cache
 

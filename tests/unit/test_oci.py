@@ -143,8 +143,18 @@ def test_registry_config() -> None:
     assert oci.layer_cache_gb == 0 and oci.fail_open is None
     extra = C.parse('[upstreams.oci.registries."registry.example.com"]\nurl = "https://registry.example.com"\n')
     assert "registry.example.com" in extra.raw.upstreams.oci.all_registries()
-    off = C.parse('[upstreams.oci.registries."gcr.io"]\nurl = "https://gcr.io"\nenabled = false\n')
+    off = C.parse('[upstreams.oci.registries."gcr.io"]\nenabled = false\n')
     assert "gcr.io" not in off.raw.upstreams.oci.all_registries()
+    # A built-in registry's table changes only what it sets.
+    hub = C.parse('[upstreams.oci.registries."docker.io"]\nusername = "ci"\ntoken_file = "/run/hub"\n')
+    reg = hub.raw.upstreams.oci.all_registries()["docker.io"]
+    assert (reg.username, reg.token_file, reg.times, reg.url) == (
+        "ci",
+        "/run/hub",
+        "hub",
+        "https://registry-1.docker.io",
+    )
+    assert "production.cloudfront.docker.com" in reg.download_hosts and reg.aliases
 
 
 @pytest.mark.parametrize(

@@ -14,6 +14,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ Go service    (ecosystems/go)    ─┤                      └─ config exceptions
    │               ├─ Maven service (ecosystems/maven) ─┤
    │               ├─ Cargo service (ecosystems/cargo) ─┤
+   │               ├─ OCI service   (ecosystems/oci)   ─┤   container images at /v2/
    │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)
    ├── artifact server (ecosystems/artifacts.py) ── on-disk verified cache (cache/artifacts.py)
@@ -86,6 +87,23 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 3. `crates/<name>/<version>/download`: version block → `451`, too new → `403` with the version to use instead, else
    the artifact server fetches `<download_url>/<exact name>/<version>/download`, checked against the line's `cksum`
    and the first-seen fingerprint.
+
+## Request flow: container images
+
+`/v2/` serves the OCI distribution API for pulls ([design/oci.md](design/oci.md)).
+
+1. The path names the registry (`/v2/ghcr.io/…`), or containerd's `?ns=` does; otherwise Docker Hub. A registry that
+   isn't configured → `403`.
+2. Blocked repository, tag or digest → `403 DENIED`.
+3. A tag: `HEAD` upstream for its current digest (kept for 5 minutes), recorded with the registry's time where the
+   registry has one (Docker Hub API, Quay, Artifact Registry, MCR) and SlowShield's first sight. The tag resolves to
+   the newest digest it pointed to that is old enough, not blocked and not taken down; nothing old enough → `403`.
+4. A digest: judged by the earliest time a tag (or its index's tag) pointed to it, the registry's storage time, or
+   first sight; too new → `403`.
+5. The manifest comes from the metadata store by digest (re-checked upstream with `HEAD` at most every 5 minutes, for
+   takedowns) or upstream, checked against the digest.
+6. Blobs: the artifact server streams them by digest, following redirects only to the registry's `download_hosts`
+   without the token. Configs go into the artifact cache; layers only into the optional layer store.
 
 ## Integrity
 

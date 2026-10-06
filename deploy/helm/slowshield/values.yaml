@@ -40,6 +40,10 @@ ecosystems:
     enabled: true
   cargo:
     enabled: true
+  # Container images at /v2/ (docs/design/oci.md). Layers are streamed, not stored, unless config.toml sets
+  # [upstreams.oci] layer_cache_gb; persistence.ociLayers can give that store its own volume.
+  oci:
+    enabled: true
 
 # Granian workers (processes; threads on the free-threaded build).
 workers: 2
@@ -127,6 +131,15 @@ telemetry:
 persistence:
   data:
     size: 25Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    existingClaim: ""
+  # The container layer store, when config.toml sets [upstreams.oci] layer_cache_gb (keep size above it).
+  # ephemeral: an emptyDir, refilled from the registries after a restart; else a PVC.
+  ociLayers:
+    enabled: false
+    ephemeral: true
+    size: 100Gi
     storageClass: ""
     accessModes: [ReadWriteOnce]
     existingClaim: ""

@@ -15,6 +15,24 @@ spec:
     requests:
       storage: {{ .Values.persistence.data.size }}
 {{- end }}
+{{- with .Values.persistence.ociLayers }}
+{{- if and .enabled (not .ephemeral) (not .existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "slowshield.fullname" $ }}-oci-layers
+  labels: {{- include "slowshield.labels" $ | nindent 4 }}
+spec:
+  accessModes: {{- toYaml .accessModes | nindent 4 }}
+  {{- with .storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}
 {{- if and .Values.caddy.enabled (not .Values.persistence.caddy.existingClaim) }}
 ---
 apiVersion: v1

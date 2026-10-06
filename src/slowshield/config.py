@@ -205,7 +205,7 @@ class OciUpstream(msgspec.Struct, forbid_unknown_fields=True):
     # for. A budget above 0 keeps them in a separate store under <data_dir>/cache/oci-layers.
     layer_cache_gb: float = 0
     # More registries, or changes to the built-in ones (docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
-    # mcr.microsoft.com, public.ecr.aws), keyed by the name clients use in image references.
+    # mcr.microsoft.com, public.ecr.aws: only the keys set change), keyed by the name clients use in image references.
     registries: dict[str, OciRegistry] = {}
 
     def all_registries(self) -> dict[str, OciRegistry]:
@@ -606,6 +606,19 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
     )
 
 
+def _merge_builtin_registries(data: dict[str, Any]) -> None:
+    """A table for a built-in registry changes only the keys it sets: `token_file` for docker.io keeps Docker Hub's
+    CDN hosts and time source."""
+    upstreams = data.get("upstreams")
+    oci = upstreams.get("oci") if isinstance(upstreams, dict) else None
+    regs = oci.get("registries") if isinstance(oci, dict) else None
+    if not isinstance(regs, dict):
+        return
+    for name, builtin in _oci_builtin().items():
+        if isinstance(regs.get(name), dict):
+            regs[name] = {**msgspec.to_builtins(builtin), **regs[name]}
+
+
 def parse(text: str, *, path: Path | None = None, generation: int = 0) -> LoadedConfig:
     warnings: list[str] = []
     try:
@@ -613,6 +626,7 @@ def parse(text: str, *, path: Path | None = None, generation: int = 0) -> Loaded
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path or 'config'}: invalid TOML: {exc}") from exc
     _strip_legacy(data, warnings)
+    _merge_builtin_registries(data)
     try:
         cfg = msgspec.convert(data, Config, strict=False)
     except msgspec.ValidationError as exc:

@@ -8,6 +8,11 @@ your SCA tool's job). They run on the leader worker every `feeds.poll_interval_m
 | `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go, Maven and crates.io, plus RustSec's malware advisories | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` (and `RUSTSEC-*`) documents |
 | `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven|rust>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
 
+No feed covers container images: OSV and GitHub have no container ecosystem. Operator blocks (`[[blocks]]` in
+config.toml, [configuration.md](configuration.md#operator-blocks)) fill that gap, and for any ecosystem the time
+before a feed catches up. They are stored with source `config`, show up in the UI like feed entries, and are removed
+when they leave the file.
+
 ## Version semantics
 
 * OSV entries listing explicit `versions` block exactly those versions (e.g. the backdoored axios

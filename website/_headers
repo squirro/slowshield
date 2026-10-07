@@ -21,6 +21,8 @@
   Cache-Control: public, max-age=300, must-revalidate
 /brand/
   Cache-Control: public, max-age=300, must-revalidate
+/docs/*
+  Cache-Control: public, max-age=300, must-revalidate
 
 # Static files: one day.
 /assets/*
@@ -29,6 +31,13 @@
   Cache-Control: public, max-age=86400
 /sitemap.xml
   Cache-Control: public, max-age=86400
+# For agents: the guide as Markdown (under /docs/* above), llms.txt and the Agent Skill. An hour: they follow the docs.
+/llms.txt
+  Cache-Control: public, max-age=3600
+/llms-full.txt
+  Cache-Control: public, max-age=3600
+/skills/*
+  Cache-Control: public, max-age=3600
 /.well-known/*
   Cache-Control: public, max-age=86400
 

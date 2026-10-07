@@ -1,0 +1,8 @@
+{
+  "name": "slowshield",
+  "description": "Set up pip, uv, npm, pnpm, Yarn, Bun, Go, Maven, Gradle, Cargo, Docker, Podman and containerd to install through SlowShield, check it, and handle its answers.",
+  "author": { "name": "Squirro", "url": "https://slowshield.org" },
+  "homepage": "https://slowshield.org/docs/agents/",
+  "repository": "https://github.com/squirro/slowshield",
+  "license": "Apache-2.0"
+}

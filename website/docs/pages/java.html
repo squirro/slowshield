@@ -1,0 +1,72 @@
+<!-- title: Java | description: Use SlowShield as the Maven repository for Maven, Gradle, sbt and Coursier: setup, what changes, 425 Too Early, and Docker builds. -->
+<h1>Java</h1>
+<p class="lead">SlowShield serves Maven repositories at <code>https://slowshield.example.com/maven/</code>, for Maven,
+  Gradle, sbt and Coursier, and so for Java, Kotlin and Scala projects. Builds keep their dependencies and plugins as
+  they are; only where they come from changes.</p>
+
+<div class="docs-table"><table>
+  <thead><tr><th>Path</th><th>Serves</th><th>For</th></tr></thead>
+  <tbody>
+    <tr><td><code>/maven/all/</code></td><td>Google's groups from Google Maven, everything else from Maven Central</td><td>Maven's mirror, sbt, Coursier</td></tr>
+    <tr><td><code>/maven/central/</code></td><td>Maven Central</td><td>Gradle <code>mavenCentral()</code></td></tr>
+    <tr><td><code>/maven/google/</code></td><td>Google Maven</td><td>Gradle <code>google()</code></td></tr>
+    <tr><td><code>/maven/gradle-plugins/</code></td><td>the Gradle Plugin Portal</td><td>Gradle <code>gradlePluginPortal()</code> and plugin resolution</td></tr>
+    <tr><td><code>/maven/&lt;id&gt;/</code></td><td>a repository your administrator adds (JitPack, Confluent, …)</td><td>anything else</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="setup">Set it up</h2>
+<p>Maven and Gradle don't read environment variables for this: each needs a file in your home directory, which
+  covers every project on the machine.</p>
+<!-- @tools java -->
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is each file's <code>Last-Modified</code> on the repository (when the
+    repository stored it), or when SlowShield first saw the version listed, whichever is earlier.</li>
+  <li><strong>Version ranges and <code>latest</code></strong> pick the newest version that is old enough: newer ones are
+    left out of <code>maven-metadata.xml</code>, and <code>&lt;latest&gt;</code> and <code>&lt;release&gt;</code> are
+    recomputed.</li>
+  <li><strong>A pin that is too new</strong> fails with <code>425 Too Early</code>. Maven and Gradle only show an
+    error's status line, never its body, and a <code>403</code> would read like a credentials problem:
+    <div class="code"><pre><code>Could not transfer artifact org.example:lib:jar:1.4.0 from/to slowshield (https://slowshield.example.com/maven/all/):
+  status code: 425, reason phrase: Too Early (425)</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    Maven asks again on every build (it caches a <code>404</code>, not a <code>425</code>), so the first build after the
+    hold ends works without <code>-U</code>.</li>
+  <li><strong>Brand-new artifacts</strong> none of whose versions is old enough are held too: Maven doesn't fail open,
+    because brand-new artifacts are the realistic attack (typosquats, dependency confusion).</li>
+  <li><strong>Malware and tampering</strong> are refused with <code>451</code>. Every file is checked against the
+    repository's checksums and the fingerprint SlowShield recorded the first time.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>Maven, Gradle, sbt and Coursier have no release-age setting, so SlowShield is the only layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>Write the mirror into the build container's <code>settings.xml</code>. With a build argument, the same Dockerfile
+  still builds without SlowShield when the argument is empty:</p>
+<div class="code"><pre><code>FROM maven:3.9-eclipse-temurin-21 AS build
+ARG MAVEN_MIRROR=https://slowshield.example.com/maven/all/
+RUN if [ -n "$MAVEN_MIRROR" ]; then mkdir -p /root/.m2 &amp;&amp; printf '%s' \
+      "&lt;settings&gt;&lt;mirrors&gt;&lt;mirror&gt;&lt;id&gt;slowshield&lt;/id&gt;&lt;mirrorOf&gt;*&lt;/mirrorOf&gt;&lt;url&gt;$MAVEN_MIRROR&lt;/url&gt;&lt;/mirror&gt;&lt;/mirrors&gt;&lt;/settings&gt;" \
+      &gt; /root/.m2/settings.xml; fi
+WORKDIR /src
+COPY pom.xml .
+COPY src src
+RUN mvn -B package</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>This one mirror also covers Maven's own plugins: a test build of a small project fetched 107 artifacts through
+  SlowShield, plugins included. For Gradle, copy the init script above to
+  <code>/root/.gradle/init.d/slowshield.gradle</code>. <a href="/docs/container-builds/">Building images</a> covers the
+  base image too, and how to check that nothing in a build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>The Gradle wrapper downloads Gradle itself from services.gradle.org, which SlowShield doesn't serve. Use a
+    Gradle that is already installed, such as the one in the official <code>gradle</code> images, where only
+    SlowShield is reachable.</li>
+  <li>Private repositories stay direct with <code>&lt;mirrorOf&gt;*,!their-id&lt;/mirrorOf&gt;</code>.</li>
+  <li>Plain HTTP (a local test instance): Maven blocks <code>http://</code> repositories; the Setup page's
+    <code>settings.xml</code> overrides that block with the mirror id <code>maven-default-http-blocker</code>.</li>
+  <li>Block repo1.maven.org, repo.maven.apache.org, dl.google.com and plugins.gradle.org at the firewall for machines
+    that should only use SlowShield.</li>
+</ul>

@@ -100,6 +100,10 @@ go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", wh
 #   server = "https://slowshield.example.com" and capabilities = ["pull", "resolve"]
 ```
 
+Coding agents: the [SlowShield Agent Skill](plugins/slowshield) teaches them the setup and what SlowShield's answers
+mean (Claude Code: `/plugin marketplace add squirro/slowshield`), and https://slowshield.org/llms.txt indexes the guide
+as Markdown.
+
 The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
 Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, containerd, Docker, Podman and BuildKit with your URLs. Every ecosystem lives under a path on the one host
 ([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.

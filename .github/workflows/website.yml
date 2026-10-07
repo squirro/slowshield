@@ -4,6 +4,7 @@ name: Website
 #   PR (same repository) -> build -> Worker Preview on workers.dev (separate preview Worker, own token)
 #   PR closed            -> delete that Preview
 #   push to main         -> build -> production deploy -> smoke test against https://slowshield.org
+#   release published    -> release.yml dispatches this workflow on main, so the commands name the new release
 # Fork PRs only build and validate the site: no secrets, no preview.
 # Environment `preview` holds only the preview Worker's token (no branch restriction, so PR branches can
 # use it); `production` (main and release tags only) holds the production token.
@@ -14,6 +15,8 @@ on:
       - "website/**"
       - "brand/**"
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
+      - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
+      - "plugins/slowshield/**" # the Agent Skill, served at /skills/ (its references are checked against the guide)
       - ".github/workflows/website.yml"
   push:
     branches: [main]
@@ -21,6 +24,8 @@ on:
       - "website/**"
       - "brand/**"
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
+      - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
+      - "plugins/slowshield/**" # the Agent Skill, served at /skills/ (its references are checked against the guide)
       - ".github/workflows/website.yml"
   workflow_dispatch:
 
@@ -63,9 +68,22 @@ jobs:
             exit 1
           fi
 
-      - name: Build (CSP, links, anchors and size budget are enforced by build.py)
+      # The commands run the latest published release: release.yml creates it only after the images are tagged.
+      - name: Latest published release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          uv run --no-project python website/build.py --out dist/site
+          set -euo pipefail
+          tag="$(gh release view --repo "$REPO" --json tagName --jq .tagName)"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build (CSP, links, anchors and size budget are enforced by build.py)
+        env:
+          RELEASE: ${{ steps.release.outputs.version }}
+        run: |
+          uv run --no-project python website/build.py --out dist/site --release "$RELEASE"
 
       - name: Upload site
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

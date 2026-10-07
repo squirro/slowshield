@@ -1,0 +1,62 @@
+<!-- title: Go | description: Use SlowShield as your GOPROXY: setup, what changes for go get and go.mod, the checksum database, and Docker builds. -->
+<h1>Go</h1>
+<p class="lead">SlowShield serves Go modules at <code>https://slowshield.example.com/go</code> as a
+  <code>GOPROXY</code>, and passes the checksum database (sum.golang.org) through, so the go command needs no other
+  route out.</p>
+
+<h2 id="setup">Set it up</h2>
+<!-- @tools go -->
+<p>Or the <code>GOPROXY</code> line in your shell profile, with the other package managers (the Setup page has bash on
+  macOS, zsh and fish too):</p>
+<!-- @example shell.bash -->
+<ul>
+  <li><strong>No <code>,direct</code> and no <code>|</code>.</strong> With <code>,direct</code>, the go command fetches
+    from the origin whenever the proxy answers 404 or 410; with <code>|</code>, on any error. SlowShield never answers a
+    refusal with 404 or 410, but a module it can't find would still go around it.</li>
+  <li><strong><code>GOSUMDB</code> stays at its default.</strong> SlowShield answers
+    <code>/go/sumdb/sum.golang.org/supported</code>, so the go command sends its checksum-database requests through
+    SlowShield too.</li>
+  <li><strong>Private modules</strong> keep bypassing the proxy through <code>GOPRIVATE</code>.</li>
+</ul>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is when proxy.golang.org first stored the version (the
+    <code>Last-Modified</code> of its <code>.mod</code>). The commit time in <code>.info</code> is set by the author and
+    can be backdated, so it is never used.</li>
+  <li><strong><code>go get pkg@latest</code></strong> and version queries pick the newest version that is old enough:
+    newer ones are left out of <code>@v/list</code> and <code>@latest</code>.</li>
+  <li><strong>go.mod pins exact versions.</strong> A requirement that is too new fails with <code>403</code> instead of
+    picking an older version. The go command prints SlowShield's message:
+    <div class="code"><pre><code>go: example.com/hello@v1.2.0: reading https://slowshield.example.com/go/example.com/hello/@v/v1.2.0.info: 403 Forbidden
+	server response:
+	slowshield: example.com/hello@v1.2.0 is too new.
+	It was published 2026-10-03T08:21:51Z (2.0 days ago); this proxy requires 7 days.
+	It becomes available at 2026-10-10T08:21:51Z.
+	Use an older version, or ask your SlowShield administrator for an exception.</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
+  <li><strong>Malware and tampering</strong> are refused with <code>451</code>. Every <code>.mod</code> and
+    <code>.zip</code> is checked against the checksum database and the fingerprint SlowShield recorded the first time,
+    which also protects builds that set <code>GOSUMDB=off</code>.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>The go command has no release-age setting, so SlowShield is the only layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<div class="code"><pre><code>FROM golang:1.25 AS build
+ARG GOPROXY=https://slowshield.example.com/go
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app .</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>The official images don't set <code>GOPROXY</code>, so the <code>ARG</code> is what the go command uses.
+  <a href="/docs/container-builds/">Building images</a> covers the base image too, and how to check that nothing in a
+  build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Toolchain downloads (<code>GOTOOLCHAIN</code> switching to a newer Go) are modules too, so they come through
+    SlowShield like any other.</li>
+  <li>Block proxy.golang.org and sum.golang.org at the firewall for machines that should only use SlowShield.</li>
+</ul>

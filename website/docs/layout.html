@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}} — SlowShield docs</title>
+<meta name="description" content="{{description}}">
+<meta name="theme-color" content="#060915">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="{{canonical}}">
+<link rel="alternate" type="text/markdown" href="{{markdown}}" title="This page as Markdown">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="SlowShield">
+<meta property="og:title" content="{{title}} — SlowShield docs">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
+<link rel="icon" href="/assets/favicon.ico" sizes="any">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+<script src="/assets/site.js" type="module"></script>
+</head>
+<body class="docs">
+<!-- @sprite -->
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <a class="nav-brand" href="/" aria-label="SlowShield home">
+    <svg class="nav-mark" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg>
+    <span>Slow<b>Shield</b></span>
+  </a>
+  <nav aria-label="Site">
+    <a href="/#ecosystems">Ecosystems</a>
+    <a href="/#how">How it works</a>
+    <a href="/docs/" class="nav-docs" aria-current="page">Docs</a>
+    <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
+    <a href="/#get-started" class="nav-cta">Get started</a>
+  </nav>
+</header>
+
+<div class="docs-wrap">
+  <nav class="docs-nav" aria-label="Guides">
+{{nav}}
+  </nav>
+  <main id="main" class="docs-main">
+{{body}}
+    <p class="doc-md">For agents: <a href="{{markdown}}">this page as Markdown</a> · <a href="/llms.txt">llms.txt</a> ·
+      <a href="/docs/agents/#skill">the SlowShield skill</a></p>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-brand"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg> <span>SlowShield — <em>safety through patience</em></span></div>
+  <nav aria-label="Footer">
+    <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
+    <a href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">X</a>
+    <a href="https://github.com/squirro/slowshield/pkgs/container/slowshield" rel="noopener noreferrer">Images</a>
+    <a href="/docs/">Docs</a>
+    <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
+    <a href="/brand/">Brand</a>
+    <a href="https://github.com/squirro/slowshield/blob/main/LICENSE" rel="noopener noreferrer">Apache-2.0</a>
+  </nav>
+  <p class="fine">SlowShield is open source under the Apache-2.0 licence and maintained by Squirro.</p>
+</footer>
+</body>
+</html>

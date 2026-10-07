@@ -1,0 +1,120 @@
+<!-- title: Building images | description: Build container images with Docker or Podman so that the base images and every dependency of the build come through SlowShield, and check that nothing goes around it. -->
+<h1>Building images</h1>
+<p class="lead">A container build fetches from two kinds of places: the registries its base images come from, and the
+  package registries its <code>RUN</code> steps install from. Both have to go through SlowShield, and they are set up
+  in different places: the base images in the container runtime, the dependencies in the Dockerfile.</p>
+
+<h2 id="base-images">1. Base images: the runtime</h2>
+<p>Configure the runtime once per machine, as on <a href="/docs/containers/">Container images</a>:</p>
+<ul>
+  <li><strong>Docker on Linux:</strong> <code>/etc/docker/certs.d/_default/hosts.toml</code> (the containerd image
+    store, Docker's default since 29). It covers <code>docker build</code> as well as <code>docker pull</code>.</li>
+  <li><strong>Docker Desktop:</strong> <code>~/.docker/certs.d/_default/hosts.toml</code>, then restart Docker
+    Desktop.</li>
+  <li><strong>Podman:</strong> the <code>registries.conf.d</code> drop-in, inside the machine on macOS and Windows.
+    <code>podman build</code> and Buildah use it too.</li>
+  <li><strong>BuildKit builders of their own</strong> (<code>docker buildx create</code>, BuildKit in CI):
+    <code>buildkitd.toml</code> with mirrors. BuildKit goes to the registry itself after a refusal, so pair it with a
+    network that only reaches SlowShield (step 3).</li>
+</ul>
+<p>Alternatively, name SlowShield in the Dockerfile: <code>FROM slowshield.example.com/docker.io/library/python:3.13-slim</code>.
+  That works with any builder but ties the Dockerfile to your SlowShield.</p>
+
+<h2 id="dependencies">2. Dependencies: the Dockerfile</h2>
+<p>A build container doesn't read your shell profile or your <code>~/.m2</code>. Give each stage that installs
+  something an <code>ARG</code> named like the tool's setting. An <code>ARG</code> reaches <code>RUN</code> as an
+  environment variable and isn't kept in the image. With SlowShield as the default, every build uses it, and
+  <code>--build-arg</code> can still override it:</p>
+<div class="docs-table"><table>
+  <thead><tr><th>Language</th><th>In the build stage</th></tr></thead>
+  <tbody>
+    <tr><td>Python (pip)</td><td><code>ARG PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/</code></td></tr>
+    <tr><td>Python (uv)</td><td><code>ARG UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/</code></td></tr>
+    <tr><td>JavaScript (npm, pnpm)</td><td><code>ARG npm_config_registry=https://slowshield.example.com/npm/</code></td></tr>
+    <tr><td>Go</td><td><code>ARG GOPROXY=https://slowshield.example.com/go</code></td></tr>
+    <tr><td>Java (Maven)</td><td>a <code>settings.xml</code> with the mirror, written in a <code>RUN</code> step (<a href="/docs/java/#docker">Java</a>)</td></tr>
+    <tr><td>Java (Gradle)</td><td>the init script in <code>/root/.gradle/init.d/</code> (<a href="/docs/java/#gradle">Java</a>)</td></tr>
+    <tr><td>Rust</td><td>Cargo's <code>config.toml</code>, written in a <code>RUN</code> step (<a href="/docs/rust/#docker">Rust</a>)</td></tr>
+  </tbody>
+</table></div>
+<p>A complete example, a Go service on a distroless base:</p>
+<div class="code"><pre><code>FROM golang:1.25 AS build
+ARG GOPROXY=https://slowshield.example.com/go
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app .
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=build /app /app
+ENTRYPOINT ["/app"]</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>Both <code>FROM</code> lines come through SlowShield via the runtime's configuration (step 1), the modules via the
+  <code>ARG</code>. An <code>ARG</code> applies to the stage it is declared in: repeat it in each stage that installs
+  something.</p>
+<p><strong>npm needs SlowShield's public name.</strong> SlowShield's tarball links are absolute, made from its public URL,
+  so the build has to reach SlowShield under that name. With a real host name and HTTPS that's a given.</p>
+
+<h2 id="check">3. Check that nothing goes around it</h2>
+<p>Three checks, from quick to strict:</p>
+<ol>
+  <li><strong>Look at the dashboard.</strong> After a build, SlowShield's Packages page lists every base image and
+    package it fetched. A dependency that doesn't show up came from somewhere else.</li>
+  <li><strong>Stop SlowShield and build again</strong> with <code>--no-cache --pull</code>. The pull and every install
+    step should fail. If something still downloads, it goes around SlowShield.</li>
+  <li><strong>Build where SlowShield is the only thing reachable.</strong> A network without internet access that
+    contains SlowShield, and a builder on it. Anything that isn't configured fails, instead of quietly going to the
+    public registry. With Docker:
+    <div class="code"><pre><code># a network without internet access, joined by the container that serves
+# SlowShield's HTTPS (Caddy, in the Compose setup)
+docker network create --internal slowshield-only
+docker network connect --alias slowshield.example.com slowshield-only &lt;caddy-container&gt;
+
+# a builder on that network; buildkitd.toml from the Setup page
+docker buildx create --name slowshield-only --driver docker-container \
+  --driver-opt network=slowshield-only --buildkitd-config buildkitd.toml
+
+# RUN steps don't use the network's DNS: pass SlowShield's address
+docker buildx build --builder slowshield-only --load \
+  --add-host slowshield.example.com=$(docker inspect -f \
+    '{{(index .NetworkSettings.Networks "slowshield-only").IPAddress}}' &lt;caddy-container&gt;) .</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    In CI, the same idea is an egress allowlist that only contains SlowShield.</li>
+</ol>
+
+<h2 id="tested">What we tested</h2>
+<p>On 2026-10-07, on macOS with Docker Desktop (Docker 29.8.1, containerd image store) and Podman 6.1, against a
+  SlowShield serving the real registries. Six small applications, each with dependencies from its registry:</p>
+<div class="docs-table"><table>
+  <thead><tr><th>Application</th><th>Base images</th><th>Dependencies</th></tr></thead>
+  <tbody>
+    <tr><td>Python, pip</td><td><code>python:3.13-slim</code></td><td>requests and 4 more from PyPI</td></tr>
+    <tr><td>Python, uv</td><td><code>python:3.13-slim</code>, <code>ghcr.io/astral-sh/uv</code></td><td>the same, with uv</td></tr>
+    <tr><td>JavaScript, npm</td><td><code>node:22-slim</code></td><td>express and 67 more from npm</td></tr>
+    <tr><td>Go</td><td><code>golang:1.25</code>, <code>gcr.io/distroless/static-debian12</code></td><td>github.com/google/uuid, through the module proxy and the checksum database</td></tr>
+    <tr><td>Java, Maven</td><td><code>maven:3.9-eclipse-temurin-21</code>, <code>mcr.microsoft.com/openjdk/jdk:21-distroless</code></td><td>commons-lang3 and Maven's own plugins: 107 artifacts</td></tr>
+    <tr><td>Rust, Cargo</td><td><code>rust:1</code>, <code>gcr.io/distroless/cc-debian12</code></td><td>itoa from crates.io</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><strong>Docker, only SlowShield reachable</strong> (check 3): all six built and ran. Every base image and every
+    dependency came through SlowShield; nothing else could be reached.</li>
+  <li><strong>Docker Desktop's own builder</strong> (<code>docker build</code>, with the <code>hosts.toml</code> in the
+    VM): the five pip, npm, Go, Maven and Cargo applications built. SlowShield's download counts for each package doubled with the second round of builds. With
+    SlowShield stopped, <code>docker pull</code> and <code>docker build --pull</code> failed instead of going to Docker
+    Hub.</li>
+  <li><strong>Podman</strong> (rootless machine, the drop-in): all six built through a second SlowShield, which served
+    the same 8 image repositories and the same packages. With it stopped, <code>podman pull</code> and
+    <code>pip install</code> failed.</li>
+</ul>
+<p>What we ran into, so you don't have to:</p>
+<ul>
+  <li><strong>BuildKit <code>RUN</code> steps don't resolve names on a custom Docker network</strong> (they get public
+    resolvers). Pass <code>--add-host</code>, as in check 3.</li>
+  <li><strong>Rootless Podman can't attach build steps to a named network</strong> ("cannot use networks as rootless").
+    For check 3 with Podman, use a rootful machine or a firewall instead.</li>
+  <li><strong>A SlowShield container on an internal Podman network with DNS</strong> can't resolve the registries: that
+    network's resolver answers first and only knows the network. Create the network with
+    <code>--disable-dns</code>, or give SlowShield <code>--dns</code>.</li>
+  <li><strong>Plain HTTP</strong> (a local test instance) needs <code>PIP_TRUSTED_HOST</code> for pip and Maven's
+    <code>maven-default-http-blocker</code> override; everything else accepted it. Use HTTPS for anything real.</li>
+</ul>

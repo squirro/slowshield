@@ -4,6 +4,9 @@
 
 Stdlib only, Python 3.9 or later.
 * copies website/src and the brand assets it needs,
+* renders the guide (website/docs) into /docs/, with each tool's settings from the product's own snippets, and the
+  same pages as Markdown for agents: /docs/**/index.md, /llms.txt, /llms-full.txt and the Agent Skill's references
+  (plugins/slowshield/skills/slowshield, served at /skills/; `--write-skill` updates the committed copy),
 * fingerprints CSS/JS (immutable caching) and rewrites references,
 * fails on CSP violations (inline script/style, event-handler attributes, javascript: URLs),
   broken in-page anchors, missing local assets, external sub-resources, or an exceeded size budget,
@@ -17,10 +20,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import importlib.util
 import re
 import shutil
 import sys
 import tomllib
+import types
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -54,8 +60,33 @@ SITE_URLS = {
     "py_pkg": "requests",
     "age_days": "3",  # the package managers' own release age (snippets.CLIENT_AGE_DAYS)
 }
+# The guide: website/docs/pages/<slug>.html into /docs/<slug>/, in the layout website/docs/layout.html. Tool settings
+# come from src/slowshield/ui/snippets.py (stdlib only), the module the Setup page renders, with example URLs.
+DOCS = HERE / "docs"
+DOCS_NAV = (
+    ("", "Overview"), ("python", "Python"), ("javascript", "JavaScript"), ("go", "Go"), ("java", "Java"),
+    ("rust", "Rust"), ("containers", "Container images"), ("container-builds", "Building images"), ("agents", "Agents"),
+)  # fmt: skip
+EXAMPLE = "https://slowshield.example.com"
+EXAMPLE_REGISTRIES = (
+    "docker.io", "gcr.io", "ghcr.io", "mcr.microsoft.com", "public.ecr.aws", "quay.io", "registry.k8s.io",
+)  # fmt: skip
+DOCS_MARKER = re.compile(r"<!-- @(tools|example) ([a-z.-]+) -->")
+# The Agent Skill: SKILL.md is written by hand, its references are the guide's pages as Markdown.
+SKILL = HERE.parent / "plugins" / "slowshield" / "skills" / "slowshield"
+SKILL_PAGES = ("python", "javascript", "go", "java", "rust", "containers", "container-builds", "agents")
+# The release the site's commands run. CI passes the latest published GitHub Release (`--release`): the release
+# workflow creates it only once the images are tagged, then redeploys the site (docs/releasing.md). Local builds
+# default to pyproject.toml's version.
+DEFAULT_RELEASE = tomllib.loads((HERE.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+RELEASE_MARKER = "{{release}}"
+_VERSION = re.compile(r"\d+\.\d+\.\d+")
+# The first release whose tag and GitHub Release carry the Agent Skill: from it on, the site pins the skill to the
+# release it names. The skill's own copy of the guide names no release (it is read at any).
+SKILL_SINCE = (0, 0, 9)
+SKILL_MARKERS = ("{{skill_install}}", "{{skill_marketplace}}", "{{skill_zip}}")
 FINGERPRINT = ("assets/site.css", "assets/site.js")
-BUDGET_BYTES = 200_000  # html + css + js, uncompressed
+BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
 REQUIRED_HEADERS = (
     "content-security-policy", "strict-transport-security", "x-content-type-options", "referrer-policy",
@@ -64,7 +95,8 @@ REQUIRED_HEADERS = (
 CF_MAX_RULES, CF_MAX_LINE = 100, 2000  # _headers limits
 CF_MAX_FILES, CF_MAX_FILE_BYTES = 20_000, 25 * 1024 * 1024  # per Worker version (Free plan), per file
 
-_INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>", re.I)
+# Inline scripts violate the CSP; JSON-LD is data, which browsers don't run.
+_INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)(?![^>]*\btype=\"application/ld\+json\")[^>]*>", re.I)
 _STYLE_TAG = re.compile(r"<style\b", re.I)
 _STYLE_ATTR = re.compile(r"\sstyle\s*=", re.I)
 _HANDLER_ATTR = re.compile(r"\son[a-z]+\s*=", re.I)
@@ -98,6 +130,214 @@ def load_snippets() -> dict[str, str]:
     return out
 
 
+def load_module(path: Path, name: str) -> types.ModuleType:
+    """A stdlib-only module by path: the product's snippets.py, and markdown.py next to this file."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        sys.exit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses look the module up while the class is created
+    spec.loader.exec_module(module)
+    return module
+
+
+def product_snippets() -> types.ModuleType:
+    return load_module(SNIPPETS.with_name("snippets.py"), "slowshield_snippets")
+
+
+def to_markdown(fragment: str) -> str:
+    return load_module(HERE / "markdown.py", "slowshield_site_markdown").to_markdown(fragment)
+
+
+def docs_parts() -> dict[str, str]:
+    """Everything a guide page can include: `tools.<ecosystem>` and `example.<name>`, filled in for EXAMPLE."""
+    snip = product_snippets()
+    urls = {
+        "pypi": f"{EXAMPLE}/pypi/simple/", "npm": f"{EXAMPLE}/npm/", "go": f"{EXAMPLE}/go",
+        "maven": f"{EXAMPLE}/maven", "cargo": f"{EXAMPLE}/cargo/",
+    }  # fmt: skip
+    tools = snip.tools(*urls.values()) + snip.oci_tools(EXAMPLE, EXAMPLE_REGISTRIES)
+    parts: dict[str, list[str]] = {}
+
+    def code_block(code: str) -> str:
+        return (
+            f'<div class="code"><pre><code>{html.escape(code, quote=False)}</code></pre>'
+            '<button class="copy" type="button" data-copy>Copy</button></div>'
+        )
+
+    for t in tools:
+        out = [f'<section class="doc-tool" id="{snip.slug(t.name)}">', f"<h3>{html.escape(t.name)}</h3>"]
+        if t.age and t.age != snip.NO_AGE_DEFAULT:  # pages say once that a tool without one has only SlowShield
+            out.append(f'<p class="doc-age">Release age: {html.escape(t.age)}</p>')
+        for label, code in t.snippets:
+            out.append(f'<p class="doc-label">{html.escape(label)}</p>{code_block(code)}')
+        out.append("</section>")
+        parts.setdefault(f"tools.{snip.DOCS_PAGES[t.ecosystem]}", []).extend(out)
+    flat = {k: "\n".join(v) for k, v in parts.items()}
+    shells = snip.for_instance(urls["pypi"], urls["npm"], urls["go"])
+    for sh in shells.shells:
+        flat[f"example.shell.{sh.id}"] = code_block(sh.code)
+    flat["example.ci"] = code_block(snip.ci_env(urls["pypi"], urls["npm"], urls["go"], age_days=snip.CLIENT_AGE_DAYS))
+    flat["example.maven"] = code_block(snip.maven_settings(urls["maven"]))
+    flat["example.gradle"] = code_block(snip.gradle_init(urls["maven"]))
+    flat["example.cargo"] = code_block(snip.cargo_config(urls["cargo"]))
+    flat["example.cargo-command"] = code_block(snip.cargo_command(urls["cargo"]))
+    return flat
+
+
+def skill_install(release: str | None) -> dict[str, str]:
+    """How to install the Agent Skill, by marker: pinned to `release` once releases carry the skill, unpinned before;
+    `None` for the skill's own copy of the guide, which names no release."""
+    repo = "https://github.com/squirro/slowshield"
+    copy = (
+        " Or copy the folder to <code>~/.claude/skills/slowshield/</code> (all your projects) or "
+        "<code>.claude/skills/slowshield/</code> (one project)."
+    )
+    if release is not None and tuple(int(p) for p in release.split(".")) < SKILL_SINCE:
+        since = ".".join(map(str, SKILL_SINCE))
+        return {
+            "{{skill_marketplace}}": "squirro/slowshield",
+            "{{skill_zip}}": "https://slowshield.org/skills/slowshield.zip",
+            "{{skill_install}}": (
+                "<li><strong>Claude Code:</strong> <code>/plugin marketplace add squirro/slowshield</code>, then "
+                "<code>/plugin install slowshield@slowshield</code>. From "
+                f"{since} on, releases carry the skill: add the marketplace at a release tag "
+                f"(<code>squirro/slowshield#v{since}</code>) to pin it.{copy}</li>\n"
+                '  <li><strong>Other agents that load Agent Skills:</strong> download <a href="/skills/slowshield.zip">'
+                "slowshield.zip</a> and unpack it where the agent looks for skills. From "
+                f"{since} on, each release carries it, with a SHA-256 to check it against.</li>"
+            ),
+        }
+    tag = f"v{release}" if release else "v&lt;release&gt;"
+    zip_url = f"{repo}/releases/download/{tag}/slowshield-skill.zip" if release else f"{repo}/releases"
+    return {
+        "{{skill_marketplace}}": f"squirro/slowshield#{tag}",
+        "{{skill_zip}}": zip_url,
+        "{{skill_install}}": (
+            f"<li><strong>Claude Code:</strong> <code>/plugin marketplace add squirro/slowshield#{tag}</code>, then "
+            "<code>/plugin install slowshield@slowshield</code>. The tag pins the skill to that release; add the "
+            f"marketplace again at a newer tag to move on.{copy}</li>\n"
+            f'  <li><strong>Other agents that load Agent Skills:</strong> download <a href="{zip_url}">'
+            "slowshield-skill.zip</a> from the release, check it with the <code>slowshield-skill.zip.sha256</code> "
+            "next to it (<code>sha256sum -c slowshield-skill.zip.sha256</code>), and unpack it where the agent looks "
+            "for skills.</li>"
+        ),
+    }
+
+
+def fill(text: str, release: str | None) -> str:
+    """The release markers: the release the site names, or for the skill's own copy, a placeholder."""
+    for marker, value in skill_install(release).items():
+        text = text.replace(marker, value)
+    return text.replace(RELEASE_MARKER, release or "&lt;release&gt;")
+
+
+def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[str, str, str, str]]:
+    """website/docs/pages/*.html, each starting with a `<!-- title: … | description: … -->` line, into /docs/ as
+    HTML and Markdown. Returns slug -> (title, description, Markdown, Markdown for the skill's references)."""
+    docs_md: dict[str, tuple[str, str, str, str]] = {}
+    layout = (DOCS / "layout.html").read_text(encoding="utf-8")
+    parts = docs_parts()
+    pages = {p.stem: p for p in (DOCS / "pages").glob("*.html")}
+    for slug, _ in DOCS_NAV:
+        if (slug or "index") not in pages:
+            errors.append(f"docs: {slug or 'index'}.html is in DOCS_NAV but missing")
+    for name, path in pages.items():
+        slug = "" if name == "index" else name
+        if slug not in {s for s, _ in DOCS_NAV}:
+            errors.append(f"docs: {name}.html isn't in DOCS_NAV")
+            continue
+        text = path.read_text(encoding="utf-8")
+        head = re.match(r"<!-- title: (.+?) \| description: (.+?) -->\n", text)
+        if head is None:
+            errors.append(f"docs/{name}.html: first line must be <!-- title: … | description: … -->")
+            continue
+        body = text[head.end() :]
+
+        def include(m: re.Match[str], name: str = name) -> str:
+            key = f"{m.group(1)}.{m.group(2)}"
+            if key not in parts:
+                errors.append(f"docs/{name}.html: unknown include {key!r}")
+                return m.group(0)
+            return parts[key]
+
+        template = DOCS_MARKER.sub(include, body)
+        body = fill(template, release)
+        nav = "\n".join(
+            f'<a href="/docs/{s + "/" if s else ""}"{' aria-current="page"' if s == slug else ""}>{label}</a>'
+            for s, label in DOCS_NAV
+        )
+        url = f"https://slowshield.org/docs/{slug + '/' if slug else ''}"
+        md_path = f"/docs/{slug + '/' if slug else ''}index.md"
+        page = (
+            layout.replace("{{title}}", html.escape(head.group(1)))
+            .replace("{{markdown}}", md_path)
+            .replace("{{description}}", html.escape(head.group(2)))
+            .replace("{{canonical}}", url)
+            .replace("{{nav}}", nav)
+            .replace("{{body}}", body)
+        )
+        dest = out / "docs" / slug / "index.html" if slug else out / "docs" / "index.html"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(page, encoding="utf-8")
+        md = (
+            to_markdown(body)
+            + f"\n---\n\nThis page as HTML: {url}. All of the guide in one file: https://slowshield.org/llms-full.txt\n"
+        )
+        dest.with_name("index.md").write_text(md, encoding="utf-8")
+        skill_md = (
+            to_markdown(fill(template, None))
+            + f"\n---\n\nThis page as HTML: {url}. All of the guide in one file: https://slowshield.org/llms-full.txt\n"
+        )
+        docs_md[slug] = (head.group(1), head.group(2), md, skill_md)
+    return docs_md
+
+
+def write_agent_files(
+    out: Path, docs_md: dict[str, tuple[str, str, str, str]], errors: list[str], *, write_skill: bool, release: str
+) -> None:
+    """/llms.txt, /llms-full.txt, the skill's references (checked against the committed copy, or written with
+    `--write-skill`), and the skill itself under /skills/ (a folder and a zip)."""
+    index = "\n".join(
+        f"- [{title}](https://slowshield.org/docs/{slug + '/' if slug else ''}index.md): {description}"
+        for slug, _ in DOCS_NAV
+        for title, description, _, _ in [docs_md.get(slug, ("", "", "", ""))]
+        if title
+    )
+    llms = fill((DOCS / "llms.txt").read_text(encoding="utf-8").replace("{{pages}}", index), release)
+    (out / "llms.txt").write_text(llms, encoding="utf-8")
+    full = "\n\n".join(
+        md for _, (_, _, md, _) in sorted(docs_md.items(), key=lambda kv: [s for s, _ in DOCS_NAV].index(kv[0]))
+    )
+    (out / "llms-full.txt").write_text(llms + "\n\n" + full, encoding="utf-8")
+
+    refs = SKILL / "references"
+    wanted = {
+        f"{page}.md": f"<!-- Generated by website/build.py from website/docs/pages/{page}.html; run it with "
+        f"--write-skill after changing that page. -->\n\n{docs_md[page][3]}"
+        for page in SKILL_PAGES
+        if page in docs_md
+    }
+    if write_skill:
+        refs.mkdir(parents=True, exist_ok=True)
+        for stale in {p.name for p in refs.glob("*.md")} - set(wanted):
+            (refs / stale).unlink()
+        for name, text in wanted.items():
+            (refs / name).write_text(text, encoding="utf-8")
+    else:
+        for name, text in wanted.items():
+            path = refs / name
+            if not path.is_file() or path.read_text(encoding="utf-8") != text:
+                errors.append(f"{path.relative_to(HERE.parent)} is stale: run python3 website/build.py --write-skill")
+    dest = out / "skills" / "slowshield"
+    shutil.copytree(SKILL, dest)
+    with zipfile.ZipFile(out / "skills" / "slowshield.zip", "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(p for p in dest.rglob("*") if p.is_file()):
+            info = zipfile.ZipInfo(f"slowshield/{path.relative_to(dest).as_posix()}", date_time=(2026, 1, 1, 0, 0, 0))
+            info.external_attr = 0o644 << 16
+            zf.writestr(info, path.read_bytes(), zipfile.ZIP_DEFLATED)
+
+
 def snippet(snippets: dict[str, str], m: re.Match[str], page: str, errors: list[str]) -> str:
     key = f"{m.group(1)}.{m.group(2)}"
     if key not in snippets:
@@ -128,11 +368,17 @@ def check_headers(out: Path, html_files: list[Path]) -> list[str]:
     csp = site_wide.get("content-security-policy", "")
     if "'unsafe-" in csp or "script-src 'self'" not in csp or "default-src 'none'" not in csp:
         errors.append("_headers: the CSP must keep default-src 'none' and script-src 'self', without 'unsafe-*'")
-    # Every page needs its own Cache-Control rule, or it silently falls back to max-age=0.
+    # Every page needs a Cache-Control rule of its own or from a `*` rule, or it silently falls back to max-age=0.
+    splats = [
+        re.compile(re.escape(r).replace(r"\*", ".*") + "$")
+        for r, h in rules.items()
+        if "*" in r and "cache-control" in h
+    ]
     for page in html_files:
         rel = page.relative_to(out).as_posix()
         url = "/" + rel[: -len("index.html")] if rel.endswith("index.html") else "/" + rel
-        if rel != "404.html" and "cache-control" not in rules.get(url, {}):
+        has_rule = "cache-control" in rules.get(url, {}) or any(s.match(url) for s in splats if s.pattern != ".*$")
+        if rel != "404.html" and not has_rule:
             errors.append(f"_headers: no Cache-Control rule for page {url}")
     files = [p for p in out.rglob("*") if p.is_file()]
     if len(files) >= CF_MAX_FILES:
@@ -142,7 +388,7 @@ def check_headers(out: Path, html_files: list[Path]) -> list[str]:
     return errors
 
 
-def build(out: Path) -> None:
+def build(out: Path, *, write_skill: bool = False, release: str = DEFAULT_RELEASE) -> None:
     if out.exists():
         shutil.rmtree(out)
     shutil.copytree(SRC, out)
@@ -160,10 +406,12 @@ def build(out: Path) -> None:
     sprite = (BRAND / "sprite.html").read_text(encoding="utf-8")
     snippets = load_snippets()
     snippet_errors: list[str] = []
+    docs_md = render_docs(out, snippet_errors, release)
+    write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill, release=release)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
-        new = new.replace(SPRITE_MARKER, sprite)
+        new = fill(new.replace(SPRITE_MARKER, sprite), release)
         if new != text:
             page.write_text(new, encoding="utf-8")
     if snippet_errors:
@@ -216,9 +464,13 @@ def build(out: Path) -> None:
         refs = re.findall(r'url\("?(/[^")]+)"?\)', css.read_text(encoding="utf-8"))
         errors.extend(f"{css.name}: missing {ref}" for ref in refs if not (out / ref.lstrip("/")).is_file())
 
-    total = sum(p.stat().st_size for p in [*html_files, *css_files, *assets.glob("site.*.js")])
-    if total > BUDGET_BYTES:
-        errors.append(f"size budget exceeded: {total} > {BUDGET_BYTES} bytes")
+    shared = sum(p.stat().st_size for p in [*css_files, *assets.glob("site.*.js")])
+    total = shared + sum(p.stat().st_size for p in html_files)
+    errors.extend(
+        f"{page.relative_to(out)}: size budget exceeded: {page.stat().st_size + shared} > {BUDGET_BYTES} bytes"
+        for page in html_files
+        if page.stat().st_size + shared > BUDGET_BYTES
+    )
     errors.extend(check_headers(out, html_files))
     if errors:
         fail(errors)
@@ -228,7 +480,13 @@ def build(out: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=HERE.parent / "dist" / "site")
-    build(parser.parse_args().out)
+    parser.add_argument("--write-skill", action="store_true", help="update the skill's committed references")
+    parser.add_argument("--release", default=DEFAULT_RELEASE, help="the published release the commands run (X.Y.Z)")
+    args = parser.parse_args()
+    release = args.release.removeprefix("v")
+    if not _VERSION.fullmatch(release):
+        fail([f"--release: expected X.Y.Z, got {args.release!r}"])
+    build(args.out, write_skill=args.write_skill, release=release)
 
 
 if __name__ == "__main__":

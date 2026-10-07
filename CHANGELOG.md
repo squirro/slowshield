@@ -30,6 +30,9 @@ All notable changes to this project are documented here. The format is based on
     image names, checked with the real clients: containerd, Docker's containerd image store and Podman don't go
     around SlowShield; BuildKit and Docker's classic store pull from the registry after a refusal, which the page
     says. The package page shows every digest each tag pointed to.
+- An Agent Skill, `plugins/slowshield`, that teaches coding agents to set up every package manager and container
+  runtime for SlowShield and what its answers mean. Claude Code: `/plugin marketplace add squirro/slowshield`, then
+  `/plugin install slowshield@slowshield`; other agents: https://slowshield.org/skills/slowshield.zip.
 - Operator blocks for every ecosystem: `[[blocks]]` in `config.toml` refuses a package, a version, or an image
   repository, tag or digest, like a malware advisory. They apply on reload and are listed with source `config`.
 - The Setup page links every tool to its guide on slowshield.org.

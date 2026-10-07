@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SlowShield — safety through patience</title>
-<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm, Go modules, Maven and crates.io. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
+<meta name="description" content="SlowShield is a free, open-source proxy for PyPI, npm, Go modules, Maven, crates.io and container images. It holds brand-new releases back for a few days, blocks known malware and verifies every download. Supply-chain security for developers and small teams, without an artifact repository manager.">
 <meta name="theme-color" content="#060915">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://slowshield.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
 <meta property="og:title" content="SlowShield — safety through patience">
-<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go, Maven and crates.io — and soon everything that downloads.">
+<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go, Maven, crates.io and container images — and soon everything that downloads.">
 <meta property="og:url" content="https://slowshield.org/">
 <meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -23,6 +23,15 @@
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="stylesheet" href="/assets/site.css">
 <script src="/assets/site.js" type="module"></script>
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "SlowShield",
+ "description": "A free, open-source, self-hosted proxy for PyPI, npm, Go modules, Maven, crates.io and container images. It holds new releases back for a few days, refuses known malware and verifies every download.",
+ "url": "https://slowshield.org/", "applicationCategory": "DeveloperApplication", "operatingSystem": "Linux, macOS, Windows (as a container)",
+ "license": "https://www.apache.org/licenses/LICENSE-2.0", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+ "sameAs": ["https://github.com/squirro/slowshield"], "softwareHelp": {"@type": "CreativeWork", "url": "https://slowshield.org/docs/"},
+ "publisher": {"@type": "Organization", "name": "Squirro", "url": "https://squirro.com"}}
+</script>
 </head>
 <body>
 <!-- @sprite -->
@@ -42,6 +51,7 @@
     <a href="#edge">Caching</a>
     <a href="#team-setup">Team setup</a>
     <a href="#pricing">Pricing</a>
+    <a href="/docs/" class="nav-docs">Docs</a>
     <a href="#get-started" class="nav-cta">Get started</a>
   </nav>
 </header>
@@ -63,7 +73,7 @@
       <span data-hl data-fit="71" hidden>Safety through<br><span class="grad">patience.</span></span>
     </h1>
     <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm, Go, Maven and
-      crates.io. It holds
+      crates.io, and between your container runtimes and Docker Hub, GHCR and Quay. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
       download. Made for developers and small teams who want supply-chain security that just works, without buying
       and running an artifact repository manager.</p>
@@ -96,7 +106,7 @@
     <ol class="quick-steps">
       <li class="qbox">
         <h3><span>1</span> Start it</h3>
-        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       </li>
       <li class="qbox">
         <h3><span>2</span> Install something through it</h3>
@@ -168,23 +178,24 @@
 <section class="ecosystems" id="ecosystems">
   <div class="section-head reveal">
     <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python, JavaScript, Go, Java and Rust today.<br>Everything under the sun tomorrow.</h2>
+    <h2>Python, JavaScript, Go, Java, Rust and containers today.<br>Everything under the sun tomorrow.</h2>
     <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
       same policy, same dashboard, same guarantees.</p>
   </div>
   <div class="sun reveal" aria-hidden="true">
     <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
     <!-- Inner ring: programming languages (TypeScript comes through npm, Kotlin and Scala through Maven). Outer ring:
-         everything else that downloads. -->
+         everything else that downloads. Live ones link to their guide; the sun is aria-hidden, so those links stay out
+         of the tab order, and the roadmap below links the same pages for keyboards and screen readers. -->
     <div class="ring ring-1">
-      <span class="eco live">Python</span><span class="eco live">JavaScript</span><span class="eco live">TypeScript</span><span class="eco live">Go</span>
-      <span class="eco live">Java</span><span class="eco live">Kotlin</span><span class="eco live">Scala</span><span class="eco live">Rust</span>
+      <a class="eco live" href="/docs/python/" tabindex="-1">Python</a><a class="eco live" href="/docs/javascript/" tabindex="-1">JavaScript</a><a class="eco live" href="/docs/javascript/" tabindex="-1">TypeScript</a><a class="eco live" href="/docs/go/" tabindex="-1">Go</a>
+      <a class="eco live" href="/docs/java/" tabindex="-1">Java</a><a class="eco live" href="/docs/java/" tabindex="-1">Kotlin</a><a class="eco live" href="/docs/java/" tabindex="-1">Scala</a><a class="eco live" href="/docs/rust/" tabindex="-1">Rust</a>
       <span class="eco">C#</span><span class="eco">PHP</span><span class="eco">Ruby</span><span class="eco">C / C++</span><span class="eco">Swift</span>
       <span class="eco">Dart</span><span class="eco">R</span><span class="eco">Elixir</span><span class="eco">Haskell</span><span class="eco">Lua</span>
       <span class="eco">Julia</span><span class="eco">Perl</span>
     </div>
     <div class="ring ring-2">
-      <span class="eco">Linux packages</span><span class="eco soon">Container images</span><span class="eco">Homebrew</span>
+      <span class="eco">Linux packages</span><a class="eco live" href="/docs/containers/" tabindex="-1">Container images</a><span class="eco">Homebrew</span>
       <span class="eco">GitHub Releases</span><span class="eco">Hugging Face</span><span class="eco">Terraform</span><span class="eco">Helm charts</span>
     </div>
   </div>
@@ -193,23 +204,24 @@
       <span class="when">Available now</span>
       <h3>Python, JavaScript, Go, Java &amp; Rust</h3>
       <ul>
-        <li>Python<span>PyPI: pip, uv, Poetry, PDM, Pipenv</span></li>
-        <li>JavaScript &amp; TypeScript<span>npm: npm, pnpm, Yarn, Bun</span></li>
-        <li>Go<span>Go modules, as your <code>GOPROXY</code></span></li>
-        <li>Java, Kotlin &amp; Scala<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt</span></li>
-        <li>Rust<span>crates.io: Cargo</span></li>
+        <li><a href="/docs/python/">Python</a><span>PyPI: pip, uv, Poetry, PDM, Pipenv</span></li>
+        <li><a href="/docs/javascript/">JavaScript &amp; TypeScript</a><span>npm: npm, pnpm, Yarn, Bun</span></li>
+        <li><a href="/docs/go/">Go</a><span>Go modules, as your <code>GOPROXY</code></span></li>
+        <li><a href="/docs/java/">Java, Kotlin &amp; Scala</a><span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt</span></li>
+        <li><a href="/docs/rust/">Rust</a><span>crates.io: Cargo</span></li>
         <li>Everything that installs through them<span>npx and uvx, MCP servers, CI steps, Dockerfiles</span></li>
+      </ul>
+    </div>
+    <div class="phase now reveal">
+      <span class="when">Available now</span>
+      <h3>Container images</h3>
+      <ul>
+        <li><a href="/docs/containers/">Docker, Podman &amp; Kubernetes</a><span>images from Docker Hub, GHCR, Quay, registry.k8s.io and more</span></li>
+        <li>Tags that lag behind<span><code>FROM nginx:latest</code> keeps working, about a week behind</span></li>
       </ul>
     </div>
     <div class="phase next reveal">
       <span class="when">Next</span>
-      <h3>Container images</h3>
-      <ul>
-        <li>Docker, Podman &amp; Kubernetes<span>images from Docker Hub, GHCR, Quay and registry.k8s.io</span></li>
-      </ul>
-    </div>
-    <div class="phase then reveal">
-      <span class="when">Then</span>
       <h3>The enterprise staples</h3>
       <ul>
         <li>C#, Ruby &amp; PHP<span>NuGet, RubyGems, Composer</span></li>
@@ -358,7 +370,7 @@
       <ol class="steps" start="8">
         <li class="step" data-step="8">
           <h3>Every install goes through SlowShield.</h3>
-          <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle, Cargo and the rest at it. Same packages, same commands, same lockfiles.</p>
+          <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle, Cargo, Docker, Podman and the rest at it. Same packages, same commands, same lockfiles.</p>
         </li>
         <li class="step" data-step="9">
           <h3>2.4.1 waits.</h3>
@@ -440,8 +452,8 @@
       <li>Bun <span>1.3</span></li><li>Deno <span>2.6</span></li><li>pip <span>26.1</span></li>
       <li>uv <span>0.9.17</span></li><li>Poetry <span>2.4</span></li><li>PDM <span>2.27</span></li>
     </ul>
-    <p class="muted">The minimum version for each. Go, Maven, Gradle and Cargo have no stable setting yet: there,
-      SlowShield is the only layer. The Setup page writes the settings for you, on by default, with one switch to
+    <p class="muted">The minimum version for each. Go, Maven, Gradle and Cargo have no stable setting yet, and container
+      runtimes have none: there, SlowShield is the only layer. The Setup page writes the settings for you, on by default, with one switch to
       turn them off.</p>
   </div>
 </section>
@@ -589,7 +601,7 @@
       <div class="code"><pre><code>docker run -d --restart unless-stopped -p 127.0.0.1:8080:8080 \
   -v slowshield:/data \
   -e SLOWSHIELD_PUBLIC_URL=https://slowshield.your-tailnet.ts.net \
-  ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+  ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache; they
         never need to talk to each other.</p>
     </li>
@@ -661,6 +673,15 @@ slowshield.example.com
       <p class="muted small">With the registries off the allowlist, an agent can't install around SlowShield, even
         when it passes its own <code>--index-url</code>.</p>
     </li>
+    <li class="qbox reveal">
+      <h3><span>3</span> Teach the agent</h3>
+      <div class="code"><pre><code># Claude Code: the SlowShield skill (an Agent Skill; other agents: slowshield.org/docs/agents/#skill)
+/plugin marketplace add {{skill_marketplace}}
+/plugin install slowshield@slowshield</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+      <p class="muted small">It sets up every package manager and container runtime, and knows what SlowShield's
+        answers mean: use an older version when one is too new, never install a blocked one.
+        <a href="/docs/agents/">More for agents</a>, and <a href="/llms.txt">llms.txt</a>.</p>
+    </li>
   </ol>
 </section>
 
@@ -672,7 +693,7 @@ slowshield.example.com
   </div>
   <h3 class="start-sub">Run it for your team</h3>
   <p class="muted start-images">Images: <code>ghcr.io/squirro/slowshield</code> and <code>ghcr.io/squirro/slowshield-caddy</code>,
-    for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:0.0.7</code>) or a digest
+    for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:{{release}}</code>) or a digest
     in production.</p>
   <ol class="start-steps">
     <li class="reveal">
@@ -708,7 +729,8 @@ helm install slowshield slowshield/deploy/helm/slowshield \
         <strong>Setup</strong> in the dashboard's menu. It shows how to point each tool at your instance, with its address
         already filled in: four lines for your shell
         profile that cover pip, uv, npm and go; settings for Poetry, PDM, Pipenv, pnpm, Yarn, Bun, Maven, Gradle, sbt,
-        Coursier and Cargo; and what to use in CI and containers.</p>
+        Coursier and Cargo; the files for containerd and Kubernetes, Docker, Podman and BuildKit; and what to use in CI
+        and containers.</p>
     </li>
     <li class="reveal">
       <h3><span>3</span> Watch it work</h3>
@@ -731,7 +753,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     </header>
     <ul class="plan">
       <li>Every feature: release delay, malware blocking, integrity checks, verified cache, dashboard</li>
-      <li>PyPI, npm, Go modules, Maven and crates.io, with every tool that installs through them</li>
+      <li>PyPI, npm, Go modules, Maven, crates.io and container images, with every tool that installs through them</li>
       <li>Unlimited users, machines, packages and instances</li>
       <li>Self-hosted: Docker, rootless Podman or Kubernetes, your data stays with you</li>
       <li>Grafana dashboards and alerts included</li>
@@ -819,7 +841,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     <a href="https://github.com/squirro/slowshield" rel="noopener noreferrer">GitHub</a>
     <a href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">X</a>
     <a href="https://github.com/squirro/slowshield/pkgs/container/slowshield" rel="noopener noreferrer">Images</a>
-    <a href="https://github.com/squirro/slowshield/tree/main/docs" rel="noopener noreferrer">Docs</a>
+    <a href="/docs/">Docs</a>
     <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
     <a href="/brand/">Brand</a>
     <a href="https://github.com/squirro/slowshield/blob/main/LICENSE" rel="noopener noreferrer">Apache-2.0</a>

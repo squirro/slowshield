@@ -1,0 +1,70 @@
+<!-- title: Python | description: Use SlowShield as the package index for pip, uv, Poetry, PDM and Pipenv: setup, what changes, the package managers' own release age, and Docker builds. -->
+<h1>Python</h1>
+<p class="lead">SlowShield serves PyPI at <code>https://slowshield.example.com/pypi/simple/</code>, a standard package
+  index (PEP 503 and PEP 691). Every tool that takes an index URL works with it: pip, uv, Poetry, PDM, Pipenv, and what
+  installs through them, such as <code>uvx</code>, <code>pipx</code> and pre-commit hooks.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>pip and uv read environment variables, so a few lines in your shell profile cover them in every new terminal
+  (the Setup page has bash on macOS, zsh and fish too):</p>
+<!-- @example shell.bash -->
+<p>Remove the <code>PIP_UPLOADED_PRIOR_TO</code> and npm lines if you don't want the second layer or don't use npm.
+  Each tool, with the version its own release age needs:</p>
+<!-- @tools python -->
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>Files wait, not just versions.</strong> Each wheel and sdist becomes installable 7 days after its own
+    <code>upload-time</code> (PEP 700), which PyPI sets and authors can't. A wheel added to an old release waits too.
+    A release none of whose files is old enough is left out of the index, so resolvers pick the newest release that
+    has one.</li>
+  <li><strong>A pin that is too new.</strong> Resolvers don't see held files, so <code>pip install pkg==1.2.3</code>
+    reports that no matching distribution exists. A lockfile that records file URLs, such as <code>uv.lock</code>,
+    downloads the file directly and gets <code>403</code> with <code>Retry-After</code> and the time it becomes
+    available.</li>
+  <li><strong>Malware</strong> from the OSV and GitHub feeds is refused with <code>451</code> and the advisory, also
+    when it is older than the delay.</li>
+  <li><strong>Brand-new packages</strong> none of whose files is old enough are served and recorded as fail-open
+    (<code>X-SlowShield-Fail-Open: 1</code>), unless your administrator set <code>fail_open = false</code>. That's
+    what the second layer is for.</li>
+  <li><strong>Lockfiles.</strong> <code>uv.lock</code> and <code>Pipfile.lock</code> record the index URL; lock with
+    SlowShield in place so they name it. Hashes don't change: SlowShield serves PyPI's files byte for byte.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>pip 26.1, uv 0.9.17, Poetry 2.4 and PDM 2.27 can refuse releases younger than a few days themselves. Set them to 3
+  days, below SlowShield's 7, and they stay silent on a normal day. Notes from testing them on 2026-10-06:</p>
+<ul>
+  <li><strong>uv</strong>: put <code>exclude-newer</code> in <code>pyproject.toml</code>, not the environment. uv
+    records it in <code>uv.lock</code>, so a different value elsewhere (CI, a Dockerfile) breaks
+    <code>uv sync --locked</code>. For one package you need early: <code>exclude-newer-package</code>.</li>
+  <li><strong>pip</strong>: <code>PIP_UPLOADED_PRIOR_TO=P3D</code> needs pip 26.1; pip 26.0 refuses to run with it and
+    older versions ignore it. Installs from <code>pylock.toml</code> fail with it, because pip doesn't record upload
+    times there.</li>
+  <li><strong>PDM</strong>: in <code>[tool.pdm.resolution]</code>; <code>pdm lock --exclude-newer</code> isn't kept and
+    re-resolves every pin.</li>
+</ul>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>A build container doesn't read your shell profile. Pass the index as a build argument: an <code>ARG</code> is
+  visible to <code>RUN</code> as an environment variable and isn't kept in the image.</p>
+<div class="code"><pre><code>FROM python:3.13-slim
+ARG PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/
+# uv: ARG UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>With a default in the Dockerfile, every build uses SlowShield and <code>--build-arg PIP_INDEX_URL=…</code> can still
+  override it. <a href="/docs/container-builds/">Building images</a> covers the base image too, and how to check that
+  nothing in a build goes around SlowShield. In CI, set the variables for the job:</p>
+<!-- @example ci -->
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Requirements from git repositories or direct URLs (<code>pkg @ https://…</code>) don't go through an index, so
+    SlowShield doesn't see them.</li>
+  <li><code>--extra-index-url</code> pointing at pypi.org goes around SlowShield: pip picks the best version across all
+    indexes. Use private indexes for private packages only, and block pypi.org and files.pythonhosted.org at the
+    firewall.</li>
+  <li>Plain HTTP (a local test instance) needs <code>PIP_TRUSTED_HOST</code> for pip.</li>
+</ul>

@@ -1,0 +1,74 @@
+<!-- title: Docs | description: How to point every package manager and container runtime at SlowShield, what changes for your builds, and how to check that nothing goes around it. -->
+<h1>Docs</h1>
+<p class="lead">How to point your package managers and container runtimes at SlowShield, what changes for your builds,
+  and how to check that nothing goes around it. Every page shows the settings for
+  <code>https://slowshield.example.com</code>; your instance's Setup page (<code>/ui/setup</code>) shows the same
+  settings with its own address filled in.</p>
+
+<ul class="doc-cards">
+  <li><a href="/docs/python/">Python<span>PyPI: pip, uv, Poetry, PDM, Pipenv</span></a></li>
+  <li><a href="/docs/javascript/">JavaScript<span>npm: npm, pnpm, Yarn, Bun</span></a></li>
+  <li><a href="/docs/go/">Go<span>Go modules, as your <code>GOPROXY</code></span></a></li>
+  <li><a href="/docs/java/">Java<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt, Coursier</span></a></li>
+  <li><a href="/docs/rust/">Rust<span>crates.io: Cargo</span></a></li>
+  <li><a href="/docs/containers/">Container images<span>Docker Hub, GHCR, Quay, registry.k8s.io and more: containerd, Kubernetes, Docker, Podman</span></a></li>
+  <li><a href="/docs/container-builds/">Building images<span>Base images and every dependency of a Docker or Podman build through SlowShield</span></a></li>
+</ul>
+
+<h2 id="what-it-does">What SlowShield does</h2>
+<ul>
+  <li><strong>New releases wait.</strong> A version becomes installable a number of days after it was published, 7 by
+    default. Until then it is left out of the version lists your package manager reads, so it resolves to the newest
+    version that is old enough. Asking for it directly, from a lockfile or a pinned digest, gets a refusal with the time
+    it becomes available.</li>
+  <li><strong>Known malware is refused</strong>, for good, as soon as the OpenSSF/OSV or GitHub advisory feeds report
+    it: HTTP <code>451</code> with the advisory (<code>403</code> for container images). Administrators can block
+    packages, versions and images themselves too.</li>
+  <li><strong>Every download is verified</strong> against the registry's own digest and against the fingerprint
+    SlowShield recorded the first time it served the file. A file that changes is cut off mid-transfer.</li>
+  <li><strong>Everything is cached.</strong> Each file comes from the registry once and from SlowShield after that.</li>
+</ul>
+
+<h2 id="setup">Setting it up</h2>
+<ol>
+  <li><strong>Run SlowShield</strong> on one host your team and CI can reach: Docker Compose, rootless Podman or the
+    Helm chart (<a href="/#get-started">Get started</a>). Use a real host name with HTTPS; the examples here use
+    <code>slowshield.example.com</code>.</li>
+  <li><strong>Point every tool at it.</strong> Four lines in a shell profile cover pip, uv, npm and go. Other tools
+    need a setting each, on the pages above.</li>
+  <li><strong>Close the way around it.</strong> Block the public registries at the firewall for machines that should
+    only use SlowShield, so a forgotten setting fails loudly instead of quietly going around it.</li>
+</ol>
+<p>For your shell profile (bash on Linux; the Setup page also has bash on macOS, zsh and fish):</p>
+<!-- @example shell.bash -->
+
+<h2 id="two-layers">Two layers</h2>
+<p>Most package managers can now refuse brand-new releases themselves. Turn that on as well, a little shorter than
+  SlowShield: 7 days in SlowShield, 3 in the package manager. On a normal day only SlowShield holds anything back. When
+  something gets past it, a laptop without the setup or a brand-new package SlowShield serves because no version is
+  old enough yet, the package manager still waits. Each tool's section shows its setting and the version it needs.</p>
+
+<h2 id="what-you-see">What you see when something is held</h2>
+<ul>
+  <li><strong>Normal installs</strong> just get an older version. Indexes carry
+    <code>X-SlowShield-Held-Versions</code>, the number of versions left out.</li>
+  <li><strong>A pin that is too new</strong> (lockfile, <code>==</code> pin, image digest) gets <code>403</code> with
+    <code>Retry-After</code> and a message saying when it becomes available (Maven and Gradle: <code>425 Too
+    Early</code>, the only status they report clearly).</li>
+  <li><strong>A brand-new package</strong> none of whose versions is old enough is served and recorded as
+    <em>fail-open</em> on PyPI, npm and Go, and refused on Maven and Cargo, where brand-new packages are the usual attack
+    (typosquats, impersonations). Container images only fail open during an instance's first week.</li>
+  <li><strong>Exceptions.</strong> An administrator can release one version early, or hold a package longer, in
+    <code>config.toml</code> (<a href="https://github.com/squirro/slowshield/blob/main/docs/configuration.md">configuration</a>).</li>
+</ul>
+
+<h2 id="more">More</h2>
+<ul>
+  <li><a href="https://github.com/squirro/slowshield/blob/main/docs/configuration.md">Configuration reference</a> and
+    <a href="https://github.com/squirro/slowshield/blob/main/config.example.toml">config.example.toml</a></li>
+  <li><a href="https://github.com/squirro/slowshield/blob/main/docs/policy.md">Release-age policy</a>,
+    <a href="https://github.com/squirro/slowshield/blob/main/docs/integrity.md">integrity checks</a>,
+    <a href="https://github.com/squirro/slowshield/blob/main/docs/feeds.md">threat feeds</a></li>
+  <li><a href="https://github.com/squirro/slowshield/blob/main/docs/operations.md">Operations</a> and
+    <a href="https://github.com/squirro/slowshield/blob/main/docs/observability.md">observability</a></li>
+</ul>

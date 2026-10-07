@@ -1,0 +1,86 @@
+<!-- title: Container images | description: Pull container images through SlowShield with containerd, Kubernetes, Docker, Docker Desktop, Podman and BuildKit: setup, tags that lag behind, refusals, and what can go around it. -->
+<h1>Container images</h1>
+<p class="lead">SlowShield serves container images at <code>https://slowshield.example.com/v2/</code>, from Docker Hub,
+  GHCR, Quay, registry.k8s.io, gcr.io, MCR and ECR Public. Tags lag behind: <code>FROM nginx:latest</code> keeps
+  working, about a week behind.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>Each runtime has its own setting. These were checked against containerd 2.2, Docker 29.8, Podman 5.8, BuildKit
+  0.33, skopeo and crane: with them, containerd, Docker's default image store and Podman only ever ask SlowShield.</p>
+<!-- @tools containers -->
+
+<h3 id="docker-desktop">Docker Desktop (macOS, Windows)</h3>
+<p>Docker Desktop's engine runs in a VM. When Docker Desktop starts, it copies <code>~/.docker/certs.d</code> on your
+  machine to <code>/etc/docker/certs.d</code> in the VM, so put the file there and restart Docker Desktop:</p>
+<div class="code"><pre><code>mkdir -p ~/.docker/certs.d/_default
+cat &gt; ~/.docker/certs.d/_default/hosts.toml &lt;&lt;'EOF'
+server = "https://slowshield.example.com"
+capabilities = ["pull", "resolve"]
+EOF</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>From then on every <code>docker pull</code> and every base image of <code>docker build</code> comes through
+  SlowShield. If SlowShield is unreachable, pulls fail instead of going to the registry. Pushes need the registry's
+  own file (see containerd above).</p>
+
+<h3 id="podman-machine">Podman on macOS and Windows</h3>
+<p>Podman runs in a VM too. Put the drop-in there:</p>
+<div class="code"><pre><code>podman machine ssh 'mkdir -p ~/.config/containers/registries.conf.d &amp;&amp; cat &gt; ~/.config/containers/registries.conf.d/50-slowshield.conf' &lt; 50-slowshield.conf</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>(<code>/etc/containers/registries.conf.d/</code> for a rootful machine.) Short names like <code>python:3.13-slim</code>
+  resolve to <code>docker.io/library/python</code> first, and the drop-in then sends them to SlowShield.</p>
+
+<h3 id="kubernetes">Kubernetes</h3>
+<p>The kubelet pulls through containerd, which reads the <code>hosts.toml</code> files only when its CRI plugin's
+  <code>config_path</code> names the directory. The default is empty:</p>
+<div class="code"><pre><code># /etc/containerd/config.toml (containerd 2.x)
+[plugins.'io.containerd.cri.v1.images'.registry]
+  config_path = "/etc/containerd/certs.d"</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>In containerd 1.7 the section is <code>[plugins."io.containerd.grpc.v1.cri".registry]</code>. Check a node with
+  <code>containerd config dump | grep config_path</code>. A pod whose image is held stays in
+  <code>ImagePullBackOff</code> and starts by itself once the hold ends.</p>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>Tags lag behind.</strong> A tag resolves to the newest digest it has pointed to for 7 days, so
+    <code>nginx:latest</code> stays about a week behind. The time a tag got its digest comes from the registry where it
+    keeps one (Docker Hub's API, Quay, Artifact Registry, MCR), and from SlowShield's own first sight, whichever is
+    earlier. GHCR and ECR Public only have the second.</li>
+  <li><strong>A pinned digest that is too new</strong> is refused, not swapped for an older one.</li>
+  <li><strong>New instances.</strong> During an instance's first 7 days, a tag it has no history for yet is served at
+    its current digest and recorded as fail-open, so a new instance doesn't refuse half of Docker Hub. Your
+    administrator can make it strict from the start.</li>
+  <li><strong>Takedowns propagate.</strong> When a registry removes an image, as Docker Hub did with the compromised
+    Trivy images in March 2026, SlowShield stops serving it too: it checks a stored image again at most every 5
+    minutes while it is being pulled.</li>
+  <li><strong>Blocks.</strong> No malware feed covers images; administrators block a repository, tag, digest or layer
+    in <code>config.toml</code>.</li>
+  <li><strong>Everything is verified.</strong> Manifests must match their digests; layers are checked while they
+    stream.</li>
+</ul>
+<p>Every refusal is <code>403</code> with a message. What the clients print:</p>
+<div class="docs-table"><table>
+  <thead><tr><th>Client</th><th>Output</th></tr></thead>
+  <tbody>
+    <tr><td>Docker (containerd image store)</td><td><code>Error response from daemon: error from registry: slowshield: docker.io/library/brandnew:latest (sha256:162a60de2ed8…) is too new. It was pushed …; this proxy requires 7 days. It becomes available at …</code></td></tr>
+    <tr><td><code>docker build</code>, BuildKit</td><td><code>403 Forbidden</code>, then <code>denied: slowshield: … is too new …</code></td></tr>
+    <tr><td>Podman, skopeo</td><td><code>reading manifest latest in slowshield.example.com/docker.io/library/brandnew: denied: slowshield: …</code></td></tr>
+    <tr><td>crane</td><td><code>DENIED: slowshield: …</code></td></tr>
+    <tr><td>containerd 2.2 and older (ctr, nerdctl, Kubernetes events)</td><td><code>… 403 Forbidden</code>, without the message</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="two-layers">The second layer</h2>
+<p>No container runtime has a release-age setting, so SlowShield is the only layer.</p>
+
+<h2 id="around">What can go around it</h2>
+<ul>
+  <li><strong>BuildKit</strong> (also <code>docker buildx</code> builders with the docker-container or kubernetes
+    driver) and <strong>Docker's classic image store</strong> pull from the registry themselves after SlowShield refuses
+    an image. Only a firewall that blocks the registries makes them binding.</li>
+  <li><strong>A <code>[host]</code> entry instead of <code>server</code></strong> in containerd's
+    <code>hosts.toml</code> falls back to the registry after a refusal. Keep SlowShield as the <code>server</code>.</li>
+  <li><strong>Apple's <code>container</code> CLI</strong> has no mirror setting: name images with SlowShield's host
+    (<code>slowshield.example.com/docker.io/library/nginx</code>). Read from its source, not tested yet.</li>
+  <li>Block registry-1.docker.io, ghcr.io, quay.io, registry.k8s.io and the others, and their CDNs, at the firewall
+    for machines that should only use SlowShield.</li>
+</ul>
+<p>To build images with SlowShield for the base images <em>and</em> every dependency, see
+  <a href="/docs/container-builds/">Building images</a>.</p>

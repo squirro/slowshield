@@ -1,0 +1,23 @@
+# SlowShield
+
+> SlowShield is a free, open-source, self-hosted proxy for PyPI, npm, Go modules, Maven (Maven, Gradle, sbt), crates.io and container images (Docker Hub, GHCR, Quay, registry.k8s.io and others). It holds new releases back for a few days (7 by default), refuses known malware from the OSV and GitHub advisory feeds, and checks every download against the registry's digest and the fingerprint it recorded the first time.
+
+Package managers and container runtimes point at one SlowShield instance instead of the public registries; the instance's Setup page (`/ui/setup`) shows every setting with its address filled in. Each page below is Markdown; the guide's examples use `https://slowshield.example.com`.
+
+For agents: if an install fails with `403` and "too new" (Maven: `425 Too Early`), the version is younger than the delay: use the newest version that installs instead, and don't go around SlowShield. A `451` (container images: `403` with reason `blocked`) is known malware: don't install it or a look-alike. The Agents page has the details and an Agent Skill.
+
+## Guide
+
+{{pages}}
+
+## Agent Skill
+
+- [SKILL.md](https://slowshield.org/skills/slowshield/SKILL.md): set up and use SlowShield for every ecosystem; references in the same folder
+- [slowshield.zip](https://slowshield.org/skills/slowshield.zip): the skill folder, for agents that load Agent Skills
+- Claude Code: `/plugin marketplace add squirro/slowshield`, then `/plugin install slowshield@slowshield`
+
+## Optional
+
+- [Source code](https://github.com/squirro/slowshield): README, issues, releases
+- [Configuration reference](https://github.com/squirro/slowshield/blob/main/docs/configuration.md)
+- [Container images: ghcr.io/squirro/slowshield](https://github.com/squirro/slowshield/pkgs/container/slowshield)

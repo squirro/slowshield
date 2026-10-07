@@ -7,6 +7,7 @@ The public website: a static site in `src/`, built by `build.py` and served by C
 |---|---|
 | `build.py` | Builds `src/` into `dist/site`, renders the guide, fingerprints CSS/JS, copies brand assets and `_headers`, and fails on CSP violations, broken links or anchors, a page over its size budget, a weakened `_headers` or Cloudflare limits |
 | `docs/` | The guide at `/docs/`: `layout.html` and one fragment per page in `pages/`. Tool settings come from `src/slowshield/ui/snippets.py`, the module the Setup page renders, so the two can't drift |
+| `markdown.py` | The guide as Markdown for agents: `/docs/**/index.md`, `/llms-full.txt` (with `docs/llms.txt` as `/llms.txt`) and the references of the Agent Skill in `../plugins/slowshield`. After changing a page, run `build.py --write-skill`: the build fails while the skill's references are stale |
 | `_headers` | Security headers on every response, and Cache-Control per path |
 | `wrangler.jsonc` | Production Worker `slowshield-website` (custom domain `slowshield.org`) |
 | `wrangler.preview.jsonc` | Separate Worker `slowshield-website-preview` for per-PR previews |

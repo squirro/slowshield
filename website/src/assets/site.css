@@ -454,6 +454,9 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .ring .eco > * { rotate: calc(var(--rot) * -1); }
 .eco.live { color: var(--on-fill); background: var(--ok); border-color: var(--ok); box-shadow: 0 0 24px color-mix(in srgb, var(--ok) 50%, transparent); }
 .eco.soon { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 60%, var(--line)); }
+a.eco:hover { text-decoration: none; filter: brightness(1.12); }
+.phase li a { color: inherit; }
+.phase li a:hover { color: var(--brand); text-decoration: none; }
 .ring .eco:nth-child(1) { --i: 0; } .ring .eco:nth-child(2) { --i: 1; } .ring .eco:nth-child(3) { --i: 2; } .ring .eco:nth-child(4) { --i: 3; }
 .ring .eco:nth-child(5) { --i: 4; } .ring .eco:nth-child(6) { --i: 5; } .ring .eco:nth-child(7) { --i: 6; } .ring .eco:nth-child(8) { --i: 7; }
 .ring .eco:nth-child(9) { --i: 8; } .ring .eco:nth-child(10) { --i: 9; } .ring .eco:nth-child(11) { --i: 10; }
@@ -867,6 +870,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .docs-table th, .docs-table td { text-align: left; vertical-align: top; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); }
 .docs-table th { color: var(--muted); font-weight: 600; }
 .docs-main .doc-tool { border-top: 1px solid var(--line); margin-top: 1.5rem; padding-top: 0.2rem; }
+.doc-md { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.86rem; color: var(--muted); }
 .doc-label, .doc-age { font-size: 0.86rem; color: var(--muted); margin: 0.7rem 0 0.25rem; }
 .doc-cards { list-style: none; padding: 0 !important; display: grid !important; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.9rem !important; }
 .doc-cards a { display: block; height: 100%; padding: 1rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--ink); }

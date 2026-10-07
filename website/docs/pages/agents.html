@@ -1,0 +1,88 @@
+<!-- title: Agents | description: SlowShield for coding agents: what its answers mean and what to do about them, instructions for AGENTS.md, the SlowShield Agent Skill, and how to put it in front of a sandbox. -->
+<h1>Agents</h1>
+<p class="lead">Coding agents install packages on their own: <code>pip install</code>, <code>npm install</code>,
+  <code>npx</code>, <code>uvx</code>, <code>go get</code>, <code>docker pull</code>, often in a fresh sandbox without a
+  lockfile, and nobody reads the output. This page is for the people who run agents, and for the agents.</p>
+
+<h2 id="for-agents">If you are an agent</h2>
+<p>SlowShield may be in front of you. Look for its URL in <code>PIP_INDEX_URL</code>, <code>UV_DEFAULT_INDEX</code>,
+  <code>npm_config_registry</code>, <code>GOPROXY</code>, <code>~/.m2/settings.xml</code>,
+  <code>$CARGO_HOME/config.toml</code> or the container runtime's configuration. <code>GET /readyz</code> on it answers
+  <code>ready</code>. What its answers mean:</p>
+<div class="docs-table"><table>
+  <thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead>
+  <tbody>
+    <tr><td>An older version than you expected, or "no matching version" for an exact new one</td>
+      <td>Newer versions are held: they are younger than the delay (7 days by default)</td>
+      <td>Use the newest version that installs. Don't pin the new one.</td></tr>
+    <tr><td><code>403</code> with <code>{"error":"age_too_new", …, "retry_after_secs": …}</code> (PyPI, npm),
+      "is too new" (Go, Cargo, container images), <code>425 Too Early</code> (Maven, Gradle)</td>
+      <td>A pinned version (lockfile, digest) is held. <code>Retry-After</code> and the message say when it becomes
+      available</td>
+      <td>Use an older version, or tell the user when this one becomes available.</td></tr>
+    <tr><td><code>451</code> with the advisory, such as <code>{"error":"blocked", "advisory_id":"MAL-…", …}</code>
+      (container images: <code>403</code>, "is blocked")</td>
+      <td>Known malware, or blocked by the administrator</td>
+      <td>Don't install it, and don't look for a similarly named package. Tell the user.</td></tr>
+    <tr><td>The header <code>X-SlowShield-Fail-Open: 1</code></td>
+      <td>A brand-new package none of whose versions is old enough, served anyway</td>
+      <td>Check that the name is exactly the one you meant: typosquats and hallucinated names are brand new too.</td></tr>
+  </tbody>
+</table></div>
+<p><strong>Don't go around it.</strong> Never point an install at pypi.org, registry.npmjs.org, proxy.golang.org (or
+  add <code>,direct</code> to <code>GOPROXY</code>), Maven Central, crates.io or a container registry directly, and
+  don't add them with <code>--index-url</code>, <code>--extra-index-url</code> or <code>--registry</code>. If a
+  version is needed early, ask the user: an administrator can make an exception for it.</p>
+
+<h2 id="instructions">Instructions for your agent</h2>
+<p>For <code>AGENTS.md</code>, <code>CLAUDE.md</code> or your agent's system prompt, with your instance's address:</p>
+<div class="code"><pre><code>## Installing packages
+Packages and container images come through SlowShield (https://slowshield.example.com), which holds new
+releases back for 7 days and refuses known malware.
+- Never point installs at the public registries, or add them as extra indexes, to go around SlowShield.
+- "Too new" (403, Maven 425): the version is younger than 7 days. Use the newest version that installs;
+  don't pin the new one. If the user needs it now, say so: an administrator can make an exception.
+- 451, or "blocked": known malware. Don't install it or a look-alike package. Tell the user.
+- X-SlowShield-Fail-Open: 1 means a brand-new package. Check the name is exactly the one intended.</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+
+<h2 id="skill">The SlowShield skill</h2>
+<p>An <a href="https://agentskills.io">Agent Skill</a> that teaches an agent to set up every package manager,
+  Dockerfile and container runtime for a SlowShield instance, check that nothing goes around it, and handle its
+  answers. Its references are this guide, kept in step with it.</p>
+<ul>
+  <li><strong>Claude Code:</strong> <code>/plugin marketplace add squirro/slowshield</code>, then
+    <code>/plugin install slowshield@slowshield</code>. Or copy the folder to <code>~/.claude/skills/slowshield/</code>
+    (all your projects) or <code>.claude/skills/slowshield/</code> (one project).</li>
+  <li><strong>Other agents that load Agent Skills:</strong> download <a href="/skills/slowshield.zip">slowshield.zip</a>
+    and unpack it where the agent looks for skills.</li>
+  <li><strong>Read it first:</strong> <a href="/skills/slowshield/SKILL.md">SKILL.md</a>, or the source in
+    <a href="https://github.com/squirro/slowshield/tree/main/plugins/slowshield">plugins/slowshield</a>.</li>
+</ul>
+
+<h2 id="sandbox">Put SlowShield in front of a sandbox</h2>
+<ol>
+  <li><strong>Set it in the sandbox image.</strong> pip, uv, npm, npx, uvx and go read environment variables, so the
+    agent needs no instructions to use it:
+    <div class="code"><pre><code>ENV PIP_INDEX_URL=https://slowshield.example.com/pypi/simple/ \
+    UV_DEFAULT_INDEX=https://slowshield.example.com/pypi/simple/ \
+    npm_config_registry=https://slowshield.example.com/npm/ \
+    GOPROXY=https://slowshield.example.com/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    Maven, Gradle and Cargo need a file each (<a href="/docs/java/">Java</a>, <a href="/docs/rust/">Rust</a>); images the
+    sandbox pulls need the runtime's setting (<a href="/docs/containers/">Container images</a>).</li>
+  <li><strong>Let only SlowShield out.</strong> With the registries off the sandbox's network allowlist, an agent can't
+    install around SlowShield, even when it passes its own <code>--index-url</code>.</li>
+  <li><strong>No team instance?</strong> An agent working on one machine can run its own, with nothing kept after it
+    stops:
+    <div class="code"><pre><code>docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
+export PIP_INDEX_URL=http://localhost:8080/pypi/simple/ UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/ \
+  npm_config_registry=http://localhost:8080/npm/ GOPROXY=http://localhost:8080/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    Its dashboard at <code>http://localhost:8080/ui/</code> shows what was installed and what was held back.</li>
+</ol>
+
+<h2 id="reading">Reading this site</h2>
+<ul>
+  <li><a href="/llms.txt">/llms.txt</a>: what SlowShield is, and the guide's pages.</li>
+  <li><a href="/llms-full.txt">/llms-full.txt</a>: the whole guide in one Markdown file.</li>
+  <li>Every page of the guide as Markdown: add <code>index.md</code> to its address, such as
+    <a href="/docs/python/index.md">/docs/python/index.md</a>.</li>
+</ul>

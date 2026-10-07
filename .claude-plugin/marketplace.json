@@ -1,0 +1,12 @@
+{
+  "name": "slowshield",
+  "description": "SlowShield's Agent Skill: set up and use SlowShield, the proxy that holds new package releases back and refuses known malware.",
+  "owner": { "name": "Squirro", "url": "https://slowshield.org" },
+  "plugins": [
+    {
+      "name": "slowshield",
+      "source": "./plugins/slowshield",
+      "description": "Set up pip, uv, npm, pnpm, Yarn, Bun, Go, Maven, Gradle, Cargo, Docker, Podman and containerd to install through SlowShield, check it, and handle its answers."
+    }
+  ]
+}

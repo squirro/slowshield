@@ -220,6 +220,7 @@ tr.withdrawn { opacity: 0.55; }
 /* auto-fit: a single match spans the card, several share it */
 .tool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; }
 .tool h3 { font-size: 0.95rem; margin: 8px 0 6px; }
+.tool-guide { font-size: 0.78rem; font-weight: 400; margin-left: 8px; }
 .snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
 .grid-2 > .snippet { align-self: start; }
 .card p code { overflow-wrap: anywhere; }

@@ -195,6 +195,10 @@ async def test_setup_page_tool_finder(start_app) -> None:
     assert "insecure = true" not in page and "http = true" not in page
     assert "prefix = &#34;gcr.io&#34;" not in page  # switched off in this config
     assert "FROM slowshield.example.com/docker.io/library/nginx" in page
+    # Every tool links to its section of the guide on slowshield.org.
+    assert 'href="https://slowshield.org/docs/python/#poetry"' in page
+    assert 'href="https://slowshield.org/docs/containers/#image-names"' in page
+    assert 'href="https://slowshield.org/docs/container-builds/"' in page
 
 
 async def test_setup_page_offers_the_package_managers_own_release_age(start_app) -> None:

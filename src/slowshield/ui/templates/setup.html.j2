@@ -72,7 +72,7 @@
   </li>
 </ol>
 <section class="card tool-finder" data-tool-finder>
-  <header class="card-head"><h2>Per tool</h2></header>
+  <header class="card-head"><h2>Per tool</h2><a href="{{ docs_home }}" rel="noopener noreferrer" target="_blank">Guides for every ecosystem ↗</a></header>
   <p class="muted">For a single tool or project instead. Index URL <code>{{ pypi_index }}</code>, registry URL
     <code>{{ npm_registry }}</code>, Go module proxy <code>{{ go_proxy }}</code>, Maven repository
     <code>{{ maven_repo }}</code>, Cargo index <code>sparse+{{ cargo_index }}</code>.</p>
@@ -94,7 +94,8 @@
     {%- set plain = tools_plain[loop.index0] %}
     <div class="tool" data-tool="{{ (t.name ~ ' ' ~ t.keywords)|lower }}" data-tool-name="{{ t.name }}">
       <h3>{{ t.name }}{% if not enabled[t.ecosystem] %}
-        <span class="badge">disabled</span>{% endif %}</h3>
+        <span class="badge">disabled</span>{% endif %}
+        <a class="tool-guide" href="{{ docs(t.ecosystem, t.name) }}" rel="noopener noreferrer" target="_blank">Guide ↗</a></h3>
       {%- if t.age %}<p class="muted small age-note" data-age="on">Release age: {{ t.age }}</p>{% endif %}
       {%- if t.snippets == plain.snippets %}
       {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}
@@ -107,7 +108,8 @@
   </div>
 </section>
 <section class="card">
-  <header class="card-head"><h2>CI and containers</h2></header>
+  <header class="card-head"><h2>CI and containers</h2><a href="{{ docs_home }}container-builds/" rel="noopener noreferrer"
+    target="_blank">Building container images through SlowShield ↗</a></header>
   <div class="grid-2">
     <div>{{ aged(ci, ci_plain, "CI") }}</div>
     <div>{{ aged(dockerfile, dockerfile_plain, "Dockerfile") }}</div>

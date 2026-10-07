@@ -543,6 +543,8 @@ class UI:
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
+            docs=S.docs_url,
+            docs_home=S.DOCS,
             tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days) + images,
             tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0) + images,
             age_days=age_days,

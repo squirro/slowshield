@@ -17,6 +17,9 @@ _SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 # around SlowShield, or SlowShield serves a brand-new package because nothing is old enough yet (fail-open), the
 # package manager still waits. Never more than SlowShield's own delay, so in normal use only SlowShield holds anything.
 CLIENT_AGE_DAYS = 3
+# slowshield.org's guide has a page per ecosystem with a section per tool; the Setup page links to them.
+DOCS = "https://slowshield.org/docs/"
+DOCS_PAGES = {"pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "oci": "containers"}
 _AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
 
@@ -65,6 +68,17 @@ class Shell:
 class Snippets:
     shells: tuple[Shell, ...]
     try_python: str
+
+
+def slug(name: str) -> str:
+    """A tool's anchor on its guide page: `Image names` -> `image-names`."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def docs_url(ecosystem: str, tool: str = "") -> str:
+    """The guide page for `ecosystem` on slowshield.org, at `tool`'s section if given."""
+    url = f"{DOCS}{DOCS_PAGES[ecosystem]}/"
+    return f"{url}#{slug(tool)}" if tool else url
 
 
 def safe(value: str) -> str:

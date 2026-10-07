@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-07
+
 ### Added
 - Container images at `/v2/`, the OCI distribution API, for pulls ([docs/design/oci.md](docs/design/oci.md),
   https://github.com/squirro/slowshield/issues/22). Built in: docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
@@ -30,11 +32,17 @@ All notable changes to this project are documented here. The format is based on
     says. The package page shows every digest each tag pointed to.
 - Operator blocks for every ecosystem: `[[blocks]]` in `config.toml` refuses a package, a version, or an image
   repository, tag or digest, like a malware advisory. They apply on reload and are listed with source `config`.
+- The Setup page links every tool to its guide on slowshield.org.
 
 ### Changed
 - The UI names ecosystems by language, as slowshield.org does: Python, JavaScript, Go, Java, Rust and Containers
   instead of PyPI, npm, Go, Maven, Cargo and OCI. URLs, config, metrics and CSV exports keep the ids (`pypi`, `npm`,
   …).
+- Digests are shortened wherever the UI shows a version (`sha256:3734a9c4892e…`), with the full value on hover.
+
+### Fixed
+- Links from the security events to a package that was only ever refused, never served, led to "not found"; such a
+  package now has a page.
 
 ## [0.0.7] - 2026-10-06
 

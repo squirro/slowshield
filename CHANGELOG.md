@@ -6,8 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.0.8] - 2026-10-07
-
 ### Added
 - Shield wall: several instances standing together, one leader and many followers
   ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
@@ -25,6 +23,15 @@ All notable changes to this project are documented here. The format is based on
     follower as always; a follower that can't reach its leader works on its own.
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
     bytes refuses the file, and the leader records it.
+
+### Changed
+- The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
+  their defaults, commented out: set, they also count against a shield wall leader's policy.
+- Caddy no longer applies the 16 KB request body limit on top of the 10 MB one for `npm audit`.
+
+## [0.0.8] - 2026-10-07
+
+### Added
 - Container images at `/v2/`, the OCI distribution API, for pulls ([docs/design/oci.md](docs/design/oci.md),
   https://github.com/squirro/slowshield/issues/22). Built in: docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
   mcr.microsoft.com and public.ecr.aws.
@@ -51,9 +58,6 @@ All notable changes to this project are documented here. The format is based on
 - The Setup page links every tool to its guide on slowshield.org.
 
 ### Changed
-- The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
-  their defaults, commented out: set, they also count against a shield wall leader's policy.
-- Caddy no longer applies the 16 KB request body limit on top of the 10 MB one for `npm audit`.
 - The UI names ecosystems by language, as slowshield.org does: Python, JavaScript, Go, Java, Rust and Containers
   instead of PyPI, npm, Go, Maven, Cargo and OCI. URLs, config, metrics and CSV exports keep the ids (`pypi`, `npm`,
   …).

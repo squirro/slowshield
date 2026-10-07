@@ -1,0 +1,57 @@
+<!-- title: JavaScript | description: Use SlowShield as the npm registry for npm, pnpm, Yarn and Bun: setup, what changes, the package managers' own release age, and Docker builds. -->
+<h1>JavaScript</h1>
+<p class="lead">SlowShield serves the npm registry at <code>https://slowshield.example.com/npm/</code>. npm, pnpm,
+  Yarn and Bun use it like registry.npmjs.org, and so does everything that installs through them, such as
+  <code>npx</code>, MCP servers and CI steps.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>npm and pnpm read <code>npm_config_registry</code>, so a line in your shell profile covers them in every new
+  terminal (the Setup page has bash on macOS, zsh and fish too):</p>
+<!-- @example shell.bash -->
+<p>Yarn 2 and later ignores <code>.npmrc</code> and the npm variables, and Bun's <code>bunfig.toml</code> loses to an
+  <code>npm_config_registry</code> in the environment. Each tool, with the version its own release age needs:</p>
+<!-- @tools javascript -->
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>Versions wait.</strong> A version becomes installable 7 days after the time the registry recorded for it.
+    Versions younger than that are left out of the package documents (packuments), and <code>latest</code> moves to the
+    newest stable version that is old enough. Other dist-tags that point at a held version are removed.</li>
+  <li><strong>A pin that is too new.</strong> <code>npm install pkg@1.2.3</code> for a held version reports that no
+    matching version exists. A lockfile that names it downloads the tarball directly and gets <code>403</code> with
+    <code>Retry-After</code> and the time it becomes available.</li>
+  <li><strong>Malware</strong> from the OSV and GitHub feeds is refused with <code>451</code> and the advisory.</li>
+  <li><strong>Brand-new packages</strong> none of whose versions is old enough are served and recorded as fail-open,
+    unless your administrator set <code>fail_open = false</code>. That's what the second layer is for.</li>
+  <li><strong>Lockfiles record SlowShield.</strong> npm needs absolute tarball URLs, so SlowShield's point at itself
+    (<code>https://slowshield.example.com/npm/pkg/-/pkg-1.2.3.tgz</code>) and <code>package-lock.json</code> records
+    them. Integrity hashes don't change: the tarballs are npm's, byte for byte.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>npm 11.10, pnpm 10.16, Yarn 4.10 and Bun 1.3 can refuse releases younger than a few days themselves (Deno 2.6
+  too). Set them to 3 days, below SlowShield's 7, and they stay silent on a normal day. Mind the units, checked on
+  2026-10-06: npm's <code>min-release-age</code> counts days, pnpm's <code>minimumReleaseAge</code> minutes and Bun's
+  <code>minimumReleaseAge</code> seconds. npm 11.0 to 11.9 warn about the unknown setting, npm 10 ignores it, and Yarn
+  before 4.10 refuses to run with it. To let one package through early: <code>min-release-age-exclude</code> in npm.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>A build container doesn't read your shell profile. Pass the registry as a build argument: an <code>ARG</code> is
+  visible to <code>RUN</code> as an environment variable and isn't kept in the image.</p>
+<div class="code"><pre><code>FROM node:22-slim
+ARG npm_config_registry=https://slowshield.example.com/npm/
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>Tarball URLs come from SlowShield's public URL, so the build must be able to reach SlowShield under that name.
+  <a href="/docs/container-builds/">Building images</a> covers the base image too, and how to check that nothing in a
+  build goes around SlowShield. In CI, set the variables for the job:</p>
+<!-- @example ci -->
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Dependencies from git or a tarball URL don't go through the registry, so SlowShield doesn't see them.</li>
+  <li>Scoped registries (<code>@company:registry=…</code>) stay as they are: private packages keep coming from your
+    private registry.</li>
+  <li>Block registry.npmjs.org at the firewall for machines that should only use SlowShield.</li>
+</ul>

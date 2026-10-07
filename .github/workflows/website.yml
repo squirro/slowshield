@@ -14,6 +14,7 @@ on:
       - "website/**"
       - "brand/**"
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
+      - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
       - ".github/workflows/website.yml"
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - "website/**"
       - "brand/**"
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
+      - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
       - ".github/workflows/website.yml"
   workflow_dispatch:
 

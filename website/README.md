@@ -5,7 +5,8 @@ The public website: a static site in `src/`, built by `build.py` and served by C
 
 | File | Purpose |
 |---|---|
-| `build.py` | Builds `src/` into `dist/site`, fingerprints CSS/JS, copies brand assets and `_headers`, and fails on CSP violations, broken links or anchors, a weakened `_headers` or Cloudflare limits |
+| `build.py` | Builds `src/` into `dist/site`, renders the guide, fingerprints CSS/JS, copies brand assets and `_headers`, and fails on CSP violations, broken links or anchors, a page over its size budget, a weakened `_headers` or Cloudflare limits |
+| `docs/` | The guide at `/docs/`: `layout.html` and one fragment per page in `pages/`. Tool settings come from `src/slowshield/ui/snippets.py`, the module the Setup page renders, so the two can't drift |
 | `_headers` | Security headers on every response, and Cache-Control per path |
 | `wrangler.jsonc` | Production Worker `slowshield-website` (custom domain `slowshield.org`) |
 | `wrangler.preview.jsonc` | Separate Worker `slowshield-website-preview` for per-PR previews |

@@ -1,0 +1,60 @@
+<!-- title: Rust | description: Use SlowShield as Cargo's crates.io source: setup, held versions shown as yanked, Cargo.lock, and Docker builds. -->
+<h1>Rust</h1>
+<p class="lead">SlowShield serves crates.io at <code>https://slowshield.example.com/cargo/</code> as a sparse registry
+  that replaces <code>crates-io</code> in Cargo's configuration. Needs Cargo 1.68 or later.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>Cargo only takes source replacement from a configuration file, not from environment variables:</p>
+<!-- @tools rust -->
+<ul>
+  <li><strong>Cargo.lock doesn't change.</strong> It keeps crates.io as the source, with crates.io's checksums, so a
+    project builds the same with or without SlowShield.</li>
+  <li><strong>The official <code>rust</code> images</strong> set <code>CARGO_HOME=/usr/local/cargo</code>, where
+    <code>~/.cargo/config.toml</code> isn't read. The command writes <code>${CARGO_HOME:-$HOME/.cargo}/config.toml</code>,
+    which works in both.</li>
+</ul>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is each version's <code>pubtime</code> in the index, which crates.io sets and
+    authors can't. The first one SlowShield sees is kept, so a rewritten index can't move it earlier.</li>
+  <li><strong>Held versions show up as yanked.</strong> Cargo resolves to the newest version that isn't, exactly as
+    when a version is yanked upstream. When only held versions satisfy a requirement, Cargo says the version "is
+    yanked".</li>
+  <li><strong>A Cargo.lock that pins a held version</strong> fails with the reason and the command to use instead:
+    <div class="code"><pre><code>failed to get successful HTTP response from `…/cargo/crates/tokio/1.53.2/download`, got 403
+body:
+slowshield: tokio@1.53.2 is too new.
+It was published 2026-10-03T11:18:32Z (3.0 days ago); this proxy requires 7 days.
+It becomes available at 2026-10-10T11:18:32Z.
+Use an older version (cargo update -p tokio@1.53.2 --precise 1.53.1), or ask your SlowShield administrator for an exception.</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
+  <li><strong>Brand-new crates</strong> none of whose versions is old enough are held too: Cargo doesn't fail open,
+    because nearly all malicious crates are brand-new typosquats and impersonations.</li>
+  <li><strong>Malware</strong> from OSV (including RustSec's malicious advisories) and GitHub is refused with
+    <code>451</code>, and a <code>.crate</code> is checked against the index's checksum and the fingerprint SlowShield
+    recorded the first time.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>Cargo's own setting, <code>min-publish-age</code>, isn't stable yet, so SlowShield is the only layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<div class="code"><pre><code>FROM rust:1 AS build
+ARG CARGO_INDEX=sparse+https://slowshield.example.com/cargo/
+RUN if [ -n "$CARGO_INDEX" ]; then printf '%s\n' '[source.crates-io]' 'replace-with = "slowshield"' \
+      '[registries.slowshield]' "index = \"$CARGO_INDEX\"" &gt;&gt; "$CARGO_HOME/config.toml"; fi
+WORKDIR /src
+COPY . .
+RUN cargo build --release</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>Or run the Setup page's one-line command in a <code>RUN</code> step. <a href="/docs/container-builds/">Building
+  images</a> covers the base image too, and how to check that nothing in a build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Commands that need the crates.io web API: <code>cargo search</code> fails, <code>cargo info</code> needs
+    <code>--registry slowshield</code>, and <code>cargo publish</code>, <code>yank</code> and <code>owner</code> need
+    <code>--registry crates-io</code>.</li>
+  <li>Not covered: git dependencies, build scripts that download things, rustup toolchains, and alternative
+    registries.</li>
+  <li>Block index.crates.io and static.crates.io at the firewall for machines that should only use SlowShield.</li>
+</ul>

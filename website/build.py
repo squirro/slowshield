@@ -4,6 +4,7 @@
 
 Stdlib only, Python 3.9 or later.
 * copies website/src and the brand assets it needs,
+* renders the guide (website/docs) into /docs/, with each tool's settings from the product's own snippets,
 * fingerprints CSS/JS (immutable caching) and rewrites references,
 * fails on CSP violations (inline script/style, event-handler attributes, javascript: URLs),
   broken in-page anchors, missing local assets, external sub-resources, or an exceeded size budget,
@@ -17,10 +18,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import importlib.util
 import re
 import shutil
 import sys
 import tomllib
+import types
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -54,8 +57,20 @@ SITE_URLS = {
     "py_pkg": "requests",
     "age_days": "3",  # the package managers' own release age (snippets.CLIENT_AGE_DAYS)
 }
+# The guide: website/docs/pages/<slug>.html into /docs/<slug>/, in the layout website/docs/layout.html. Tool settings
+# come from src/slowshield/ui/snippets.py (stdlib only), the module the Setup page renders, with example URLs.
+DOCS = HERE / "docs"
+DOCS_NAV = (
+    ("", "Overview"), ("python", "Python"), ("javascript", "JavaScript"), ("go", "Go"), ("java", "Java"),
+    ("rust", "Rust"), ("containers", "Container images"), ("container-builds", "Building images"),
+)  # fmt: skip
+EXAMPLE = "https://slowshield.example.com"
+EXAMPLE_REGISTRIES = (
+    "docker.io", "gcr.io", "ghcr.io", "mcr.microsoft.com", "public.ecr.aws", "quay.io", "registry.k8s.io",
+)  # fmt: skip
+DOCS_MARKER = re.compile(r"<!-- @(tools|example) ([a-z.-]+) -->")
 FINGERPRINT = ("assets/site.css", "assets/site.js")
-BUDGET_BYTES = 200_000  # html + css + js, uncompressed
+BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
 REQUIRED_HEADERS = (
     "content-security-policy", "strict-transport-security", "x-content-type-options", "referrer-policy",
@@ -98,6 +113,97 @@ def load_snippets() -> dict[str, str]:
     return out
 
 
+def product_snippets() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("slowshield_snippets", SNIPPETS.with_name("snippets.py"))
+    if spec is None or spec.loader is None:
+        sys.exit(f"cannot load {SNIPPETS.with_name('snippets.py')}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses look the module up while the class is created
+    spec.loader.exec_module(module)
+    return module
+
+
+def docs_parts() -> dict[str, str]:
+    """Everything a guide page can include: `tools.<ecosystem>` and `example.<name>`, filled in for EXAMPLE."""
+    snip = product_snippets()
+    urls = {
+        "pypi": f"{EXAMPLE}/pypi/simple/", "npm": f"{EXAMPLE}/npm/", "go": f"{EXAMPLE}/go",
+        "maven": f"{EXAMPLE}/maven", "cargo": f"{EXAMPLE}/cargo/",
+    }  # fmt: skip
+    tools = snip.tools(*urls.values()) + snip.oci_tools(EXAMPLE, EXAMPLE_REGISTRIES)
+    parts: dict[str, list[str]] = {}
+
+    def code_block(code: str) -> str:
+        return (
+            f'<div class="code"><pre><code>{html.escape(code, quote=False)}</code></pre>'
+            '<button class="copy" type="button" data-copy>Copy</button></div>'
+        )
+
+    for t in tools:
+        out = [f'<section class="doc-tool" id="{snip.slug(t.name)}">', f"<h3>{html.escape(t.name)}</h3>"]
+        if t.age and t.age != snip.NO_AGE_DEFAULT:  # pages say once that a tool without one has only SlowShield
+            out.append(f'<p class="doc-age">Release age: {html.escape(t.age)}</p>')
+        for label, code in t.snippets:
+            out.append(f'<p class="doc-label">{html.escape(label)}</p>{code_block(code)}')
+        out.append("</section>")
+        parts.setdefault(f"tools.{snip.DOCS_PAGES[t.ecosystem]}", []).extend(out)
+    flat = {k: "\n".join(v) for k, v in parts.items()}
+    shells = snip.for_instance(urls["pypi"], urls["npm"], urls["go"])
+    for sh in shells.shells:
+        flat[f"example.shell.{sh.id}"] = code_block(sh.code)
+    flat["example.ci"] = code_block(snip.ci_env(urls["pypi"], urls["npm"], urls["go"], age_days=snip.CLIENT_AGE_DAYS))
+    flat["example.maven"] = code_block(snip.maven_settings(urls["maven"]))
+    flat["example.gradle"] = code_block(snip.gradle_init(urls["maven"]))
+    flat["example.cargo"] = code_block(snip.cargo_config(urls["cargo"]))
+    flat["example.cargo-command"] = code_block(snip.cargo_command(urls["cargo"]))
+    return flat
+
+
+def render_docs(out: Path, errors: list[str]) -> None:
+    """website/docs/pages/*.html, each starting with a `<!-- title: … | description: … -->` line, into /docs/."""
+    layout = (DOCS / "layout.html").read_text(encoding="utf-8")
+    parts = docs_parts()
+    pages = {p.stem: p for p in (DOCS / "pages").glob("*.html")}
+    for slug, _ in DOCS_NAV:
+        if (slug or "index") not in pages:
+            errors.append(f"docs: {slug or 'index'}.html is in DOCS_NAV but missing")
+    for name, path in pages.items():
+        slug = "" if name == "index" else name
+        if slug not in {s for s, _ in DOCS_NAV}:
+            errors.append(f"docs: {name}.html isn't in DOCS_NAV")
+            continue
+        text = path.read_text(encoding="utf-8")
+        head = re.match(r"<!-- title: (.+?) \| description: (.+?) -->\n", text)
+        if head is None:
+            errors.append(f"docs/{name}.html: first line must be <!-- title: … | description: … -->")
+            continue
+        body = text[head.end() :]
+
+        def include(m: re.Match[str], name: str = name) -> str:
+            key = f"{m.group(1)}.{m.group(2)}"
+            if key not in parts:
+                errors.append(f"docs/{name}.html: unknown include {key!r}")
+                return m.group(0)
+            return parts[key]
+
+        body = DOCS_MARKER.sub(include, body)
+        nav = "\n".join(
+            f'<a href="/docs/{s + "/" if s else ""}"{' aria-current="page"' if s == slug else ""}>{label}</a>'
+            for s, label in DOCS_NAV
+        )
+        url = f"https://slowshield.org/docs/{slug + '/' if slug else ''}"
+        page = (
+            layout.replace("{{title}}", html.escape(head.group(1)))
+            .replace("{{description}}", html.escape(head.group(2)))
+            .replace("{{canonical}}", url)
+            .replace("{{nav}}", nav)
+            .replace("{{body}}", body)
+        )
+        dest = out / "docs" / slug / "index.html" if slug else out / "docs" / "index.html"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(page, encoding="utf-8")
+
+
 def snippet(snippets: dict[str, str], m: re.Match[str], page: str, errors: list[str]) -> str:
     key = f"{m.group(1)}.{m.group(2)}"
     if key not in snippets:
@@ -128,11 +234,17 @@ def check_headers(out: Path, html_files: list[Path]) -> list[str]:
     csp = site_wide.get("content-security-policy", "")
     if "'unsafe-" in csp or "script-src 'self'" not in csp or "default-src 'none'" not in csp:
         errors.append("_headers: the CSP must keep default-src 'none' and script-src 'self', without 'unsafe-*'")
-    # Every page needs its own Cache-Control rule, or it silently falls back to max-age=0.
+    # Every page needs a Cache-Control rule of its own or from a `*` rule, or it silently falls back to max-age=0.
+    splats = [
+        re.compile(re.escape(r).replace(r"\*", ".*") + "$")
+        for r, h in rules.items()
+        if "*" in r and "cache-control" in h
+    ]
     for page in html_files:
         rel = page.relative_to(out).as_posix()
         url = "/" + rel[: -len("index.html")] if rel.endswith("index.html") else "/" + rel
-        if rel != "404.html" and "cache-control" not in rules.get(url, {}):
+        has_rule = "cache-control" in rules.get(url, {}) or any(s.match(url) for s in splats if s.pattern != ".*$")
+        if rel != "404.html" and not has_rule:
             errors.append(f"_headers: no Cache-Control rule for page {url}")
     files = [p for p in out.rglob("*") if p.is_file()]
     if len(files) >= CF_MAX_FILES:
@@ -160,6 +272,7 @@ def build(out: Path) -> None:
     sprite = (BRAND / "sprite.html").read_text(encoding="utf-8")
     snippets = load_snippets()
     snippet_errors: list[str] = []
+    render_docs(out, snippet_errors)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
@@ -216,9 +329,13 @@ def build(out: Path) -> None:
         refs = re.findall(r'url\("?(/[^")]+)"?\)', css.read_text(encoding="utf-8"))
         errors.extend(f"{css.name}: missing {ref}" for ref in refs if not (out / ref.lstrip("/")).is_file())
 
-    total = sum(p.stat().st_size for p in [*html_files, *css_files, *assets.glob("site.*.js")])
-    if total > BUDGET_BYTES:
-        errors.append(f"size budget exceeded: {total} > {BUDGET_BYTES} bytes")
+    shared = sum(p.stat().st_size for p in [*css_files, *assets.glob("site.*.js")])
+    total = shared + sum(p.stat().st_size for p in html_files)
+    errors.extend(
+        f"{page.relative_to(out)}: size budget exceeded: {page.stat().st_size + shared} > {BUDGET_BYTES} bytes"
+        for page in html_files
+        if page.stat().st_size + shared > BUDGET_BYTES
+    )
     errors.extend(check_headers(out, html_files))
     if errors:
         fail(errors)

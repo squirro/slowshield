@@ -21,6 +21,8 @@
   Cache-Control: public, max-age=300, must-revalidate
 /brand/
   Cache-Control: public, max-age=300, must-revalidate
+/docs/*
+  Cache-Control: public, max-age=300, must-revalidate
 
 # Static files: one day.
 /assets/*

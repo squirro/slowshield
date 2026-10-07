@@ -89,7 +89,7 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .nav nav a { color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px; font-size: 0.93rem; font-weight: 500; }
 .nav nav a:hover { color: var(--ink); background: var(--surface-2); text-decoration: none; }
 .nav-cta { background: var(--brand) !important; color: var(--on-fill) !important; font-weight: 650 !important; }
-@media (max-width: 760px) { .nav nav a:not(.nav-cta) { display: none; } }
+@media (max-width: 760px) { .nav nav a:not(.nav-cta):not(.nav-docs) { display: none; } }
 
 /* ---- buttons --------------------------------------------------------------------------------------- */
 .cta-row { display: flex; gap: 0.9rem; flex-wrap: wrap; margin: 2rem 0; }
@@ -841,4 +841,38 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
   .layers-table td:last-child { padding-bottom: 1.1rem; }
   .layers-table td::before { content: attr(data-label); display: block; font-size: 0.78rem; font-weight: 650;
     text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.2rem; }
+}
+
+/* ---- docs (/docs/: the guide, rendered by build.py from website/docs) ------------------------------------- */
+.docs-wrap { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 2.5rem; max-width: var(--max); margin: 0 auto; padding: 2.5rem 1.5rem 4.5rem; }
+.docs-nav { position: sticky; top: 5.5rem; align-self: start; display: grid; gap: 0.15rem; }
+.docs-nav a { color: var(--muted); padding: 0.42rem 0.75rem; border-radius: 8px; font-size: 0.93rem; }
+.docs-nav a:hover { color: var(--ink); background: var(--surface-2); text-decoration: none; }
+.docs-nav a[aria-current="page"] { color: var(--ink); background: var(--surface); font-weight: 600; }
+.docs-main { min-width: 0; max-width: 840px; }
+.docs-main h1 { font-size: clamp(2rem, 4.5vw, 2.8rem); margin-bottom: 0.7rem; }
+.docs-main h1, .docs-main h2, .docs-main h3 { max-width: none; }
+.docs-main h2 { font-size: 1.45rem; margin: 2.8rem 0 0.8rem; scroll-margin-top: 5rem; }
+.docs-main h3 { font-size: 1.1rem; margin: 1.6rem 0 0.5rem; }
+.docs-main section, .docs-main h3[id] { scroll-margin-top: 5rem; }
+.docs-main p, .docs-main li { line-height: 1.65; }
+.docs-main ul, .docs-main ol { padding-left: 1.3rem; display: grid; gap: 0.4rem; margin: 0.6rem 0 1rem; }
+.docs-main .code { margin: 0.4rem 0 1rem; }
+.docs-main .code pre { padding-right: 4.8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.docs-main :not(pre) > code { overflow-wrap: anywhere; }
+.docs-main section { padding: 0; margin: 0; max-width: none; }
+.docs-main .lead { font-size: 1.1rem; color: var(--muted); }
+.docs-table { overflow-x: auto; margin: 0.8rem 0 1.2rem; }
+.docs-table table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.docs-table th, .docs-table td { text-align: left; vertical-align: top; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); }
+.docs-table th { color: var(--muted); font-weight: 600; }
+.docs-main .doc-tool { border-top: 1px solid var(--line); margin-top: 1.5rem; padding-top: 0.2rem; }
+.doc-label, .doc-age { font-size: 0.86rem; color: var(--muted); margin: 0.7rem 0 0.25rem; }
+.doc-cards { list-style: none; padding: 0 !important; display: grid !important; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.9rem !important; }
+.doc-cards a { display: block; height: 100%; padding: 1rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.doc-cards a:hover { border-color: var(--brand); text-decoration: none; }
+.doc-cards span { display: block; color: var(--muted); font-size: 0.88rem; margin-top: 0.25rem; }
+@media (max-width: 860px) {
+  .docs-wrap { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; padding-top: 1.5rem; }
+  .docs-nav { position: static; display: flex; flex-wrap: wrap; }
 }

@@ -153,7 +153,7 @@ async def test_health_endpoints(running: Running) -> None:
 
 
 def test_formatters() -> None:
-    from slowshield.ui import fmt_bytes, fmt_duration, fmt_num, fmt_pct, fmt_ts, safe_href
+    from slowshield.ui import fmt_bytes, fmt_duration, fmt_num, fmt_pct, fmt_ts, safe_href, short_version
 
     assert fmt_bytes(0) == "0 B" and fmt_bytes(1536) == "1.5 KB" and fmt_bytes(5 * 1024**5) == "5120.0 TB"
     assert fmt_num(12) == "12" and fmt_num(12_345) == "12.3k" and fmt_num(2_500_000) == "2.5M"
@@ -162,6 +162,18 @@ def test_formatters() -> None:
     assert fmt_ts(None) == "—" and fmt_ts(1).startswith("1970-01-01")
     assert safe_href("https://osv.dev/x") == "https://osv.dev/x"
     assert safe_href("javascript:alert(1)") == "#" and safe_href(None) == "#"
+    digest = "sha256:3734a9c4892eb699ef61a1a3ad123a89d92eeee41b353c233509e2c4fdc87ef1"
+    assert short_version(digest) == "sha256:3734a9c4892e…"
+    assert short_version("1.43.109") == "1.43.109" and short_version("sha256:not-hex") == "sha256:not-hex"
+
+
+async def test_digests_are_shortened_wherever_versions_show(running: Running) -> None:
+    digest = "sha256:" + "3734a9c4892e" + "b" * 52
+    running.app.ctx.recorder.event("fail_open", "oci", "docker.io/library/python", digest, client_ip="10.0.0.1")
+    await running.drain()
+    for path in ("/ui/", "/ui/security", "/ui/packages/oci/docker.io/library/python"):
+        page = (await running.client.get(path)).text
+        assert f'<code class="ver" title="{digest}">sha256:3734a9c4892e…</code>' in page, path
 
 
 async def test_setup_offers_plain_http_on_localhost(start_app) -> None:

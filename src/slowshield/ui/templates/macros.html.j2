@@ -19,6 +19,12 @@
 {%- for e in ecosystems.values() %}<option value="{{ e.id }}"{% if current == e.id %} selected{% endif %}>{{ e.label }}</option>{% endfor -%}
 {%- endmacro %}
 
+{#- Every version, tag or digest the UI shows: digests shortened, the full value on hover. -#}
+{% macro ver(v) -%}
+{%- set short = v|short_version -%}
+<code class="ver"{% if short != v %} title="{{ v }}"{% endif %}>{{ short }}</code>
+{%- endmacro %}
+
 {% macro eco(e) -%}<span class="eco eco-{{ e }}">{{ eco_label.get(e, e) }}</span>{%- endmacro %}
 
 {% macro pkg_link(e, name) -%}

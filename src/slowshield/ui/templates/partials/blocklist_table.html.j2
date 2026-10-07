@@ -7,7 +7,7 @@
     <tbody>
     {% for b in rows %}
       <tr><td>{{ m.eco(b.ecosystem) }} {{ m.pkg_link(b.ecosystem, b.name) }}</td>
-          <td>{% if b.version %}<code>{{ b.version }}</code>{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all{% endif %}</td>
+          <td>{% if b.version %}{{ m.ver(b.version) }}{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all{% endif %}</td>
           <td>{{ b.source }}</td><td>{{ m.advisory(b) }}</td>
           <td class="details">{{ (b.reason or "")|truncate(140) }}</td><td>{{ ago(b.first_seen) }}</td></tr>
     {% endfor %}

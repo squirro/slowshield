@@ -53,7 +53,7 @@
       {% if events %}
       <ul class="events">
         {% for e in events %}
-        <li>{{ m.event_badge(e.type) }} {{ m.pkg_link(e.ecosystem, e.package) }}{% if e.version %} <code>{{ e.version }}</code>{% endif %}
+        <li>{{ m.event_badge(e.type) }} {{ m.pkg_link(e.ecosystem, e.package) }}{% if e.version %} {{ m.ver(e.version) }}{% endif %}
             {% if e["count"] > 1 %}<span class="muted">×{{ e["count"] }}</span>{% endif %}<br><span class="muted small">{{ ago(e.ts) }}{% if e.client_ip %} · {{ e.client_ip }}{% endif %}</span></li>
         {% endfor %}
       </ul>

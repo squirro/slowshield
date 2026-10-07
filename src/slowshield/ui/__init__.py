@@ -8,6 +8,7 @@ import hashlib
 import io
 import math
 import os
+import re
 from datetime import UTC, datetime
 from functools import cache, partial
 from pathlib import Path
@@ -118,6 +119,18 @@ def fmt_pct(x: float | None) -> str:
     return "—" if x is None else f"{x * 100:.1f}%"
 
 
+_DIGEST = re.compile(r"(sha256|sha384|sha512):[0-9a-f]{32,}")
+
+
+def short_version(version: str) -> str:
+    """A version as the UI shows it: digests (container images) like Docker's short IDs, sha256:3734a9c4892e…;
+    everything else in full. The macro `m.ver` puts the full value in the title."""
+    if _DIGEST.fullmatch(version):
+        algo, _, hexdigits = version.partition(":")
+        return f"{algo}:{hexdigits[:12]}…"
+    return version
+
+
 class UI:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
@@ -129,7 +142,10 @@ class UI:
             auto_reload=os.environ.get("SLOWSHIELD_DEV_TEMPLATES") == "1",
             cache_size=400,
         )
-        env.filters.update(bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href)
+        env.filters.update(
+            bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href,
+            short_version=short_version,
+        )  # fmt: skip
         cast(dict[str, Any], env.globals).update(
             version=__version__,
             asset=asset,
@@ -322,7 +338,7 @@ class UI:
             }
 
         data = await self._q(collect)
-        if data["pkg"] is None and not data["blocks"] and not data["tags"]:
+        if data["pkg"] is None and not data["blocks"] and not data["tags"] and not data["events"]:
             return self._render("not_found.html.j2", request, what="package", name=name, eco=eco)
         versions = []
         for v in data["versions"]:

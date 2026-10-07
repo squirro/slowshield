@@ -10,7 +10,7 @@
         <td title="{{ e.ts|ts }}">{{ ago(e.ts) }}</td>
         <td>{{ m.event_badge(e.type) }}{% if e["count"] > 1 %} <span class="muted">×{{ e["count"] }}</span>{% endif %}</td>
         <td>{{ m.eco(e.ecosystem) }} {{ m.pkg_link(e.ecosystem, e.package) }}</td>
-        <td>{% if e.version %}<code>{{ e.version }}</code>{% else %}—{% endif %}</td>
+        <td>{% if e.version %}{{ m.ver(e.version) }}{% else %}—{% endif %}</td>
         <td>{% if e.client_ip %}<a href="/ui/security{{ qs({'range': range, 'ip': e.client_ip}) }}">{{ e.client_ip }}</a>{% else %}—{% endif %}</td>
         <td class="details">
           {% set d = e.details %}

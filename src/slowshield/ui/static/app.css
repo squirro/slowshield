@@ -224,6 +224,9 @@ tr.withdrawn { opacity: 0.55; }
 .snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
 .grid-2 > .snippet { align-self: start; }
 .card p code { overflow-wrap: anywhere; }
+/* Long names and versions wrap inside their card or cell instead of widening it; a shortened digest stays whole. */
+.card li, .card td, .events li { overflow-wrap: anywhere; min-width: 0; }
+code.ver[title] { white-space: nowrap; cursor: help; }
 @media (max-width: 900px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }
 
 .prose h1 { font-size: 1.3rem; } .prose h2 { font-size: 1.1rem; margin-top: 18px; } .prose table { border-collapse: collapse; }

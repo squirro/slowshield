@@ -404,3 +404,18 @@ async def test_only_the_leader_can_remove_a_follower(pair: Pair) -> None:
     assert p.follower.rows("SELECT state FROM shieldwall_leader") == [("active",)]
     await runtime.refresh(p.follower.ctx)
     assert p.follower.ctx.cfg.raw.default_delay_days == 3  # still the leader's policy
+
+
+async def test_files_served_before_pairing_are_compared_too(pair: Pair) -> None:
+    p = pair
+    path = _wheel(p.follower)
+    assert (await p.leader.client.get(f"/pypi{path}")).status_code == 200
+    await p.leader.drain()
+    await p.leader.ctx.db.writer.run(
+        lambda c: c.execute("UPDATE artifacts SET sha256 = ? WHERE path = ?", ("f" * 64, path))
+    )
+    assert (await p.follower.client.get(f"/pypi{path}")).status_code == 200  # before joining
+    await p.follower.drain()
+    await _join(p)  # the history at pairing carries the fingerprint
+    await p.sync()
+    assert p.follower.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(1,)]

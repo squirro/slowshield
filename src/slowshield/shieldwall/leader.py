@@ -533,7 +533,9 @@ class LeaderService:
         return StreamedArtifact(200, headers, body(), on_close)
 
     async def _alias(self, alg: str, digest: str) -> str | None:
+        """The sha256 this leader computed for a file it knows by another digest. Only ever a content address: the
+        cache finds files by it, so nothing else may reach a file path."""
         row = await self.ctx.db.readers.aone(
             "SELECT sha256 FROM shieldwall_blobs WHERE alg = ? AND digest = ?", (alg, digest)
         )
-        return row[0] if row else None
+        return row[0] if row and _SHA256.fullmatch(row[0]) else None

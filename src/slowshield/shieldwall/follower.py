@@ -313,8 +313,8 @@ def _detail(reply: Reply) -> str:
 
 def _backfill(conn: Any, now: float, *, packages: bool = True) -> None:
     """This instance's history so far, queued for the leader once, in chunks: the statistics tables as they are
-    (not re-derived), its retained events and, unless the leader has them from an earlier pairing, the packages it
-    served (their counts only add up)."""
+    (not re-derived), its retained events, the first fingerprint of every file it served (for the leader to compare)
+    and, unless the leader has them from an earlier pairing, the packages it served (their counts only add up)."""
 
     def rows(sql: str) -> list[tuple[Any, ...]]:
         return [tuple(r) for r in conn.execute(sql).fetchall()]
@@ -352,3 +352,11 @@ def _backfill(conn: Any, now: float, *, packages: bool = True) -> None:
                 "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'stats', ?)",
                 (now, msgspec.json.encode(batch).decode()),
             )
+    fingerprints = rows(
+        "SELECT ecosystem, path, sha256, first_seen, package, version FROM artifacts WHERE sha256 IS NOT NULL"
+    )
+    for i in range(0, len(fingerprints), BACKFILL_ROWS):
+        conn.execute(
+            "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'fingerprints', ?)",
+            (now, json.dumps(fingerprints[i : i + BACKFILL_ROWS])),
+        )

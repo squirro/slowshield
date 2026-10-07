@@ -29,8 +29,9 @@ REGISTRIES = ("docker.io", "ghcr.io", "quay.io", "registry.k8s.io")
 CRANE = (
     "gcr.io/go-containerregistry/crane:debug@sha256:e78770b31258a3846f878036d9c1f63fbe4c871f9f56990bf77fd95c013e3c1b"
 )
-SKOPEO = "quay.io/skopeo/stable:v1.22.3@sha256:966b7d73acc4478906280e4967cafd93f4a85273e9a97b41b2ea8f9bd55292a5"
-PODMAN = "quay.io/podman/stable:v5.8.7@sha256:fb16645f30c295c7e45864f4de8bbe87513d4f31fea146ed782f876508ee6bb9"
+# Pinned by version only: Quay rebuilds these tags daily and deletes the superseded digests.
+SKOPEO = "quay.io/skopeo/stable:v1.22.3"
+PODMAN = "quay.io/podman/stable:v5.8.7"
 DOCKER = "docker:29.8.2-dind@sha256:7dcdfc4a20246236f558175182ccace1eb15a41bd3eb119dd2284f393498b7c1"
 BUILDKIT = "moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea"
 AL2023 = (

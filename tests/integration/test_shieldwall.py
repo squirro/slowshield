@@ -139,6 +139,9 @@ async def _join(p: Pair) -> None:
     cross = {**form, "Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
     r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=cross)
     assert r.status_code == 403
+    other_scheme = {**form, "Origin": "https://slowshield.test"}  # this UI is served over http here
+    r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=other_scheme)
+    assert r.status_code == 403
     same = {**form, "Origin": "http://slowshield.test", "Sec-Fetch-Site": "same-origin"}
     r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=same)
     assert r.status_code == 303
@@ -364,3 +367,21 @@ async def test_followers_that_disagree_flag_a_file_the_leader_never_served(pair:
     ]
     assert p.leader.rows("SELECT package FROM events WHERE type = 'tampered'") == [("alpha",)]
     assert (await p.follower.client.get(f"/pypi{path}")).status_code == 451
+
+
+async def test_only_the_leader_can_remove_a_follower(pair: Pair) -> None:
+    p = pair
+    await _join(p)
+    real = p.service.send
+
+    async def forged(method: str, url: str, headers: dict[str, str], body: bytes, limit: float) -> Reply:
+        if "/sync" in url:
+            return Reply(403, {"content-type": "application/json"}, b'{"error":"removed"}')
+        return await real(method, url, headers, body, limit)
+
+    p.service.send = forged
+    with pytest.raises(TransportError):
+        await p.service.step()
+    assert p.follower.rows("SELECT state FROM shieldwall_leader") == [("active",)]
+    await runtime.refresh(p.follower.ctx)
+    assert p.follower.ctx.cfg.raw.default_delay_days == 3  # still the leader's policy

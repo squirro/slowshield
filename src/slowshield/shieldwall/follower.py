@@ -243,7 +243,8 @@ class FollowerService:
         }, separators=(",", ":")).encode()  # fmt: skip
         wait = 0 if entries else SYNC_WAIT
         reply = await self._signed(state, "POST", "/_shieldwall/v1/sync", f"wait={wait}", body, limit=wait + 15.0)
-        if reply.status == 403 and b'"removed"' in reply.body:
+        # Only the paired leader can remove this instance: an unsigned "removed" is just another failure.
+        if reply.status == 403 and "signature" in reply.headers and _detail(reply) == "removed":
             await ctx.db.writer.run(
                 lambda conn: conn.execute(
                     "UPDATE shieldwall_leader SET state = 'removed', last_error = ? WHERE id = 1",
@@ -283,7 +284,7 @@ class FollowerService:
         headers["Content-Type"] = "application/json"
         url = state.url + path + (f"?{query}" if query else "")
         reply = await self.send(method, url, headers, body, limit)
-        if reply.status in (200, 403) and "signature" in reply.headers:
+        if reply.status in (200, 403) and "signature" in reply.headers:  # a signed 403 is a removal
             try:
                 signing.verify_response(
                     reply.headers, reply.status, reply.body, request_signature=headers["Signature"],
@@ -299,9 +300,11 @@ class FollowerService:
 def _detail(reply: Reply) -> str:
     try:
         doc = json.loads(reply.body)
-        return str(doc.get("detail") or doc.get("error") or reply.status)[:300]
     except ValueError:
         return f"HTTP {reply.status}"
+    if not isinstance(doc, dict):
+        return f"HTTP {reply.status}"
+    return str(doc.get("detail") or doc.get("error") or reply.status)[:300]
 
 
 def _backfill(conn: Any, now: float, *, packages: bool = True) -> None:

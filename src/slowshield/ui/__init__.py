@@ -34,7 +34,7 @@ from slowshield.policy import DAY
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
-from slowshield.web import is_loopback_host, local_http_origin
+from slowshield.web import is_loopback_host, local_http_origin, request_scheme
 
 log = logging.getLogger(__name__)
 
@@ -599,7 +599,7 @@ class UI:
         pick another leader, leave, or lower anything."""
         if self.ctx.cfg.raw.shieldwall.role != "follower":
             return PlainTextResponse("not a shield wall follower", status_code=404)
-        if not _same_origin(request):
+        if not _same_origin(request, self.ctx.cfg.trusted_networks):
             return PlainTextResponse("refused: the request came from another site", status_code=403)
         body = await request.body()
         form = parse_qs(body[:4096].decode("latin-1"))
@@ -728,15 +728,16 @@ def _client_os(request: Request) -> str:
     return ""
 
 
-def _same_origin(request: Request) -> bool:
-    """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site."""
+def _same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
+    """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site, scheme
+    included (behind Caddy, the scheme the browser used comes from X-Forwarded-Proto)."""
     site = request.headers.get("sec-fetch-site")
     if site is not None and site != "same-origin":
         return False
     origin = request.headers.get("origin")
     if origin is not None:
-        host = request.headers.get("host", "")
-        return origin != "null" and (urlsplit(origin).netloc or "").lower() == host.lower()
+        own = f"{request_scheme(request.scope, trusted)}://{request.headers.get('host', '')}"
+        return origin.lower() == own.lower()
     return True
 
 

@@ -79,6 +79,33 @@ spec:
             - name: SLOWSHIELD_NPM_HOSTNAMES
               value: {{ join " " . | quote }}
             {{- end }}
+            {{- with .Values.shieldwall }}
+            {{- if eq .role "leader" }}
+            - name: SLOWSHIELD_SHIELDWALL_ROLE
+              value: leader
+            {{- end }}
+            {{- if .joinSecret }}
+            - name: SLOWSHIELD_JOIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .joinSecret }}
+                  key: {{ .joinSecretKey }}
+            - name: SLOWSHIELD_JOIN_CONFIRM
+              value: {{ .confirm | quote }}
+            {{- end }}
+            {{- if .name }}
+            - name: SLOWSHIELD_INSTANCE_NAME
+              value: {{ .name | quote }}
+            {{- end }}
+            {{- if .location }}
+            - name: SLOWSHIELD_INSTANCE_LOCATION
+              value: {{ .location | quote }}
+            {{- end }}
+            {{- with .labels }}
+            - name: SLOWSHIELD_INSTANCE_LABELS
+              value: {{ $pairs := list }}{{ range $k, $v := . }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}{{ join "," $pairs | quote }}
+            {{- end }}
+            {{- end }}
             {{- if $github }}
             - name: GITHUB_TOKEN_FILE
               value: /run/secrets/github/{{ .Values.feeds.github.existingSecretKey }}

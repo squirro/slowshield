@@ -3,7 +3,7 @@
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>When</th><th>Event</th><th>Package</th><th>Version</th><th>Client</th><th>Details</th></tr></thead>
+    <thead><tr><th>When</th><th>Event</th><th>Package</th><th>Version</th>{% if instance_names %}<th>Instance</th>{% endif %}<th>Client</th><th>Details</th></tr></thead>
     <tbody>
     {% for e in rows %}
       <tr class="ev-row-{{ e.type }}">
@@ -11,6 +11,7 @@
         <td>{{ m.event_badge(e.type) }}{% if e["count"] > 1 %} <span class="muted">×{{ e["count"] }}</span>{% endif %}</td>
         <td>{{ m.eco(e.ecosystem) }} {{ m.pkg_link(e.ecosystem, e.package) }}</td>
         <td>{% if e.version %}{{ m.ver(e.version) }}{% else %}—{% endif %}</td>
+        {% if instance_names %}<td>{{ instance_names.get(e.instance, e.instance) }}</td>{% endif %}
         <td>{% if e.client_ip %}<a href="/ui/security{{ qs({'range': range, 'ip': e.client_ip}) }}">{{ e.client_ip }}</a>{% else %}—{% endif %}</td>
         <td class="details">
           {% set d = e.details %}
@@ -26,6 +27,6 @@
     </tbody>
   </table>
   </div>
-  {{ m.pager(page, has_next, "/ui/security", {"range": range, "type": type, "eco": eco, "q": q, "ip": ip}, "/ui/partials/security") }}
+  {{ m.pager(page, has_next, "/ui/security", {"range": range, "type": type, "eco": eco, "q": q, "ip": ip, "in": scope}, "/ui/partials/security") }}
   {% else %}<p class="empty">No events match.</p>{% endif %}
 </section>

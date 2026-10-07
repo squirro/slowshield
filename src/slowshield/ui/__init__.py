@@ -6,6 +6,7 @@ import asyncio
 import csv
 import hashlib
 import io
+import logging
 import math
 import os
 import re
@@ -13,14 +14,14 @@ from datetime import UTC, datetime
 from functools import cache, partial
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markdown_it import MarkdownIt
 from markupsafe import Markup
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
@@ -34,6 +35,8 @@ from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
 from slowshield.web import is_loopback_host, local_http_origin
+
+log = logging.getLogger(__name__)
 
 TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
@@ -183,6 +186,8 @@ class UI:
             Route("/ui/partials/blocklist", self.blocklist_partial),
             Route("/ui/feeds", self.feeds),
             Route("/ui/setup", self.setup),
+            Route("/ui/shieldwall", self.shieldwall),
+            Route("/ui/shieldwall/join", self.shieldwall_join, methods=["POST"]),
             Route("/ui/about", self.about),
             Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
@@ -210,10 +215,38 @@ class UI:
             "cfg": cfg.raw,
             "enabled": {eco: getattr(cfg.raw.upstreams, eco).enabled for eco in IDS},
             "now": self.ctx.clock.now(),
+            "shieldwall_role": cfg.raw.shieldwall.role,
+            "shieldwall_join": self._shieldwall_join_pending(),
+            "instance_names": self._instance_names(),
         }
         base.update(context)
         html = tpl.render(base)
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    def _shieldwall_join_pending(self) -> dict[str, Any] | None:
+        """A follower waiting for the operator to confirm its leader (the banner on every page)."""
+        if self.ctx.cfg.raw.shieldwall.role != "follower":
+            return None
+        row = self.ctx.db.readers.one(
+            "SELECT name, url FROM shieldwall_leader WHERE id = 1 AND state = 'pending' AND confirmed_by IS NULL"
+        )
+        return {"name": row[0], "url": row[1]} if row else None
+
+    def _instance_names(self) -> dict[str, str]:
+        """A leader's instances by ID, for the instance column ('' is the leader itself)."""
+        if self.ctx.cfg.raw.shieldwall.role != "leader":
+            return {}
+        names = {r[0]: r[1] for r in self.ctx.db.readers.query("SELECT id, name FROM shieldwall_members")}
+        return {"": "this instance", **names}
+
+    def _scope(self, request: Request) -> str:
+        """`?in=`: on a shield wall's leader, the instances a page covers (Q.scope_instances)."""
+        if self.ctx.cfg.raw.shieldwall.role != "leader":
+            return ""
+        return (request.query_params.get("in") or "").strip()[:200]
+
+    def _instances(self, conn: Any, scope: str) -> tuple[str, ...] | None:
+        return Q.scope_instances(conn, scope, self.ctx.cfg.raw.shieldwall.location) if scope else None
 
     async def _q(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         conn = self.ctx.db.readers
@@ -239,17 +272,21 @@ class UI:
     async def _dashboard_data(self, request: Request) -> dict[str, Any]:
         w = self._window(request)
         eco = self._eco(request)
+        scope = self._scope(request)
+        leader = self.ctx.cfg.raw.shieldwall.role == "leader"
 
         def collect(conn: Any) -> dict[str, Any]:
+            inst = self._instances(conn, scope)
             return {
-                "kpis": Q.kpis(conn, w, eco),
-                "dl": Q.series_downloads(conn, w, eco),
-                "dec": Q.series_decisions(conn, w, eco),
-                "top": Q.top_packages(conn, w, eco=eco, limit=10),
-                "top_bytes": Q.top_packages(conn, w, eco=eco, by="bytes", limit=5),
-                "events": Q.recent_events(conn, 8),
+                "kpis": Q.kpis(conn, w, eco, inst),
+                "dl": Q.series_downloads(conn, w, eco, inst),
+                "dec": Q.series_decisions(conn, w, eco, inst),
+                "top": Q.top_packages(conn, w, eco=eco, limit=10, inst=inst),
+                "top_bytes": Q.top_packages(conn, w, eco=eco, by="bytes", limit=5, inst=inst),
+                "events": Q.recent_events(conn, 8, inst=inst),
                 "totals": Q.totals(conn),
                 "new_deps": Q.new_dependencies(conn, w, eco=eco, limit=6),
+                "choices": Q.shieldwall_choices(conn) if leader else None,
             }
 
         data = await self._q(collect)
@@ -272,6 +309,7 @@ class UI:
             **data,
             "w": w,
             "eco": eco,
+            "scope": scope,
             "traffic_chart": traffic,
             "decisions_chart": decisions,
             "installs_spark": svg.sparkline(total_series, width=160, height=32),
@@ -429,10 +467,18 @@ class UI:
         q = (request.query_params.get("q") or "").strip()[:100]
         ip = (request.query_params.get("ip") or "").strip()[:64]
         page = self._page(request)
+        scope = self._scope(request)
+        leader = self.ctx.cfg.raw.shieldwall.role == "leader"
 
         def collect(conn: Any) -> dict[str, Any]:
-            rows = Q.events_page(conn, w, type_=type_, eco=eco, q=q, ip=ip, page=page)
-            return {"rows": rows[:50], "has_next": len(rows) > 50, "counts": Q.event_counts(conn, w)}
+            inst = self._instances(conn, scope)
+            rows = Q.events_page(conn, w, type_=type_, eco=eco, q=q, ip=ip, page=page, inst=inst)
+            return {
+                "rows": rows[:50],
+                "has_next": len(rows) > 50,
+                "counts": Q.event_counts(conn, w, inst),
+                "choices": Q.shieldwall_choices(conn) if leader else None,
+            }
 
         data = await self._q(collect)
         dec = msgspec.json.Decoder()
@@ -446,7 +492,9 @@ class UI:
                     details = {}
             for_rows.append({**dict(r), "details": details})
         data["rows"] = for_rows
-        return {**data, "w": w, "eco": eco, "type": type_, "q": q, "ip": ip, "page": page, "range": w.key}
+        return {
+            **data, "w": w, "eco": eco, "type": type_, "q": q, "ip": ip, "page": page, "range": w.key, "scope": scope,
+        }  # fmt: skip
 
     async def security(self, request: Request) -> Response:
         return self._render("security.html.j2", request, **(await self._security_data(request)))
@@ -459,20 +507,21 @@ class UI:
         rows = await self._q(partial(Q.events_page, w=w, per_page=50_000))
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["time_utc", "type", "ecosystem", "package", "version", "client_ip", "count", "details"])
+        names = self._instance_names()  # a shield wall's leader: which instance saw it
+        head = ["time_utc", "type", "ecosystem", "package", "version", "client_ip", "count", "details"]
+        writer.writerow([*head, "instance"] if names else head)
         for r in rows:
-            writer.writerow(
-                [
-                    fmt_ts(r["ts"]),
-                    r["type"],
-                    r["ecosystem"],
-                    _csv_safe(r["package"]),
-                    _csv_safe(r["version"] or ""),
-                    r["client_ip"] or "",
-                    r["count"],
-                    _csv_safe(r["details"] or ""),
-                ]
-            )
+            row = [
+                fmt_ts(r["ts"]),
+                r["type"],
+                r["ecosystem"],
+                _csv_safe(r["package"]),
+                _csv_safe(r["version"] or ""),
+                r["client_ip"] or "",
+                r["count"],
+                _csv_safe(r["details"] or ""),
+            ]
+            writer.writerow([*row, _csv_safe(names.get(r["instance"], r["instance"]))] if names else row)
         return Response(
             buf.getvalue(),
             media_type="text/csv; charset=utf-8",
@@ -508,6 +557,64 @@ class UI:
         states = await self._q(Q.feed_states)
         counts = await self._q(Q.blocklist_counts)
         return self._render("feeds.html.j2", request, states=states, counts=counts)
+
+    # ---- shield wall ---------------------------------------------------------------------------------
+
+    async def shieldwall(self, request: Request) -> Response:
+        role = self.ctx.cfg.raw.shieldwall.role
+        now = self.ctx.clock.now()
+
+        def collect(conn: Any) -> dict[str, Any]:
+            if role == "leader":
+                return {
+                    "members": Q.shieldwall_members(conn, now),
+                    "invitations": conn.execute(
+                        "SELECT count(*) FROM shieldwall_tokens WHERE used IS NULL AND revoked IS NULL AND expires > ?",
+                        (now,),
+                    ).fetchone()[0],
+                }
+            if role == "follower":
+                return Q.shieldwall_follower(conn)
+            return {}
+
+        data = await self._q(collect)
+        from slowshield.shieldwall.identity import fingerprint
+        from slowshield.shieldwall.policy import Bundle, describe
+
+        if role == "leader":
+            from slowshield.shieldwall.runtime import identity
+
+            me = await asyncio.to_thread(identity, self.ctx)
+            data["fingerprint"] = me.fingerprint if me else ""
+        if role == "follower" and data.get("leader"):
+            leader = data["leader"]
+            leader["fingerprint"] = fingerprint(leader["pubkey"])
+            bundle = Bundle.from_json(leader["policy"]) if leader.get("policy") else None
+            data["policy"] = describe(self.ctx.config.local, bundle)
+            data["sync_age"] = now - leader["last_sync"] if leader.get("last_sync") else None
+        return self._render("shieldwall.html.j2", request, title="Shield wall", **data)
+
+    async def shieldwall_join(self, request: Request) -> Response:
+        """The operator confirms the leader the join string names: the only thing this page can change. It can't
+        pick another leader, leave, or lower anything."""
+        if self.ctx.cfg.raw.shieldwall.role != "follower":
+            return PlainTextResponse("not a shield wall follower", status_code=404)
+        if not _same_origin(request):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        body = await request.body()
+        form = parse_qs(body[:4096].decode("latin-1"))
+        leader_id = (form.get("leader") or [""])[0]
+
+        def op(conn: Any) -> int:
+            return conn.execute(
+                "UPDATE shieldwall_leader SET confirmed_by = 'ui' WHERE id = 1 AND state = 'pending' "
+                "AND confirmed_by IS NULL AND leader_id = ?",
+                (leader_id,),
+            ).rowcount
+
+        if await self.ctx.db.writer.run(op):
+            log.info("shield wall leader confirmed in the UI", extra={"leader": leader_id})
+        return RedirectResponse("/ui/shieldwall", status_code=303)
 
     # ---- static-ish pages -------------------------------------------------------------------------
 
@@ -619,6 +726,18 @@ def _client_os(request: Request) -> str:
     if ("linux" in probe or "x11" in probe) and "android" not in probe:
         return "linux"
     return ""
+
+
+def _same_origin(request: Request) -> bool:
+    """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None and site != "same-origin":
+        return False
+    origin = request.headers.get("origin")
+    if origin is not None:
+        host = request.headers.get("host", "")
+        return origin != "null" and (urlsplit(origin).netloc or "").lower() == host.lower()
+    return True
 
 
 def _qs(base: dict[str, Any], **changes: Any) -> str:

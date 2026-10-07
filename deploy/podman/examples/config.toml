@@ -2,10 +2,11 @@
 # Changes to delays, exceptions and feed settings are picked up within seconds (no restart).
 # Environment variables override these values (see docs/configuration.md).
 
-# Release-age policy
-default_delay_days = 7
-enforce_age_on_download = true   # lockfiles/direct URLs to too-new versions get 403 + Retry-After
-fail_open = true                 # brand-new packages with no old-enough version are served (and logged)
+# Release-age policy. The defaults are shown commented out: a key set here also counts against a shield wall
+# leader's policy (the stricter wins), so a follower that leaves them out simply takes its leader's.
+# default_delay_days = 7
+# enforce_age_on_download = true   # lockfiles/direct URLs to too-new versions get 403 + Retry-After
+# fail_open = true                 # brand-new packages with no old-enough version are served (and logged)
 metadata_cache_ttl_hours = 6
 
 # Security events record the client IP (taken from Caddy's X-Forwarded-For).

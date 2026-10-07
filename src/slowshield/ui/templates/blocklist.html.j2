@@ -20,7 +20,8 @@
   <label><span class="sr-only">Ecosystem</span><select name="eco"><option value="">All ecosystems</option>
     {{ m.eco_options(eco) }}</select></label>
   <label><span class="sr-only">Source</span><select name="source"><option value="">All sources</option>
-    <option value="osv"{% if source == "osv" %} selected{% endif %}>OSV</option><option value="github"{% if source == "github" %} selected{% endif %}>GitHub</option></select></label>
+    <option value="osv"{% if source == "osv" %} selected{% endif %}>OSV</option><option value="github"{% if source == "github" %} selected{% endif %}>GitHub</option>
+    <option value="config"{% if source == "config" %} selected{% endif %}>Administrator</option><option value="leader"{% if source == "leader" %} selected{% endif %}>Shield wall leader</option></select></label>
   <label><span class="sr-only">Scope</span><select name="scope"><option value="">Any scope</option>
     <option value="package"{% if scope == "package" %} selected{% endif %}>Whole package</option><option value="version"{% if scope == "version" %} selected{% endif %}>Specific versions</option></select></label>
   <noscript><button type="submit">Apply</button></noscript>

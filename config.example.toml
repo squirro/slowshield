@@ -3,6 +3,8 @@
 # always come from the environment or mounted files (GITHUB_TOKEN / GITHUB_TOKEN_FILE).
 # Changes to policy keys (delays, exceptions, fail_open, feeds, mirrors) are picked up at runtime
 # within ~5 seconds; listener/storage/routing keys need a restart.
+# On a shield wall follower, the policy keys set here (default_delay_days, enforce_age_on_download, fail_open)
+# count against the leader's: the stricter wins. Leave them out to take the leader's (docs/design/shieldwall.md).
 
 bind_address = "0.0.0.0:8080"          # SLOWSHIELD_BIND
 public_url = "https://slowshield.example.com"   # SLOWSHIELD_PUBLIC_URL - how clients reach the UI host
@@ -93,6 +95,19 @@ enabled = true
 
 [feeds.github_advisory]                # GitHub Advisory Database (malware); needs GITHUB_TOKEN
 enabled = true
+
+# --- shield wall ----------------------------------------------------------------------------------
+# One leader, many followers (docs/design/shieldwall.md). Usually set through the environment.
+# [shieldwall]
+# role = "standalone"                  # SLOWSHIELD_SHIELDWALL_ROLE: standalone | leader (a join string: follower)
+# join = "ssj1:…"                      # SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE: from `slowshield shieldwall invite`
+# join_confirm = "ui"                  # SLOWSHIELD_JOIN_CONFIRM: ui (click Join on the Shield wall page) | auto
+# name = "zurich-1"                    # SLOWSHIELD_INSTANCE_NAME (default: the host name)
+# location = "zurich"                  # SLOWSHIELD_INSTANCE_LOCATION
+# labels = { env = "prod" }            # SLOWSHIELD_INSTANCE_LABELS=env=prod,team=ml
+# min_delay_days = 1                   # SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS: no delay from the leader goes lower
+# via_leader = true                    # SLOWSHIELD_SHIELDWALL_VIA_LEADER: package files through the leader
+# leader_ca_file = "/certs/leader.pem" # SLOWSHIELD_LEADER_CA_FILE: a leader whose certificate a private CA signed
 
 # --- per-package exceptions ------------------------------------------------------------------------
 # Longer or shorter delays for specific packages, or release one specific version early.

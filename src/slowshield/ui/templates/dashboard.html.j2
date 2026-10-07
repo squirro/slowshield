@@ -9,8 +9,10 @@
       before SlowShield serves them{% if cfg.exceptions %}, with {{ cfg.exceptions|length }} package exception{{ "s" if cfg.exceptions|length != 1 }}{% endif %}.</p>
   </div>
   <div class="controls">
-    {{ m.eco_filter(eco, "/ui/", {"range": w.key}) }}
-    {{ m.range_picker(w.key, "/ui/", {"eco": eco}) }}
+    {% if choices %}<form action="/ui/" method="get">{% if eco %}<input type="hidden" name="eco" value="{{ eco }}">{% endif %}
+      <input type="hidden" name="range" value="{{ w.key }}">{{ m.scope_select(scope, choices) }}<noscript><button type="submit" class="button">Show</button></noscript></form>{% endif %}
+    {{ m.eco_filter(eco, "/ui/", {"range": w.key, "in": scope}) }}
+    {{ m.range_picker(w.key, "/ui/", {"eco": eco, "in": scope}) }}
   </div>
 </div>
 {% include "partials/dashboard_body.html.j2" %}

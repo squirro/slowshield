@@ -50,9 +50,11 @@ workers: 2
 
 # config.toml for SlowShield (hot-reloaded; environment variables set by this chart take precedence).
 config: |
-  default_delay_days = 7
-  enforce_age_on_download = true
-  fail_open = true
+  # Release-age policy: the defaults, commented out. A key set here also counts against a shield wall leader's
+  # policy (the stricter wins), so a follower that leaves them out simply takes its leader's.
+  # default_delay_days = 7
+  # enforce_age_on_download = true
+  # fail_open = true
   metadata_cache_ttl_hours = 6
   record_client_ip = true
   client_ip_retention_days = 30
@@ -120,6 +122,22 @@ caddy:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
+
+# Shield wall (docs/design/shieldwall.md): one leader, many followers. A leader sets role: leader and prints join
+# strings with `kubectl exec deploy/<release> -c slowshield -- slowshield shieldwall invite`; a follower gets one.
+shieldwall:
+  role: standalone  # standalone | leader (a join string makes this instance a follower)
+  # A follower's join string, from a Secret: kubectl create secret generic slowshield-join --from-literal=join='ssj1:…'
+  joinSecret: ""
+  joinSecretKey: join
+  confirm: ui  # ui: the operator clicks Join on the Shield wall page; auto: join without the click
+  name: ""  # default: the pod's host name
+  location: ""
+  labels: {}  # e.g. {env: prod, team: ml}
+  # With networkPolicy enabled, egress rules to a leader that isn't on the public internet, e.g.
+  #   - ports: [{port: 443, protocol: TCP}]
+  #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]
+  leaderEgress: []
 
 # OpenTelemetry (traces, metrics, logs via OTLP/HTTP), e.g. an in-cluster Alloy:
 #   otlpEndpoint: http://alloy.observability.svc.cluster.local:4318

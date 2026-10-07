@@ -1,6 +1,6 @@
 {% import "macros.html.j2" as m with context %}
 <div class="htmx-region" id="dashboard-body"
-     hx-get="/ui/partials/dashboard{{ qs({'range': w.key, 'eco': eco}) }}" hx-trigger="every 30s" hx-swap="outerHTML">
+     hx-get="/ui/partials/dashboard{{ qs({'range': w.key, 'eco': eco, 'in': scope}) }}" hx-trigger="every 30s" hx-swap="outerHTML">
   <section class="kpis kpis-12" aria-label="Key figures">
     {# Row 1: usage #}
     {{ m.kpi("Installs served", kpis.installs.value|num, kpis.installs.delta, spark=installs_spark, href="/ui/packages?range=" ~ w.key) }}

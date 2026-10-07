@@ -51,10 +51,15 @@
 		-Via
 	}
 
-	# Only GET/HEAD, plus POST for `npm audit` (forwarded to the registry by SlowShield).
+	# Only GET/HEAD, plus POST for `npm audit` (forwarded to the registry by SlowShield), for a shield wall leader's
+	# API (its followers report there) and for the Join button on a follower's Shield wall page.
 	@audit {
 		method POST
 		path_regexp audit ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
+	}
+	@shieldwall {
+		method POST
+		path /_shieldwall/v1/join /_shieldwall/v1/sync
 	}
 	@forbidden_method {
 		not method GET HEAD
@@ -62,12 +67,24 @@
 			method POST
 			path_regexp ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
 		}
+		not {
+			method POST
+			path /_shieldwall/v1/join /_shieldwall/v1/sync /ui/shieldwall/join
+		}
 	}
 	respond @forbidden_method 405
+	# Every matching request_body applies, so the limits must not overlap.
+	@small_body {
+		not path_regexp ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
+		not path /_shieldwall/v1/join /_shieldwall/v1/sync
+	}
 	request_body @audit {
 		max_size 10MB
 	}
-	request_body {
+	request_body @shieldwall {
+		max_size 8MB
+	}
+	request_body @small_body {
 		max_size 16KB
 	}
 

@@ -8,8 +8,10 @@ SlowShield is built on these open-source projects. Thank you to their authors an
 |---|---|---|---|
 | anyio | 4.15.1 | MIT | [link](https://github.com/agronholm/anyio) |
 | certifi | 2026.7.22 | Mozilla Public License 2.0 (MPL 2.0) | [link](https://github.com/certifi/python-certifi) |
+| cffi | 2.1.1 | MIT-0 | [link](https://github.com/python-cffi/cffi) |
 | charset-normalizer | 3.5.1 | MIT |  |
 | click | 8.5.0 | BSD-3-Clause | [link](https://github.com/pallets/click/) |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | [link](https://github.com/pyca/cryptography) |
 | defusedxml | 0.7.1 | Python Software Foundation License | [link](https://github.com/tiran/defusedxml) |
 | googleapis-common-protos | 1.75.3 | Apache-2.0 | [link](https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos) |
 | granian | 2.8.3 | BSD License | [link](https://github.com/emmett-framework/granian) |
@@ -27,6 +29,7 @@ SlowShield is built on these open-source projects. Thank you to their authors an
 | opentelemetry-semantic-conventions | 0.65b0 | Apache-2.0 | [link](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | [link](https://github.com/pypa/packaging) |
 | protobuf | 7.36.2 | 3-Clause BSD License | [link](https://developers.google.com/protocol-buffers/) |
+| pycparser | 3.0 | BSD-3-Clause | [link](https://github.com/eliben/pycparser) |
 | pyreqwest | 0.13.0 | see project | [link](https://github.com/MarkusSintonen/pyreqwest) |
 | python-dotenv | 1.2.3 | BSD-3-Clause | [link](https://github.com/theskumar/python-dotenv) |
 | requests | 2.34.2 | Apache Software License | [link](https://github.com/psf/requests) |

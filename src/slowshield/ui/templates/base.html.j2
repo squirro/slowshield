@@ -26,6 +26,7 @@
     {% set nav = [
       ("/ui/", "Overview"), ("/ui/packages", "Packages"), ("/ui/leaderboards", "Leaderboards"),
       ("/ui/security", "Security"), ("/ui/blocklist", "Blocklist"), ("/ui/feeds", "Feeds"), ("/ui/setup", "Setup")] %}
+    {% if shieldwall_role != "standalone" %}{% set nav = nav + [("/ui/shieldwall", "Shield wall")] %}{% endif %}
     {% for href, label in nav %}
       <a href="{{ href }}"{% if (href == "/ui/" and path == "/ui/") or (href != "/ui/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
@@ -33,6 +34,12 @@
   <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle dark mode">◐</button>
 </header>
 
+{% if shieldwall_join and path != "/ui/shieldwall" %}
+<div class="banners">
+  <div class="banner warn" role="status"><strong>Shield wall:</strong> this instance is set up to join {{ shieldwall_join.name or shieldwall_join.url }}.
+    <a href="/ui/shieldwall">Check the leader and join →</a></div>
+</div>
+{% endif %}
 {% if feed_warnings %}
 <div class="banners">
   {% for f in feed_warnings %}

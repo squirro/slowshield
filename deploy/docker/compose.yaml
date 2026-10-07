@@ -40,6 +40,12 @@ services:
       SLOWSHIELD_LOG_LEVEL: ${SLOWSHIELD_LOG_LEVEL:-info}
       # Same switch as Caddy's: the Setup page and npm tarball URLs then offer http://localhost.
       SLOWSHIELD_LOCAL_HTTP: ${SLOWSHIELD_LOCAL_HTTP:-on}
+      # Shield wall (docs/design/shieldwall.md): SLOWSHIELD_SHIELDWALL_ROLE=leader on the leader; SLOWSHIELD_JOIN on a
+      # follower (from `docker compose exec slowshield slowshield shieldwall invite` on the leader).
+      SLOWSHIELD_SHIELDWALL_ROLE: ${SLOWSHIELD_SHIELDWALL_ROLE:-}
+      SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
+      SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}
+      SLOWSHIELD_INSTANCE_LOCATION: ${SLOWSHIELD_INSTANCE_LOCATION:-}
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token
     configs:

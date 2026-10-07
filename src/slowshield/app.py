@@ -17,7 +17,7 @@ from opentelemetry import context as otel_context
 from opentelemetry import propagate
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route, Router
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -43,6 +43,8 @@ from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
 from slowshield.feeds.osv import OsvFeed
 from slowshield.recorder import Recorder, retention
+from slowshield.shieldwall import runtime as wall
+from slowshield.shieldwall.identity import Identity
 from slowshield.telemetry import instruments, logsetup, process
 from slowshield.upstream import Upstream
 from slowshield.web.security import SecurityHeadersMiddleware
@@ -156,6 +158,7 @@ class SlowShield:
         self._tasks: list[asyncio.Task[Any]] = []
         self._leader = Leader(Path(cfg.raw.data_dir) / "leader.lock")
         self._scheduler: FeedScheduler | None = None
+        self._identity: Identity | None = None  # this instance's shield wall key (leaders and followers)
         self._ready = False
         self._handler: ASGIApp = PlainTextResponse("starting", status_code=503)
         self.root_routes: tuple[Any, ...] = ()  # the main host's routes, checked against slowshield.routing
@@ -171,6 +174,7 @@ class SlowShield:
         await asyncio.to_thread(ctx.db.open)
         await asyncio.to_thread(ctx.metadata_store.open)
         await sync_blocks(ctx)
+        await self._shieldwall_startup(ctx)
         for store in ctx.artifacts.stores.values():
             store.prepare()
         for w in self.cfg.warnings:
@@ -210,6 +214,24 @@ class SlowShield:
             },
         )
 
+    async def _shieldwall_startup(self, ctx: AppContext) -> None:
+        sw = self.cfg.raw.shieldwall
+        self._identity = await asyncio.to_thread(wall.identity, ctx)
+        await ctx.db.writer.run(partial(wall.set_role, role=sw.role, now=self.clock.now()))
+        if sw.role == "follower" and self._identity is not None:
+            if sw.via_leader:
+                from slowshield.shieldwall.join import JoinString
+                from slowshield.shieldwall.transport import Transport
+                from slowshield.shieldwall.via import ViaLeader
+
+                transport = Transport(f"SlowShield/{__version__}", sw.leader_ca_file)
+                url = JoinString.parse(sw.join or "").url
+                ctx.artifacts.via = ViaLeader(self._identity, url, transport, self.clock)
+            await wall.refresh(ctx)  # the leader's policy applies from the first request on
+        if self._identity is not None:
+            log.info("shield wall", extra={"role": sw.role, "instance": self._identity.id,
+                                     "fingerprint": self._identity.fingerprint})  # fmt: skip
+
     async def shutdown(self) -> None:
         self._ready = False
         for t in self._tasks:
@@ -221,6 +243,8 @@ class SlowShield:
         if self.ctx is not None:
             self.ctx.recorder.flush()
             await self.ctx.upstream.close()
+            if self.ctx.artifacts.via is not None:
+                await self.ctx.artifacts.via.transport.close()
             await asyncio.to_thread(self.ctx.db.close)
             self.ctx.metadata_store.close()
         self._leader.release()
@@ -281,9 +305,15 @@ class SlowShield:
     async def _config_watcher(self, ctx: AppContext) -> None:
         while True:
             await asyncio.sleep(5)
-            if await asyncio.to_thread(ctx.config.maybe_reload):
-                ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
-                await sync_blocks(ctx)
+            try:
+                if await asyncio.to_thread(ctx.config.maybe_reload):
+                    ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
+                    await sync_blocks(ctx)
+                await wall.refresh(ctx)  # what the shield wall loop (on the elected worker) took from the leader
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("config refresh failed")
 
     async def _leader_loop(self, ctx: AppContext) -> None:
         if self._scheduler is None:  # pragma: no cover - startup always creates it
@@ -297,7 +327,12 @@ class SlowShield:
             log.info("this worker is the leader (feeds, cache maintenance, retention)")
             for store in ctx.artifacts.stores.values():
                 await asyncio.to_thread(store.cleanup)
-            await asyncio.gather(self._scheduler.run_forever(), self._maintenance(ctx))
+            jobs = [self._scheduler.run_forever(), self._maintenance(ctx)]
+            if self.cfg.raw.shieldwall.role == "follower" and self._identity is not None:
+                from slowshield.shieldwall.follower import FollowerService
+
+                jobs.append(FollowerService(ctx, self._identity).run())
+            await asyncio.gather(*jobs)
         finally:
             follower.cancel()
 
@@ -322,6 +357,9 @@ class SlowShield:
                             ip_days=raw.client_ip_retention_days,
                         )
                     )
+                    await ctx.db.writer.run(partial(wall.retention, now=now))
+                if raw.shieldwall.role == "follower":
+                    await wall.housekeeping(ctx)
                 if now - last_scrub > raw.cache.scrub_interval_hours * 3600:
                     last_scrub = now
                     for store in ctx.artifacts.stores.values():
@@ -365,6 +403,18 @@ class SlowShield:
             main.append(Mount("/cargo", app=cargo))
         if oci is not None:
             main.append(Mount("/v2", app=oci))  # the OCI distribution API is mandated at the root
+        if raw.shieldwall.role == "leader" and self._identity is not None:
+            from slowshield.shieldwall.leader import LeaderService, well_known
+
+            identity = self._identity
+            main.append(Mount("/_shieldwall/v1", app=LeaderService(ctx, identity).router()))
+            main.append(
+                Route(
+                    "/.well-known/slowshield-shieldwall",
+                    lambda r: JSONResponse(well_known(identity, ctx.cfg), headers={"Cache-Control": "no-store"}),
+                    methods=["GET"],
+                )
+            )
         main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
         main.extend(ui.routes())
         # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
@@ -513,6 +563,8 @@ _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/ui/static/", "/ui/static/{asset}"),
     ("/static/", "/static/{asset}"),
     ("/ui/", "/ui/{page}"),
+    ("/_shieldwall/", "/_shieldwall/{endpoint}"),
+    ("/.well-known/", "/.well-known/{name}"),
 )
 
 

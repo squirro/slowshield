@@ -82,8 +82,11 @@ Requests sign `@method`, `@path`, `@query` and `content-digest` (RFC 9530, sha-2
 carry `created` and are refused beyond ±5 minutes; clocks are assumed to be NTP-synced. The leader looks the key up
 by the signer's ID; a removed member gets a signed 403 with `"removed"`.
 
-HTTPS keeps the traffic confidential, as for every client. A leader behind a private CA (Caddy's internal one, say)
-needs `SLOWSHIELD_LEADER_CA_FILE` on its followers. Request bodies are capped at 8 MB, read before the sender is
+The traffic carries statistics, events and client IPs, so the leader's URL must be `https://`; join strings and
+`invite` refuse plain `http://` except for `localhost`. A leader whose certificate a private CA signed (its Caddy's
+internal CA, say) needs that CA on its followers, in `SLOWSHIELD_LEADER_CA_FILE`: Helm has
+`shieldwall.leaderCaSecret`, Compose `LEADER_CA_SECRET_FILE` (`deploy/docker/secrets/README.md`), and `invite`
+says so. A leader with an ACME certificate needs nothing. Request bodies are capped at 8 MB, read before the sender is
 known; Caddy allows POST to `/_shieldwall/v1/join` and `/sync` with that limit, and to the Join button.
 
 ## Down: what a follower takes
@@ -116,7 +119,8 @@ The follower's effective policy (`shieldwall/policy.py`):
 - **The follower's own exceptions keep their authority** over the leader's default delay; a stricter rule from the
   leader for the same package still applies.
 - **A looser bundle waits an hour.** Until then the stricter of the old and the new applies, and the Shield wall page
-  shows what is waiting. A newer bundle restarts the wait. Tightening never waits.
+  shows what is waiting. A newer bundle restarts the wait. Tightening never waits: the worker that syncs applies it
+  at once, every other worker within a second.
 
 The result replaces the config like a reload, so cached evaluations are dropped. The Shield wall page lists each
 policy key three times: as this instance sets it, as the leader sets it, and what applies.
@@ -164,7 +168,8 @@ Transparency's maximum merge delay; it is this project's own construction and de
   transaction, to `shieldwall_outbox` while the follower is paired. So does the first fingerprint of every file it
   serves.
 - **Delivery.** A sync sends up to 200 entries (4 MB), oldest first. The leader applies them in order, at most once
-  each, by a high-water mark per follower, and acknowledges the mark; the follower deletes what was acknowledged.
+  each, by a high-water mark per follower, and acknowledges the mark; the follower deletes what was acknowledged,
+  never past the last entry that request carried.
   A retried sync can't count anything twice. A follower that can't reach its leader for days keeps queueing and
   drains the queue afterwards; entries older than 30 days are dropped.
 - **History at pairing.** The follower queues its statistics tables as they are, its retained events and the
@@ -174,10 +179,12 @@ Transparency's maximum merge delay; it is this project's own construction and de
   follower, a location or a label (`?in=`). The Shield wall page lists the followers with their last sync and
   queue.
 - **Client IPs** go up with events, unless the follower doesn't record them (`SLOWSHIELD_RECORD_CLIENT_IP=false`).
-- **Fingerprints.** The leader compares every instance's first fingerprint of a file with its own and the others'.
-  Different bytes for the same file somewhere means one instance was served something else: the leader records a
-  `tampered` event, flags the file, and the flag goes down to everyone. Fingerprints followers report are only
-  compared, never sent down as references, so a follower that is taken over can't plant them.
+- **Fingerprints.** The leader compares every follower's first fingerprint of a file with its own. Different bytes
+  for the same file mean one of them was served something else, or that the follower is lying. The leader records a
+  `tampered` event for that follower and refuses the file **on that follower only**, which no other follower hears
+  of: a follower's word never refuses a file anywhere else, so a follower that is taken over can only block itself.
+  Followers that disagree among themselves, on a file the leader has no fingerprint for, are recorded as an
+  `integrity_mismatch` event for the operator. Fingerprints followers report are never sent down as references.
 
 ## Files through the leader
 
@@ -227,10 +234,10 @@ the variables through.
 |---|---|---|
 | A leader that is taken over | the floor; the hour's wait and the page that shows it; blocks are a union with the follower's own feeds; the late-news rule; evidence direct and every byte checked; the "never" class | after an hour it can lower delays to the floor; it can backdate observations by about one sync (a day after an outage); after a day it can lift GitHub-only blocks on followers without a token; it can deny service with bogus blocks or tamper flags, and stop syncing (the page shows the sync age) |
 | A leader taken over before a follower pairs | none beyond the floor: pairing trusts the leader's past | planted history is accepted; said so on this page |
-| A follower that is taken over | everything is attributed to it; its fingerprints are only compared; the leader fetches only from its own upstream hosts; `shieldwall remove` | polluted statistics until removed; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
+| A follower that is taken over | everything is attributed to it; its fingerprints are checked and compared, and refuse files on that follower only; the leader fetches only from its own upstream hosts; `shieldwall remove` | polluted statistics until removed; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
 | Someone with the join string | single use, 10 minutes; bound to the follower's key; the follower checks the leader's key hash | whoever uses it first joins; the operator sees every follower on the leader |
 | Someone on a follower's UI | the leader comes from the environment; Join only confirms it, from the page itself | they can click Join for the leader the operator configured |
-| A network attacker | TLS; signatures on every message, responses bound to their requests | none beyond TLS's own |
+| A network attacker | TLS (the leader's URL must be https); signatures on every message, responses bound to their requests; only a signed refusal removes a follower; acknowledgements never delete reports that weren't sent | none beyond TLS's own |
 | Skewed clocks | ±5 minutes on signatures; the late-news rule runs on the follower's clock | policy depends on clocks anyway |
 
 ## Why a protocol of its own

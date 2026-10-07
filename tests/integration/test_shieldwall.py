@@ -61,8 +61,7 @@ class Pair:
 
     async def sync(self) -> None:
         await self.follower.drain()
-        await self.service.step()
-        await runtime.refresh(self.follower.ctx)
+        await self.service.step()  # applies what it took on this worker at once (no refresh here)
         await self.leader.drain()
 
 
@@ -181,6 +180,17 @@ async def test_pairing_reports_and_policy(pair: Pair) -> None:
         assert r.status_code == 200
     r = await p.leader.client.get("/ui/shieldwall")
     assert "zurich-1" in r.text
+    # The security CSV keeps the scope it was narrowed to.
+    await p.leader.ctx.db.writer.run(
+        lambda c: c.executemany(
+            "INSERT INTO events (ts, type, ecosystem, package, count, instance) VALUES (?, 'blocked', 'npm', ?, 1, ?)",
+            [(NOW, "seen-here", ""), (NOW, "seen-there", member)],
+        )
+    )
+    page = await p.leader.client.get(f"/ui/security?in={member}")
+    assert f"/ui/security.csv?range=30d&amp;in={member}" in page.text
+    csv = (await p.leader.client.get(f"/ui/security.csv?in={member}")).text
+    assert "seen-there" in csv and "seen-here" not in csv
 
 
 async def test_loosening_waits_and_tightening_does_not(pair: Pair) -> None:
@@ -285,6 +295,7 @@ async def test_removed_follower_goes_its_own_way(pair: Pair) -> None:
     await p.leader.ctx.db.writer.run(lambda c: c.execute("UPDATE shieldwall_members SET state = 'removed'"))
     await p.sync()
     assert p.follower.rows("SELECT state FROM shieldwall_leader") == [("removed",)]
+    await runtime.refresh(p.follower.ctx)
     assert p.follower.ctx.cfg.raw.default_delay_days == 7  # back to its own config
 
 
@@ -303,7 +314,9 @@ async def test_leader_refuses_bad_joins(pair: Pair) -> None:
     assert r.status_code == 403
 
 
-async def test_different_bytes_somewhere_flag_the_file_everywhere(pair: Pair) -> None:
+async def test_a_follower_that_saw_other_bytes_refuses_the_file(pair: Pair) -> None:
+    from slowshield.shieldwall.leader import change_rows
+
     p = pair
     await _join(p)
     path = _wheel(p.follower)
@@ -316,11 +329,16 @@ async def test_different_bytes_somewhere_flag_the_file_everywhere(pair: Pair) ->
     p.net.down = True  # straight from the registry
     assert (await p.follower.client.get(f"/pypi{path}")).status_code == 200
     p.net.down = False
-    await p.sync()  # the fingerprint goes up, the leader flags the file
+    await p.sync()  # the fingerprint goes up, the leader flags the file for this follower
     await p.sync()  # the flag comes down
-    assert p.leader.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(1,)]
     assert p.follower.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(1,)]
     assert (await p.follower.client.get(f"/pypi{path}")).status_code == 451
+    # A follower's word refuses the file on that follower only: not on the leader, and no other follower hears of it.
+    assert p.leader.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(0,)]
+    member = p.follower.app._identity.id  # type: ignore[union-attr]
+    assert p.leader.rows("SELECT type, instance FROM events WHERE type = 'tampered'") == [("tampered", member)]
+    others, _ = change_rows(p.leader.ctx.db.readers.get(), 0, 1000, "sother")
+    assert not [c for c in others if c["dataset"] == "flag"]
 
 
 async def test_cli_invite_members_and_remove(
@@ -345,15 +363,16 @@ async def test_cli_invite_members_and_remove(
     assert cli.main(["shieldwall", "invite", "--config", str(standalone)]) == 2
 
 
-async def test_followers_that_disagree_flag_a_file_the_leader_never_served(pair: Pair) -> None:
+async def test_followers_that_disagree_are_reported_not_flagged(pair: Pair) -> None:
     p = pair
     await _join(p)
     path = _wheel(p.follower, version="1.1.0")
-    # Another follower reported other bytes for this file earlier; the leader never served it.
+    # Another follower reported other bytes for this file earlier; the leader never served it, so it can't tell
+    # which of them is right.
     await p.leader.ctx.db.writer.run(
         lambda c: c.execute(
-            "INSERT INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen) VALUES "
-            "('pypi', ?, 'sother', ?, 0)",
+            "INSERT INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen, package, version) "
+            "VALUES ('pypi', ?, 'sother', ?, 0, 'alpha', '1.1.0')",
             (path, "e" * 64),
         )
     )
@@ -362,11 +381,11 @@ async def test_followers_that_disagree_flag_a_file_the_leader_never_served(pair:
     p.net.down = False
     await p.sync()
     await p.sync()
-    assert p.leader.rows("SELECT package, version, tampered FROM artifacts WHERE path = ?", (path,)) == [
-        ("alpha", "1.1.0", 1)
+    assert p.leader.rows("SELECT count(*) FROM artifacts WHERE path = ?", (path,)) == [(0,)]
+    assert p.leader.rows("SELECT type, package FROM events WHERE ecosystem = 'pypi'") == [
+        ("integrity_mismatch", "alpha")
     ]
-    assert p.leader.rows("SELECT package FROM events WHERE type = 'tampered'") == [("alpha",)]
-    assert (await p.follower.client.get(f"/pypi{path}")).status_code == 451
+    assert (await p.follower.client.get(f"/pypi{path}")).status_code == 200
 
 
 async def test_only_the_leader_can_remove_a_follower(pair: Pair) -> None:

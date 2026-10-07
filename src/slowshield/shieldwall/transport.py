@@ -49,8 +49,9 @@ class Transport:
             .pool_idle_timeout(timedelta(seconds=90))
             .gzip(True)
         )
-        if ca_file:
-            builder = builder.add_root_certificate_pem(Path(ca_file).read_bytes())
+        pem = Path(ca_file).read_bytes() if ca_file else b""
+        if pem.strip():  # an empty file (the Compose placeholder) adds nothing
+            builder = builder.add_root_certificate_pem(pem)
         self.client: Client = builder.build()
 
     async def close(self) -> None:

@@ -55,6 +55,7 @@ helm install slowshield deploy/helm/slowshield \
 | `shieldwall.joinSecret` / `.joinSecretKey` | `""` / `join` | A Secret with a follower's join string (from `slowshield shieldwall invite` on the leader) |
 | `shieldwall.name` / `.location` / `.labels` | `""` / `""` / `{}` | How the leader shows and filters this follower |
 | `shieldwall.leaderEgress` | `[]` | Network policy egress rules to a leader on a private network |
+| `shieldwall.leaderCaSecret` / `.leaderCaSecretKey` | `""` / `ca.crt` | A Secret with the CA that signed the leader's certificate (its Caddy's internal CA); not needed for an ACME leader |
 
 `helm test slowshield` runs a pod (the SlowShield image itself) that checks `/healthz` through the Service.
 

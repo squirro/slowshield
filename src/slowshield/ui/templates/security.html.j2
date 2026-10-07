@@ -5,7 +5,7 @@
 <div class="page-head">
   <div><h1>Security timeline</h1><p class="muted">Blocked malware, tamper detections, fail-open serves and downloads refused for being too new.</p></div>
   <div class="controls">{{ m.range_picker(range, "/ui/security", {"type": type, "eco": eco, "q": q, "ip": ip, "in": scope}) }}
-    <a class="button" href="/ui/security.csv?range={{ range }}">Export CSV</a></div>
+    <a class="button" href="/ui/security.csv{{ qs({'range': range, 'in': scope}) }}">Export CSV</a></div>
 </div>
 <div class="chips" role="group" aria-label="Event type">
   <a href="/ui/security{{ qs({'range': range, 'eco': eco, 'q': q, 'ip': ip, 'in': scope}) }}"{% if not type %} aria-current="true"{% endif %}>All <b>{{ counts.values()|sum }}</b></a>

@@ -134,6 +134,10 @@ shieldwall:
   name: ""  # default: the pod's host name
   location: ""
   labels: {}  # e.g. {env: prod, team: ml}
+  # A leader whose certificate a private CA signed (its Caddy's internal CA, say): a Secret with that CA certificate,
+  # mounted for SLOWSHIELD_LEADER_CA_FILE. Not needed for a publicly trusted (ACME) leader.
+  leaderCaSecret: ""
+  leaderCaSecretKey: ca.crt
   # With networkPolicy enabled, egress rules to a leader that isn't on the public internet, e.g.
   #   - ports: [{port: 443, protocol: TCP}]
   #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]

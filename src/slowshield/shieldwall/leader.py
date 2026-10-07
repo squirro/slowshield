@@ -24,7 +24,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route, Router
 
 from slowshield import __version__
-from slowshield.config import LoadedConfig
+from slowshield.config import ECOSYSTEMS, LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import IntegrityAbort, StreamedArtifact
 from slowshield.recorder import Batch, write_batch
@@ -110,14 +110,17 @@ def current_policy(conn: Any, cfg: LoadedConfig, now: float, *, seen: int = 0) -
 # ---- changes followers take ---------------------------------------------------------------------------------
 
 
-def change_rows(conn: Any, after: int, limit: int) -> tuple[list[dict[str, Any]], bool]:
+def change_rows(conn: Any, after: int, limit: int, member: str) -> tuple[list[dict[str, Any]], bool]:
+    """Changes after `after` for `member`. A flag for one follower goes to that follower only (and tells nobody
+    else which files it served)."""
     rows = conn.execute(
         "SELECT seq, dataset, key FROM shieldwall_changes WHERE seq > ? ORDER BY seq LIMIT ?", (after, limit + 1)
     ).fetchall()
     more = len(rows) > limit
     out: list[dict[str, Any]] = []
     for seq, dataset, key in rows[:limit]:
-        row = _change_row(conn, dataset, key)
+        mine = dataset != "flag" or key.rsplit("\n", 1)[-1] == member
+        row = _change_row(conn, dataset, key) if mine else None
         if row is not None:
             out.append({"seq": seq, "dataset": dataset, "row": row})
         else:
@@ -142,6 +145,16 @@ def _change_row(conn: Any, dataset: str, key: str) -> dict[str, Any] | None:
             "SELECT package, version, filename FROM artifacts WHERE ecosystem = ? AND path = ?", (eco, path)
         ).fetchone()
         return {"ecosystem": eco, "path": path, "package": r[0], "version": r[1], "filename": r[2]} if r else None
+    if dataset == "flag":
+        eco, path, member = key.split("\n", 2)
+        r = conn.execute(
+            "SELECT package, version, sha256 FROM shieldwall_fingerprints WHERE ecosystem = ? AND path = ? AND "
+            "instance = ? AND flagged IS NOT NULL",
+            (eco, path, member),
+        ).fetchone()
+        if r is None:
+            return None
+        return {"instance": member, "ecosystem": eco, "path": path, "package": r[0], "version": r[1], "sha256": r[2]}
     if dataset == "gone":
         repo, _, digest = key.partition("\n")
         r = conn.execute("SELECT gone FROM oci_digests WHERE repository = ? AND digest = ?", (repo, digest)).fetchone()
@@ -179,49 +192,85 @@ def apply_outbox(conn: Any, member: str, hwm: int, entries: list[dict[str, Any]]
         if kind == "stats":
             write_batch(conn, msgspec.json.decode(entry["body"], type=Batch), instance=member)
         elif kind == "fingerprints":
-            for eco, path, sha256, first_seen, package, version in json.loads(entry["body"]):
-                conn.execute(
-                    "INSERT OR IGNORE INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (eco, path, member, sha256, first_seen),
-                )
-                _compare_fingerprint(conn, member, (eco, path, package, version), sha256=sha256, now=now)
+            for item in json.loads(entry["body"]):
+                fp = _fingerprint(item)
+                if fp is None:
+                    log.warning("ignored a malformed fingerprint", extra={"member": member})
+                    continue
+                eco, path, sha256, first_seen, package, version = fp
+                added = conn.execute(
+                    "INSERT OR IGNORE INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen, "
+                    "package, version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (eco, path, member, sha256, first_seen, package, version),
+                ).rowcount
+                if added:
+                    _compare_fingerprint(conn, member, (eco, path, package, version), sha256=sha256, now=now)
         hwm = seq
     return hwm
+
+
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+def _fingerprint(item: Any) -> tuple[str, str, str, float, str, str | None] | None:
+    """A reported fingerprint, checked: (ecosystem, path, sha256, first_seen, package, version)."""
+    if not isinstance(item, list) or len(item) != 6:
+        return None
+    eco, path, sha256, first_seen, package, version = item
+    ok = (
+        eco in ECOSYSTEMS and isinstance(path, str) and 0 < len(path) <= 2048 and isinstance(sha256, str)
+        and _HEX64.fullmatch(sha256) is not None and isinstance(first_seen, (int, float))
+        and isinstance(package, str) and 0 < len(package) <= 300
+        and (version is None or (isinstance(version, str) and len(version) <= 300))
+    )  # fmt: skip
+    return (eco, path, sha256, float(first_seen), package, version) if ok else None
 
 
 def _compare_fingerprint(
     conn: Any, member: str, file: tuple[str, str, str, str | None], *, sha256: str, now: float
 ) -> None:
-    """Two instances that saw different bytes for the same immutable file: one of them was served something else.
-    The file is flagged here, which flags it on every follower, even where this leader never served it."""
+    """A follower saw other bytes for an immutable file than this leader did: one of them was served something
+    else. A follower's word is never enough to refuse a file everywhere (it could be lying), so the file is refused
+    on that follower only. Followers that disagree among themselves, where this leader has no fingerprint of its
+    own, are recorded for the operator."""
     eco, path, package, version = file
     mine = conn.execute("SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (eco, path)).fetchone()
-    others = {
-        r[0]
-        for r in conn.execute(
-            "SELECT sha256 FROM shieldwall_fingerprints WHERE ecosystem = ? AND path = ? AND instance != ?",
-            (eco, path, member),
-        )
-    }
     if mine and mine[0]:
-        others.add(mine[0])
-    if others and others != {sha256}:
-        details = {
-            "artifact": path,
-            "reason": "instances saw different bytes",
-            "fingerprints": sorted({*others, sha256}),
+        if mine[0] == sha256:
+            return
+        conn.execute(
+            "UPDATE shieldwall_fingerprints SET flagged = ? WHERE ecosystem = ? AND path = ? AND instance = ?",
+            (now, eco, path, member),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO shieldwall_changes (dataset, key, ts) VALUES ('flag', ?, ?)",
+            (f"{eco}\n{path}\n{member}", now),
+        )
+        kind = "tampered"
+        details: dict[str, Any] = {
+            "artifact": path, "reason": "this instance saw different bytes than the leader", "observed_sha256": sha256,
+            "stored_sha256": mine[0],
+        }  # fmt: skip
+    else:
+        others = {
+            r[0]
+            for r in conn.execute(
+                "SELECT sha256 FROM shieldwall_fingerprints WHERE ecosystem = ? AND path = ? AND instance != ?",
+                (eco, path, member),
+            )
         }
-        conn.execute(
-            "INSERT INTO events (ts, type, ecosystem, package, version, count, details, instance) "
-            "VALUES (?, 'tampered', ?, ?, ?, 1, ?, ?)",
-            (now, eco, package, version, json.dumps(details), member),
-        )
-        conn.execute(
-            "INSERT INTO artifacts (ecosystem, path, package, version, filename, first_seen, last_seen, tampered) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 1) ON CONFLICT (ecosystem, path) DO UPDATE SET tampered = 1",
-            (eco, path, package, version, path.rsplit("/", 1)[-1], now, now),
-        )
+        if not others or others == {sha256}:
+            return
+        kind = "integrity_mismatch"
+        details = {
+            "artifact": path, "reason": "instances saw different bytes; the leader has none to compare",
+            "problems": [f"fingerprints: {', '.join(sorted({*others, sha256}))}"],
+        }  # fmt: skip
+    conn.execute(
+        "INSERT INTO events (ts, type, ecosystem, package, version, count, details, instance) "
+        "VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+        (now, kind, eco, package, version, json.dumps(details), member),
+    )
 
 
 # ---- the service --------------------------------------------------------------------------------------------
@@ -393,7 +442,7 @@ class LeaderService:
             if ctx.cfg is not cfg:  # the config was reloaded: maybe a new policy
                 cfg = ctx.cfg
                 policy = await ctx.db.writer.run(partial(current_policy, cfg=cfg, now=ctx.clock.now()))
-        changes, more = await asyncio.to_thread(self._changes, cursor)
+        changes, more = await asyncio.to_thread(self._changes, cursor, member)
         payload = {
             "ack": ack,
             "head": head,
@@ -405,9 +454,9 @@ class LeaderService:
         }
         return self._reply(signed.signature, payload)
 
-    def _changes(self, cursor: int) -> tuple[list[dict[str, Any]], bool]:
+    def _changes(self, cursor: int, member: str) -> tuple[list[dict[str, Any]], bool]:
         conn = self.ctx.db.readers.get()
-        return change_rows(conn, cursor, CHANGES_PER_SYNC)
+        return change_rows(conn, cursor, CHANGES_PER_SYNC, member)
 
     async def blob(self, request: Request) -> Response | StreamedArtifact:
         """A package file for a follower, by content address: from the cache, or fetched from the registry (only

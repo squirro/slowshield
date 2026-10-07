@@ -11,7 +11,7 @@ import math
 import os
 import re
 from datetime import UTC, datetime
-from functools import cache, partial
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -504,7 +504,12 @@ class UI:
 
     async def security_csv(self, request: Request) -> Response:
         w = Q.window(request.query_params.get("range") or "30d", self.ctx.clock.now())
-        rows = await self._q(partial(Q.events_page, w=w, per_page=50_000))
+        scope = self._scope(request)
+
+        def collect(conn: Any) -> list[Any]:
+            return Q.events_page(conn, w, per_page=50_000, inst=self._instances(conn, scope))
+
+        rows = await self._q(collect)
         buf = io.StringIO()
         writer = csv.writer(buf)
         names = self._instance_names()  # a shield wall's leader: which instance saw it

@@ -15,6 +15,7 @@ import hmac
 import re
 import secrets
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from slowshield.shieldwall.identity import b32
 
@@ -44,7 +45,22 @@ class JoinString:
         m = _JOIN.match(text.strip())
         if m is None:
             raise JoinStringError("not a SlowShield join string (ssj1:<url>#<key>.<token>.<secret>)")
-        return cls(m.group(1).rstrip("/"), m.group(2), m.group(3), m.group(4))
+        url = m.group(1).rstrip("/")
+        problem = leader_url_problem(url)
+        if problem:
+            raise JoinStringError(problem)
+        return cls(url, m.group(2), m.group(3), m.group(4))
+
+
+def leader_url_problem(url: str) -> str | None:
+    """Why followers can't use `url` to reach their leader, if they can't. The traffic carries statistics, events
+    and client IPs, so it needs TLS; plain http only reaches a leader on the same host."""
+    parts = urlsplit(url)
+    if parts.scheme == "https":
+        return None
+    if parts.scheme == "http" and (parts.hostname or "") in ("localhost", "127.0.0.1", "::1"):
+        return None
+    return f"the leader's URL must be https:// (plain http only for localhost), got {url}"
 
 
 def new_token() -> tuple[str, str]:

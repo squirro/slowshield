@@ -23,8 +23,8 @@ All notable changes to this project are documented here. The format is based on
     times come down too, with the leader's observation times bounded by how recently the follower synced.
   - Package files come through the leader's cache when it is up (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`), checked by the
     follower as always; a follower that can't reach its leader works on its own.
-  - The leader compares every instance's first fingerprint of a file; different bytes anywhere flag the file
-    everywhere.
+  - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
+    bytes refuses the file, and the leader records it.
 - Container images at `/v2/`, the OCI distribution API, for pulls ([docs/design/oci.md](docs/design/oci.md),
   https://github.com/squirro/slowshield/issues/22). Built in: docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
   mcr.microsoft.com and public.ecr.aws.

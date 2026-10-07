@@ -31,9 +31,11 @@ SYNC_LOG_KEEP = 40 * 86400.0
 _TEXT = 300
 
 
-def apply_sync(conn: Any, cfg: LoadedConfig, doc: dict[str, Any], now: float) -> int:
-    """Apply one sync response. `cfg` is this instance's own config (not the merged one). Returns the new cursor."""
-    conn.execute("DELETE FROM shieldwall_outbox WHERE seq <= ?", (int(doc.get("ack", 0)),))
+def apply_sync(conn: Any, cfg: LoadedConfig, doc: dict[str, Any], now: float, *, sent: int, me: str) -> int:
+    """Apply one sync response. `cfg` is this instance's own config (not the merged one), `sent` the last outbox
+    entry the request carried, `me` this instance's ID. Returns the new cursor."""
+    # Reports go only once the leader has them: never past what this request carried, whatever it acknowledges.
+    conn.execute("DELETE FROM shieldwall_outbox WHERE seq <= ?", (min(int(doc.get("ack", 0)), sent),))
     head = int(doc.get("head", 0))
     row = conn.execute("SELECT cursor, boot_head FROM shieldwall_leader WHERE id = 1").fetchone()
     cursor, boot_head = int(row[0]), int(row[1])
@@ -51,6 +53,8 @@ def apply_sync(conn: Any, cfg: LoadedConfig, doc: dict[str, Any], now: float) ->
                 blocks |= _block(conn, data, now, own_github=own_github)
             elif dataset == "tamper":
                 _tamper(conn, data, now)
+            elif dataset == "flag" and data.get("instance") == me:
+                _flag(conn, data, now)
             elif dataset == "gone":
                 _gone(conn, data, now)
             elif dataset in ("tag", "listed"):
@@ -240,6 +244,24 @@ def _tamper(conn: Any, row: dict[str, Any], now: float) -> None:
             "INSERT INTO events (ts, type, ecosystem, package, version, count, details, instance) "
             "VALUES (?, 'tampered', ?, ?, ?, 1, ?, '')",
             (now, eco, package, version, json.dumps({"artifact": path, "reason": "flagged by the shield wall leader"})),
+        )
+
+
+def _flag(conn: Any, row: dict[str, Any], now: float) -> None:
+    """The leader saw other bytes for a file than this instance did: refuse this instance's copy."""
+    eco, path = row["ecosystem"], _name(row["path"])
+    if eco not in ECOSYSTEMS:
+        raise ValueError(f"unknown ecosystem {eco!r}")
+    flagged = conn.execute(
+        "UPDATE artifacts SET tampered = 1 WHERE ecosystem = ? AND path = ? AND sha256 = ? AND tampered = 0",
+        (eco, path, _name(row["sha256"])),
+    ).rowcount
+    if flagged:
+        details = {"artifact": path, "reason": "the leader saw different bytes for this file"}
+        conn.execute(
+            "INSERT INTO events (ts, type, ecosystem, package, version, count, details, instance) "
+            "VALUES (?, 'tampered', ?, ?, ?, 1, ?, '')",
+            (now, eco, _name(row["package"]), _text(row.get("version")), json.dumps(details)),
         )
 
 

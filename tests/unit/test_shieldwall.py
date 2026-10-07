@@ -91,9 +91,11 @@ def test_join_string_round_trip_and_proof() -> None:
     assert proof_ok(secret, b"k" * 32, "sleader", 123, p)
     assert not proof_ok(secret, b"x" * 32, "sleader", 123, p)  # bound to the follower's key
     assert not proof_ok(secret, b"k" * 32, "sother", 123, p)  # and to the leader
-    for bad in ("", "ssj1:ftp://x#" + "a" * 26 + "." + token + "." + secret, str(j).replace("ssj1", "ssj2")):
+    tail = "#" + "a" * 26 + "." + token + "." + secret
+    for bad in ("", "ssj1:ftp://x" + tail, str(j).replace("ssj1", "ssj2"), "ssj1:http://hq.example.com" + tail):
         with pytest.raises(JoinStringError):
             JoinString.parse(bad)
+    assert JoinString.parse("ssj1:http://localhost:8080" + tail).url == "http://localhost:8080"
 
 
 def test_config_takes_the_join_string_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,3 +203,33 @@ def test_late_news_rule(conn: sqlite3.Connection) -> None:
     assert credited(conn, week, 110, NOW + 3 * 86400, boot_head=100) == NOW + 3 * 86400 - MAX_OUTAGE_CREDIT
     # Never in the future.
     assert credited(conn, NOW + 999, 121, NOW, boot_head=100) == NOW
+
+
+def test_acknowledgements_never_reach_past_what_was_sent(conn: sqlite3.Connection) -> None:
+    from slowshield.shieldwall.apply import apply_sync
+
+    conn.execute(
+        "INSERT INTO shieldwall_leader (id, leader_id, url, pubkey, join_token, state, discovered) "
+        "VALUES (1, 'sl', 'https://hq.test', x'00', 't', 'active', 0)"
+    )
+    conn.executemany(
+        "INSERT INTO shieldwall_outbox (seq, created, kind, body) VALUES (?, 0, 'stats', '{}')", [(1,), (2,), (3,)]
+    )
+    apply_sync(conn, _cfg(), {"ack": 999, "head": 0}, NOW, sent=1, me="sme")
+    assert [r[0] for r in conn.execute("SELECT seq FROM shieldwall_outbox")] == [2, 3]
+
+
+def test_malformed_fingerprints_are_ignored() -> None:
+    from slowshield.shieldwall.leader import _fingerprint
+
+    good = ["pypi", "/packages/a.whl", "a" * 64, 1.0, "alpha", "1.0"]
+    assert _fingerprint(good) is not None
+    for bad in (
+        good[:5],
+        ["cobol", *good[1:]],
+        [*good[:2], "nothex" * 8, *good[3:]],
+        [*good[:4], "", "1.0"],
+        [*good[:2], "A" * 64, *good[3:]],
+        {"ecosystem": "pypi"},
+    ):
+        assert _fingerprint(bad) is None

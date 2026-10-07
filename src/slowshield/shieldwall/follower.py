@@ -25,6 +25,7 @@ from slowshield.shieldwall import signing
 from slowshield.shieldwall.identity import Identity, key_hash
 from slowshield.shieldwall.join import JoinString, proof
 from slowshield.shieldwall.leader import PROTOCOL
+from slowshield.shieldwall.runtime import refresh
 from slowshield.shieldwall.transport import Reply, Send, Transport, TransportError
 from slowshield.telemetry import instruments
 
@@ -261,7 +262,10 @@ class FollowerService:
         from slowshield.shieldwall.apply import apply_sync
 
         local = ctx.config.local
-        await ctx.db.writer.run(lambda conn: apply_sync(conn, local, doc, now))
+        sent = entries[-1]["seq"] if entries else 0
+        me = self.identity.id
+        await ctx.db.writer.run(lambda conn: apply_sync(conn, local, doc, now, sent=sent, me=me))
+        await refresh(ctx)  # a stricter policy applies on this worker now, on the others within a second
         return bool(doc.get("more")) or len(entries) >= OUTBOX_PER_SYNC
 
     def _outbox(self) -> list[dict[str, Any]]:

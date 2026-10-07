@@ -180,6 +180,9 @@ CREATE TABLE shieldwall_fingerprints (
     instance   TEXT NOT NULL,
     sha256     TEXT NOT NULL,
     first_seen REAL NOT NULL,
+    package    TEXT NOT NULL,
+    version    TEXT,
+    flagged    REAL,                               -- the leader saw other bytes: the file is refused on that follower
     PRIMARY KEY (ecosystem, path, instance)
 ) STRICT, WITHOUT ROWID;
 
@@ -200,13 +203,6 @@ CREATE TRIGGER shieldwall_block_delete AFTER DELETE ON blocklist
 WHEN OLD.source IN ('config', 'github') AND (SELECT value FROM meta WHERE key = 'shieldwall_role') = 'leader'
 BEGIN
     INSERT OR REPLACE INTO shieldwall_changes (dataset, key, ts) VALUES ('block', CAST(OLD.id AS TEXT), unixepoch('subsec'));
-END;
-
-CREATE TRIGGER shieldwall_tamper_insert AFTER INSERT ON artifacts
-WHEN NEW.tampered = 1 AND (SELECT value FROM meta WHERE key = 'shieldwall_role') = 'leader'
-BEGIN
-    INSERT OR REPLACE INTO shieldwall_changes (dataset, key, ts)
-    VALUES ('tamper', NEW.ecosystem || char(10) || NEW.path, unixepoch('subsec'));
 END;
 
 CREATE TRIGGER shieldwall_tamper AFTER UPDATE OF tampered ON artifacts

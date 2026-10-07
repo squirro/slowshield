@@ -15,7 +15,7 @@ from pathlib import Path
 from slowshield import config as config_mod
 from slowshield.db import connect, migrate
 from slowshield.shieldwall.identity import Identity, key_hash
-from slowshield.shieldwall.join import TOKEN_TTL, JoinString, new_token
+from slowshield.shieldwall.join import TOKEN_TTL, JoinString, leader_url_problem, new_token
 
 
 def _open(args: argparse.Namespace) -> tuple[config_mod.LoadedConfig, sqlite3.Connection]:
@@ -43,8 +43,12 @@ def cmd_invite(args: argparse.Namespace) -> int:
         )
         return 2
     url = (args.url or cfg.raw.public_url or "").rstrip("/")
-    if not url.startswith(("https://", "http://")):
+    if not url:
         print("the leader needs a URL followers reach: set SLOWSHIELD_PUBLIC_URL or pass --url", file=sys.stderr)
+        return 2
+    problem = leader_url_problem(url)
+    if problem:
+        print(problem, file=sys.stderr)
         return 2
     minutes = max(1, min(args.minutes, 60))
     identity = Identity.load_or_create(Path(cfg.raw.data_dir))
@@ -62,7 +66,9 @@ def cmd_invite(args: argparse.Namespace) -> int:
     print("On the new instance, set it and start SlowShield:\n")
     print(f"  SLOWSHIELD_JOIN='{join}'\n")
     print("Its Shield wall page then asks to confirm this leader. Check that the fingerprint matches:\n")
-    print(f"  {identity.fingerprint}")
+    print(f"  {identity.fingerprint}\n")
+    print("If this leader's certificate isn't publicly trusted (Caddy's internal CA, say), give the follower the CA")
+    print("certificate and set SLOWSHIELD_LEADER_CA_FILE to it (docs/design/shieldwall.md).")
     return 0
 
 

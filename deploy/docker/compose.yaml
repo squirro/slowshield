@@ -46,6 +46,9 @@ services:
       SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
       SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}
       SLOWSHIELD_INSTANCE_LOCATION: ${SLOWSHIELD_INSTANCE_LOCATION:-}
+      # A leader whose certificate a private CA signed (its Caddy's internal CA): LEADER_CA_SECRET_FILE points at
+      # that CA certificate (secrets/README.md). Empty placeholder otherwise.
+      SLOWSHIELD_LEADER_CA_FILE: /run/secrets/leader_ca
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token
     configs:
@@ -55,6 +58,8 @@ services:
     secrets:
       - source: github_token
         target: github_token
+      - source: leader_ca
+        target: leader_ca
         mode: 0400
         uid: "65532"
         gid: "65532"
@@ -135,3 +140,5 @@ configs:
 secrets:
   github_token:
     file: ${GITHUB_TOKEN_SECRET_FILE:-./secrets/github_token.empty}
+  leader_ca:
+    file: ${LEADER_CA_SECRET_FILE:-./secrets/leader-ca.empty}

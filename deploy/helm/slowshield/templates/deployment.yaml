@@ -101,6 +101,10 @@ spec:
             - name: SLOWSHIELD_INSTANCE_LOCATION
               value: {{ .location | quote }}
             {{- end }}
+            {{- if .leaderCaSecret }}
+            - name: SLOWSHIELD_LEADER_CA_FILE
+              value: /run/secrets/leader-ca/{{ .leaderCaSecretKey }}
+            {{- end }}
             {{- with .labels }}
             - name: SLOWSHIELD_INSTANCE_LABELS
               value: {{ $pairs := list }}{{ range $k, $v := . }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}{{ join "," $pairs | quote }}
@@ -164,6 +168,11 @@ spec:
             {{- if $github }}
             - name: github-token
               mountPath: /run/secrets/github
+              readOnly: true
+            {{- end }}
+            {{- if .Values.shieldwall.leaderCaSecret }}
+            - name: leader-ca
+              mountPath: /run/secrets/leader-ca
               readOnly: true
             {{- end }}
         {{- if .Values.caddy.enabled }}
@@ -285,6 +294,12 @@ spec:
           secret:
             secretName: {{ $github }}
             defaultMode: 0400
+        {{- end }}
+        {{- if .Values.shieldwall.leaderCaSecret }}
+        - name: leader-ca
+          secret:
+            secretName: {{ .Values.shieldwall.leaderCaSecret }}
+            defaultMode: 0444
         {{- end }}
         {{- if .Values.caddy.enabled }}
         - name: caddy-data

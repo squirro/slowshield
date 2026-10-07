@@ -196,6 +196,8 @@ class SlowShield:
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
             self._spawn(self._config_watcher(ctx), "config")
+            if self.cfg.raw.shieldwall.role == "follower":
+                self._spawn(self._shieldwall_watcher(ctx), "shieldwall")
             self._spawn(self._leader_loop(ctx), "leader")
             self._spawn(process.eventloop_lag_monitor(), "loop-lag")
         self._ready = True
@@ -309,11 +311,22 @@ class SlowShield:
                 if await asyncio.to_thread(ctx.config.maybe_reload):
                     ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
                     await sync_blocks(ctx)
-                await wall.refresh(ctx)  # what the shield wall loop (on the elected worker) took from the leader
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("config refresh failed")
+
+    async def _shieldwall_watcher(self, ctx: AppContext) -> None:
+        """What the shield wall loop (on the elected worker) took from the leader, on this worker within a second:
+        a stricter policy must not wait."""
+        while True:
+            await asyncio.sleep(1)
+            try:
+                await wall.refresh(ctx)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("shield wall refresh failed")
 
     async def _leader_loop(self, ctx: AppContext) -> None:
         if self._scheduler is None:  # pragma: no cover - startup always creates it

@@ -381,10 +381,71 @@
       "gridPos": {
         "x": 0,
         "y": 9,
-        "w": 12,
+        "w": 8,
         "h": 8
       },
       "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Registry pulls left",
+      "description": "What the registry last said (Docker Hub: ratelimit-remaining). Only manifest GETs count; SlowShield fetches each image manifest once for all clients.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "min by (registry) (slowshield_oci_ratelimit_remaining{instance=~\"$instance\"})",
+          "refId": "A",
+          "legendFormat": "{{registry}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true,
+            "lineInterpolation": "smooth",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 9,
+        "w": 8,
+        "h": 8
+      },
+      "id": 6
     },
     {
       "type": "piechart",
@@ -438,18 +499,18 @@
         }
       },
       "gridPos": {
-        "x": 12,
+        "x": 16,
         "y": 9,
-        "w": 12,
+        "w": 8,
         "h": 8
       },
-      "id": 6
+      "id": 7
     },
     {
       "type": "row",
       "title": "Runtime",
       "collapsed": false,
-      "id": 7,
+      "id": 8,
       "panels": [],
       "gridPos": {
         "x": 0,
@@ -517,7 +578,7 @@
         "w": 8,
         "h": 8
       },
-      "id": 8
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -578,7 +639,7 @@
         "w": 8,
         "h": 8
       },
-      "id": 9
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -639,7 +700,7 @@
         "w": 8,
         "h": 8
       },
-      "id": 10
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -700,7 +761,7 @@
         "w": 6,
         "h": 8
       },
-      "id": 11
+      "id": 12
     },
     {
       "type": "timeseries",
@@ -761,7 +822,7 @@
         "w": 6,
         "h": 8
       },
-      "id": 12
+      "id": 13
     },
     {
       "type": "timeseries",
@@ -822,7 +883,7 @@
         "w": 6,
         "h": 8
       },
-      "id": 13
+      "id": 14
     },
     {
       "type": "timeseries",
@@ -883,7 +944,7 @@
         "w": 6,
         "h": 8
       },
-      "id": 14
+      "id": 15
     }
   ]
 }

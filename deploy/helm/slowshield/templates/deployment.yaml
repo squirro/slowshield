@@ -69,6 +69,8 @@ spec:
               value: {{ .Values.ecosystems.maven.enabled | quote }}
             - name: SLOWSHIELD_CARGO_ENABLED
               value: {{ .Values.ecosystems.cargo.enabled | quote }}
+            - name: SLOWSHIELD_OCI_ENABLED
+              value: {{ .Values.ecosystems.oci.enabled | quote }}
             {{- with .Values.ecosystems.pypi.hostnames }}
             - name: SLOWSHIELD_PYPI_HOSTNAMES
               value: {{ join " " . | quote }}
@@ -123,6 +125,10 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            {{- if .Values.persistence.ociLayers.enabled }}
+            - name: oci-layers
+              mountPath: /data/cache/oci-layers
+            {{- end }}
             - name: config
               mountPath: /etc/slowshield
               readOnly: true
@@ -228,6 +234,18 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ default (printf "%s-data" $fullname) .Values.persistence.data.existingClaim }}
+        {{- with .Values.persistence.ociLayers }}
+        {{- if .enabled }}
+        - name: oci-layers
+          {{- if .ephemeral }}
+          emptyDir:
+            sizeLimit: {{ .size }}
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-oci-layers" $fullname) .existingClaim }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
         - name: config
           configMap:
             name: {{ $fullname }}

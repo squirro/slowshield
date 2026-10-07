@@ -2,8 +2,8 @@
 
 Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract, the
 deprecation of per-ecosystem hostnames and the new Setup page are implemented. Go is served at `/go/`
-([go.md](go.md)), Maven at `/maven/` ([maven.md](maven.md)) and Cargo at `/cargo/` ([cargo.md](cargo.md)); the
-other ecosystems are planned.
+([go.md](go.md)), Maven at `/maven/` ([maven.md](maven.md)), Cargo at `/cargo/` ([cargo.md](cargo.md)) and container
+images at `/v2/` ([oci.md](oci.md)); the other ecosystems are planned.
 
 SlowShield serves every ecosystem from **one host**, each under a path named after its **protocol**. No
 ecosystem gets its own hostname. This document is the contract for those paths, so that new ecosystems never
@@ -44,7 +44,7 @@ them is added.
 | `/ui/` | the whole UI, assets under `/ui/static/` |
 | `/healthz`, `/readyz` | probes (Caddy, Helm, the image healthcheck) |
 | `/favicon.ico` | redirect to `/ui/static/brand/favicon.ico` (browsers ask for it) |
-| `/v2/` | OCI distribution API (mandated at the root by the spec) |
+| `/v2/` | OCI distribution API (mandated at the root by the spec): container images, served today ([oci.md](oci.md)) |
 | `/.well-known/` | RFC 8615 (e.g. Terraform service discovery, if ever needed) |
 | `/pypi/`, `/npm/`, `/go/`, `/maven/`, `/cargo/` | served today |
 | `/nuget/`, `/rubygems/`, `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
@@ -76,7 +76,7 @@ The internal host-routing code stays for that purpose after the PyPI and npm hos
 | apt | `/apt/<repo-id>/` (debian, debian-security, ubuntu, ubuntu-ports, custom), also over plain http | one `sed` on `*.sources` | none (upstream tree 1:1) | snapshots | curated deny list |
 | dnf / yum | `/rpm/<repo-id>/` (fedora, rocky, alma, al2023, epel, custom) | `baseurl` in `.repo` | mirrorlist / metalink / AL2023 `mirror.list` | AL2023 releasever, Fedora Bodhi, first-seen | curated deny list |
 | apk | `/apk/<repo-id>/` (alpine, custom) | one `sed` on `/etc/apk/repositories` | none | first-seen (own history) | curated deny list |
-| Containers | `/v2/<registry-host>/<repo>` (image references, Podman, BuildKit); `/oci/<registry-host>/` (Docker `registry-mirrors`, containerd) | `daemon.json`, `hosts.toml`, `registries.conf`, `buildkitd.toml` | none (byte-exact); own token realm; follow blob redirects on the server | tag→digest history (first-seen) | digest deny list |
+| Containers | `/v2/<registry-host>/<repo>` (shipped, [oci.md](oci.md)); `/v2/<repo>` is Docker Hub, or the registry containerd names in `?ns=` | `hosts.toml` (containerd, Docker's containerd store), `registries.conf`, `buildkitd.toml`, `daemon.json` | none (byte-exact); SlowShield authenticates upstream; blob redirects followed on the server | tag→digest history: registry times (Docker Hub, Quay, Artifact Registry, MCR) and first seen | operator `[[blocks]]`, registry takedowns |
 | Homebrew | `/homebrew/` (API) + bottles via `/v2/ghcr.io/…` | `/etc/homebrew/brew.env` | none (the API is JWS-signed) | whole signed snapshot | Homebrew advisories |
 | GitHub Releases | `/github/<owner>/<repo>/releases/download/…` (+ `/github-api/`) | mise `url_replacements`, uv/rustup/nvm mirror variables | none | `published_at`, asset `digest` | none |
 | VS Code / Open VSX / JetBrains | `/openvsx/`, `/jetbrains/`; the VS Code Marketplace only through its enterprise private-marketplace policy or generated `AllowedExtensions` pins | env vars, `idea.plugins.host`, policy | gallery manifest URLs | `timestamp` / `cdate` / `lastUpdated` | vendor malicious lists |
@@ -111,8 +111,10 @@ policy and provides a linter.
 - **Never modify signed or content-addressed bytes.** That covers the Go checksum DB, OCI manifests, NuGet
   packages, Homebrew JWS and apt `InRelease`.
 - **Mirror mode is soft control.** These clients fall back to the upstream when the mirror returns an error:
-  Docker, containerd, Podman, BuildKit, Homebrew, Go `,direct`, extra NuGet sources and Bundler. The setup
-  docs pair each ecosystem with its no-fallback option and recommend an egress firewall for hard enforcement.
+  Docker's classic image store, BuildKit, containerd with SlowShield as a mirror `[host]`, Homebrew, Go
+  `,direct`, extra NuGet sources and Bundler. The setup docs pair each ecosystem with its no-fallback option
+  (for images: containerd's `server`, Podman's `location`, checked with real clients in [oci.md](oci.md)) and
+  recommend an egress firewall for hard enforcement.
 - **One public base URL per deployment** drives all URL rewriting.
 
 ## Deprecated until 0.1

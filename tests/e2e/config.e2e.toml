@@ -24,6 +24,45 @@ gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
 index_url = "http://fakeupstream:9000/cargo-index"
 download_url = "http://fakeupstream:9000/cargo-static/crates"
 
+# Container registries: blobs redirect to the fake's second name (fakecdn), as real registries redirect to a CDN.
+[upstreams.oci]
+layer_cache_gb = 1
+fail_open = false  # strict from day one: a new instance would otherwise serve tags it has no history for
+
+[upstreams.oci.registries."docker.io"]
+url = "http://fakeupstream:9000/oci/docker.io"
+download_hosts = ["fakecdn"]
+times = "hub"
+times_url = "http://fakeupstream:9000/hub"
+aliases = ["index.docker.io"]
+
+[upstreams.oci.registries."quay.io"]
+url = "http://fakeupstream:9000/oci/quay.io"
+download_hosts = ["fakecdn"]
+times = "quay"
+times_url = "http://fakeupstream:9000/quay"
+
+[upstreams.oci.registries."registry.k8s.io"]
+url = "http://fakeupstream:9000/oci/registry.k8s.io"
+download_hosts = ["fakecdn"]
+times = "gcr"
+
+[upstreams.oci.registries."ghcr.io"]
+url = "http://fakeupstream:9000/oci/ghcr.io"
+download_hosts = ["fakecdn"]
+
+[upstreams.oci.registries."gcr.io"]
+url = "https://gcr.io"
+enabled = false
+
+[upstreams.oci.registries."mcr.microsoft.com"]
+url = "https://mcr.microsoft.com"
+enabled = false
+
+[upstreams.oci.registries."public.ecr.aws"]
+url = "https://public.ecr.aws"
+enabled = false
+
 [cache]
 artifacts_enabled = true
 artifacts_max_gb = 1

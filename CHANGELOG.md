@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Container images at `/v2/`, the OCI distribution API, for pulls ([docs/design/oci.md](docs/design/oci.md),
+  https://github.com/squirro/slowshield/issues/22). Built in: docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
+  mcr.microsoft.com and public.ecr.aws.
+  - Tags lag behind: a tag resolves to the newest digest it has pointed to for the delay, so `nginx:latest` keeps
+    working, about a week behind. A tag's time is when it got that digest: from the Docker Hub API, Quay's tag
+    history, Artifact Registry's upload times or MCR's catalog where the registry has one, and SlowShield's own
+    first sight, whichever is earlier.
+  - A pinned digest that is too new, a blocked image and a digest the registry took down are refused with `403` and
+    a message Docker, Podman, BuildKit, skopeo and crane print (containerd 2.2 and older show only the status).
+  - During an instance's first `default_delay_days`, tags it has no history for are served at their current digest
+    and recorded as fail-open; `upstreams.oci.fail_open = false` is strict from the start.
+  - Manifests are checked against their digests and kept by digest; blobs are checked while streaming. Layers aren't
+    stored unless `upstreams.oci.layer_cache_gb` is above 0, which keeps them in a separate store (Helm:
+    `persistence.ociLayers`). Redirects go only to each registry's `download_hosts`, without the registry token.
+  - Docker Hub pulls: tags are resolved with `HEAD`, which doesn't count, and each manifest is fetched once for all
+    clients. `username` and `token_file` add a Docker Hub token; `slowshield_oci_ratelimit_remaining` shows what is
+    left.
+  - The Setup page has containerd and Kubernetes, Docker, Podman (also CRI-O, Buildah and skopeo), BuildKit and
+    image names, checked with the real clients: containerd, Docker's containerd image store and Podman don't go
+    around SlowShield; BuildKit and Docker's classic store pull from the registry after a refusal, which the page
+    says. The package page shows every digest each tag pointed to.
+- Operator blocks for every ecosystem: `[[blocks]]` in `config.toml` refuses a package, a version, or an image
+  repository, tag or digest, like a malware advisory. They apply on reload and are listed with source `config`.
+
+### Changed
+- The UI names ecosystems by language, as slowshield.org does: Python, JavaScript, Go, Java, Rust and Containers
+  instead of PyPI, npm, Go, Maven, Cargo and OCI. URLs, config, metrics and CSV exports keep the ids (`pypi`, `npm`,
+  …).
+
 ## [0.0.7] - 2026-10-06
 
 ### Added

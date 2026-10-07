@@ -24,6 +24,7 @@
   --go: #00add8;
   --maven: #ed8b00; /* Java orange: Maven's own red is almost npm's */
   --cargo: #dea584; /* GitHub's Rust colour: Rust's own logo is black */
+  --oci: #1d63ed; /* Docker blue: OCI has no colour of its own */
   --grid: #eaedf6;
   --radius: 10px;
   --shadow: 0 1px 2px rgb(10 15 36 / 6%), 0 1px 1px rgb(10 15 36 / 4%);
@@ -152,8 +153,9 @@ tr.withdrawn { opacity: 0.55; }
 .eco-go { background: var(--go); color: #000; } /* white on Gopher Blue is unreadable; Go's brand pairs it with black */
 .eco-maven { background: var(--maven); color: #000; }
 .eco-cargo { background: var(--cargo); color: #000; }
+.eco-oci { background: var(--oci); }
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-.ev-blocked, .st-blocked, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
+.ev-blocked, .st-blocked, .st-taken_down, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
 .ev-tampered, .ev-integrity_mismatch, .st-tampered { background: var(--tamper-soft); color: var(--tamper); }
 .ev-fail_open, .ev-age_gate, .st-held, .feed-badge-missing_token { background: var(--hold-soft); color: var(--hold); }
 .st-available, .feed-badge-ok { background: var(--ok-soft); color: var(--ok); }
@@ -218,9 +220,13 @@ tr.withdrawn { opacity: 0.55; }
 /* auto-fit: a single match spans the card, several share it */
 .tool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; }
 .tool h3 { font-size: 0.95rem; margin: 8px 0 6px; }
+.tool-guide { font-size: 0.78rem; font-weight: 400; margin-left: 8px; }
 .snippet pre { padding-bottom: 34px; } /* the Copy button sits under the last line, never over long ones */
 .grid-2 > .snippet { align-self: start; }
 .card p code { overflow-wrap: anywhere; }
+/* Long names and versions wrap inside their card or cell instead of widening it; a shortened digest stays whole. */
+.card li, .card td, .events li { overflow-wrap: anywhere; min-width: 0; }
+code.ver[title] { white-space: nowrap; cursor: help; }
 @media (max-width: 900px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }
 
 .prose h1 { font-size: 1.3rem; } .prose h2 { font-size: 1.1rem; margin-top: 18px; } .prose table { border-collapse: collapse; }
@@ -235,6 +241,7 @@ tr.withdrawn { opacity: 0.55; }
 .s-go { fill: var(--go); background: var(--go); }
 .s-maven { fill: var(--maven); background: var(--maven); }
 .s-cargo { fill: var(--cargo); background: var(--cargo); }
+.s-oci { fill: var(--oci); background: var(--oci); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
 .s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }
 .s-age_gated { fill: var(--hold); background: var(--hold); } .s-blocked { fill: var(--danger); background: var(--danger); }

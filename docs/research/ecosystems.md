@@ -12,7 +12,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | NuGet | `nuget.config` `<clear/>` + source | registration `published` | repo signature inside `.nupkg`; lockfile SHA512 | easy | filter flat-container `index.json` too |
 | RubyGems | `bundle config mirror.…` | compact index `created_at` | sha256 per version; Gemfile.lock CHECKSUMS | medium | `/versions` stores MD5 of each info file → rewrite consistently |
 | Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | **live** | exact pins → refuse (`425`), not downgrade; see [design/maven.md](../design/maven.md) |
-| OCI images | containerd `hosts.toml`, podman `registries.conf`; dockerd mirrors only Docker Hub | none in the API; image `created` is builder-set | digests; cosign/notation bound to digest | medium | mutable tags → keep tag→digest history |
+| OCI images | containerd `hosts.toml` `server`, podman `registries.conf` `location`; dockerd's classic mirrors only Docker Hub and fall back | none in the API; image `created` is builder-set → registry APIs (Docker Hub, Quay, Artifact Registry, MCR) and first sight | digests; cosign/notation bound to digest | **live** | mutable tags → tag→digest history and time travel; see [design/oci.md](../design/oci.md) |
 | Terraform / OpenTofu providers | `provider_installation { network_mirror }` | `published-at` / `published` | lockfile `h1:`/`zh:` | easy | modules from git are hard |
 | Helm | `helm repo add` | index.yaml `created` (indexer) | `digest`, optional `.prov` | easy | every publisher hosts its own repo |
 | pub.dev | `PUB_HOSTED_URL` | `published` | `archive_sha256` | easy | |
@@ -50,8 +50,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 
 ## Proposed phases
 
-1. **Next:** OCI pull-through (https://github.com/squirro/slowshield/issues/22); Go, Maven/Gradle and Cargo
-   shipped.
+1. **Shipped:** Go, Maven/Gradle, Cargo and OCI images (https://github.com/squirro/slowshield/issues/22).
 2. **Then:** NuGet, RubyGems, Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains; compatibility tests for
    pnpm/Yarn/Bun.
 3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).

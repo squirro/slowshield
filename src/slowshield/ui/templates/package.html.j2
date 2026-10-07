@@ -25,7 +25,7 @@
   <div class="kpi"><div class="kpi-label">Data served</div><div class="kpi-value">{{ (pkg.bytes if pkg else 0)|bytes }}</div></div>
   <div class="kpi"><div class="kpi-label">First installed</div><div class="kpi-value small-value">{{ ago(pkg.first_served) if pkg and pkg.first_served else "never" }}</div></div>
   <div class="kpi"><div class="kpi-label">Last installed</div><div class="kpi-value small-value">{{ ago(pkg.last_served) if pkg and pkg.last_served else "never" }}</div></div>
-  <div class="kpi hold"><div class="kpi-label">Versions held back</div><div class="kpi-value">{{ held }}</div></div>
+  <div class="kpi hold"><div class="kpi-label">{{ "Digests" if eco == "oci" else "Versions" }} held back</div><div class="kpi-value">{{ held }}</div></div>
 </section>
 
 <section class="card">
@@ -33,6 +33,29 @@
   {{ chart }}
 </section>
 
+{% if eco == "oci" %}
+<section class="card">
+  <header class="card-head"><h2>Tags</h2><span class="muted small">every digest each tag pointed to, newest first</span></header>
+  {% if tags %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Tag</th><th>Digest</th><th>Status</th><th>Pushed</th><th>Available</th></tr></thead>
+    <tbody>
+    {% for t in tags %}
+      <tr class="row-{{ t.status }}">
+        <td><code>{{ t.tag }}</code></td>
+        <td>{{ m.ver(t.digest) }}</td>
+        <td>{{ m.status_badge(t.status) }}{% if t.serving %} <span class="badge">served for this tag</span>{% endif %}{% if t.block %} {{ m.advisory(t.block) }}{% endif %}</td>
+        <td>{{ t.time|ts }} <span class="muted small">({{ t.clock }})</span></td>
+        <td>{% if t.status == "held" %}<span class="countdown">in {{ (t.until - now)|duration }}</span>{% elif t.status == "available" %}yes{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">No tag pulled through SlowShield yet.</p>{% endif %}
+</section>
+{% else %}
 <section class="card">
   <header class="card-head"><h2>Versions</h2><span class="muted small">{{ versions|length }} known</span></header>
   {% if versions %}
@@ -42,7 +65,7 @@
     <tbody>
     {% for v in versions %}
       <tr class="row-{{ v.status }}">
-        <td><code>{{ v.version }}</code></td>
+        <td>{{ m.ver(v.version) }}</td>
         <td>{{ m.status_badge(v.status) }}{% if v.block %} {{ m.advisory(v.block) }}{% endif %}</td>
         <td>{{ v.published|ts if v.published else "—" }}</td>
         <td>{% if v.status == "held" %}<span class="countdown">in {{ (v.until - now)|duration }}</span>{% elif v.status == "available" %}yes{% else %}—{% endif %}</td>
@@ -56,6 +79,7 @@
   </div>
   {% else %}<p class="empty">No version metadata recorded yet.</p>{% endif %}
 </section>
+{% endif %}
 
 <div class="grid-2">
   <section class="card">
@@ -66,7 +90,7 @@
       <tbody>
       {% for e in events %}
         <tr><td>{{ ago(e.ts) }}</td><td>{{ m.event_badge(e.type) }}{% if e["count"] > 1 %} ×{{ e["count"] }}{% endif %}</td>
-            <td>{% if e.version %}<code>{{ e.version }}</code>{% else %}—{% endif %}</td><td>{{ e.client_ip or "—" }}</td></tr>
+            <td>{% if e.version %}{{ m.ver(e.version) }}{% else %}—{% endif %}</td><td>{{ e.client_ip or "—" }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -80,7 +104,7 @@
       <tbody>
       {% for b in blocks %}
         <tr{% if b.withdrawn %} class="withdrawn"{% endif %}>
-          <td>{% if b.version %}<code>{{ b.version }}</code>{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all versions{% endif %}</td>
+          <td>{% if b.version %}{{ m.ver(b.version) }}{% elif b.version_range %}<code>{{ b.version_range }}</code>{% else %}all versions{% endif %}</td>
           <td>{{ b.source }}</td><td>{{ m.advisory(b) }}{% if b.withdrawn %} <span class="muted">(withdrawn)</span>{% endif %}</td>
           <td>{{ b.first_seen|ts }}</td></tr>
         {% if b.reason %}<tr class="reason"><td colspan="4">{{ b.reason }}</td></tr>{% endif %}

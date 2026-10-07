@@ -17,6 +17,9 @@ _SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 # around SlowShield, or SlowShield serves a brand-new package because nothing is old enough yet (fail-open), the
 # package manager still waits. Never more than SlowShield's own delay, so in normal use only SlowShield holds anything.
 CLIENT_AGE_DAYS = 3
+# slowshield.org's guide has a page per ecosystem with a section per tool; the Setup page links to them.
+DOCS = "https://slowshield.org/docs/"
+DOCS_PAGES = {"pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "oci": "containers"}
 _AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
 
@@ -65,6 +68,17 @@ class Shell:
 class Snippets:
     shells: tuple[Shell, ...]
     try_python: str
+
+
+def slug(name: str) -> str:
+    """A tool's anchor on its guide page: `Image names` -> `image-names`."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def docs_url(ecosystem: str, tool: str = "") -> str:
+    """The guide page for `ecosystem` on slowshield.org, at `tool`'s section if given."""
+    url = f"{DOCS}{DOCS_PAGES[ecosystem]}/"
+    return f"{url}#{slug(tool)}" if tool else url
 
 
 def safe(value: str) -> str:
@@ -288,6 +302,85 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: in
             ),
         ),
     )
+
+
+def oci_tools(base: str, registries: tuple[str, ...], *, age_days: int = CLIENT_AGE_DAYS) -> tuple[Tool, ...]:
+    """Container image clients, for the instance at `base` (https://host or http://localhost:port) and the registries
+    it serves (none has a release age of its own; `age_days` only decides whether to say so). Checked against
+    containerd 2.2, Docker 29.8, Podman 5.8, BuildKit 0.33, skopeo and crane: with these files containerd, Docker's
+    containerd store and Podman only ever ask SlowShield; BuildKit and Docker's classic store go to the registry
+    themselves after a refusal."""
+    base = safe(base.rstrip("/"))
+    host = base.split("://", 1)[1]
+    plain = base.startswith("http://")
+    regs = tuple(safe(r) for r in registries)
+    # `server` rather than a [host] entry: containerd tries the server after a host refuses, so it must not be the
+    # registry. Pull-only, so pushes need the registry's own file.
+    default = f'server = "{base}"\ncapabilities = ["pull", "resolve"]'
+    push = (
+        f'server = "https://ghcr.io"\ncapabilities = ["push"]\n\n[host."{base}"]\n  capabilities = ["pull", "resolve"]'
+    )
+    drop_in = "\n\n".join(
+        f'[[registry]]\nprefix = "{r}"\nlocation = "{host}/{r}"' + ("\ninsecure = true" if plain else "") for r in regs
+    )
+    # Without a path: containerd's resolver names the registry in ?ns=. `http` goes on the mirror's exact name.
+    buildkit = "\n".join(f'[registry."{r}"]\n  mirrors = ["{host}"]' for r in regs)
+    if plain:
+        buildkit += f'\n[registry."{host}"]\n  http = true'
+    age = NO_AGE_DEFAULT if age_days > 0 else ""
+    mirrors = (
+        f'{{\n  "registry-mirrors": ["{base}"]' + (f',\n  "insecure-registries": ["{host}"]' if plain else "") + "\n}"
+    )
+    return (
+        Tool(
+            "containerd",
+            "oci",
+            "containerd kubernetes k8s kubelet cri nerdctl ctr hosts.toml certs.d",
+            (
+                ("/etc/containerd/certs.d/_default/hosts.toml: every registry, pull only", default),
+                ("/etc/containerd/certs.d/ghcr.io/hosts.toml: a registry you also push to", push),
+            ),
+            age,
+        ),
+        Tool(
+            "Docker",
+            "oci",
+            "docker dockerd docker build compose daemon.json registry-mirrors certs.d hosts.toml",
+            (
+                ("/etc/docker/certs.d/_default/hosts.toml: the containerd image store (docker info lists "
+                 "io.containerd.snapshotter.v1), for docker pull and docker build", default),
+                ("/etc/docker/daemon.json: the classic image store. Docker Hub only, and Docker pulls from Docker Hub "
+                 "itself after a refusal", mirrors),
+            ),
+            age,
+        ),
+        Tool(
+            "Podman",
+            "oci",
+            "podman cri-o crio buildah skopeo registries.conf",
+            (("/etc/containers/registries.conf.d/50-slowshield.conf: Podman, CRI-O, Buildah and skopeo", drop_in),),
+            age,
+        ),
+        Tool(
+            "BuildKit",
+            "oci",
+            "buildkit buildkitd buildctl buildx docker-container builder",
+            (("buildkitd.toml (also docker buildx create --buildkitd-config): BuildKit pulls from the registry itself "
+              "after a refusal", buildkit),),
+            age,
+        ),
+        Tool(
+            "Image names",
+            "oci",
+            "crane skopeo kaniko oras regctl dockerfile FROM image reference prefix",
+            (
+                ("any client: SlowShield's host in front of the image name",
+                 f"crane pull {host}/docker.io/library/nginx:1.29 nginx.tar"),
+                ("Dockerfile", f"FROM {host}/docker.io/library/nginx:1.29"),
+            ),
+            age,
+        ),
+    )  # fmt: skip
 
 
 def cargo_config(cargo: str) -> str:

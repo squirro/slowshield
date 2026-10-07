@@ -24,8 +24,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo")
+Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "oci"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "oci")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -54,6 +54,17 @@ class ExceptionRule(msgspec.Struct, forbid_unknown_fields=True):
     delay_days: float
     version: str | None = None
     note: str | None = None
+
+
+class BlockRule(msgspec.Struct, forbid_unknown_fields=True):
+    """A block the operator sets: a whole package (or image repository), or one version (or image tag or digest).
+    Applied like an advisory, for the ecosystems no feed covers (container images) or before a feed catches up."""
+
+    ecosystem: Ecosystem
+    package: str
+    version: str | None = None
+    reason: str | None = None
+    url: str | None = None
 
 
 class PypiUpstream(msgspec.Struct, forbid_unknown_fields=True):
@@ -137,12 +148,86 @@ class CargoUpstream(msgspec.Struct, forbid_unknown_fields=True):
     download_hosts: list[str] = []
 
 
+OciTimes = Literal["hub", "quay", "gcr", "mcr", "none"]
+
+
+class OciRegistry(msgspec.Struct, forbid_unknown_fields=True):
+    url: str  # the registry API (https://registry-1.docker.io for docker.io)
+    # Hosts its token service and downloads may use, `*` allowed (blob CDNs, regional backends). Every manifest and
+    # blob is checked against its digest wherever it comes from; tokens are never sent to another host.
+    download_hosts: list[str] = []
+    # Where the time a tag got its digest comes from: the Docker Hub API, Quay's tag history, the `manifest` map in
+    # gcr.io/Artifact Registry `tags/list`, MCR's catalog, or none (SlowShield's own first sight only).
+    times: OciTimes = "none"
+    # The base URL of that time source when it isn't the registry itself: https://hub.docker.com (Docker Hub's API),
+    # https://quay.io, https://mcr.microsoft.com. gcr.io and Artifact Registry answer on the registry API.
+    times_url: str | None = None
+    aliases: list[str] = []  # other names clients use for it (index.docker.io)
+    enabled: bool = True
+    # Credentials for its token service (Docker Hub: a username and a "Public Repo Read-only" access token), so
+    # pulls count against an account instead of a shared IP. The token is read from this file at startup.
+    username: str | None = None
+    token_file: str | None = None
+
+
+def _oci_builtin() -> dict[str, OciRegistry]:
+    return {
+        "docker.io": OciRegistry(
+            "https://registry-1.docker.io",
+            ["auth.docker.io", "hub.docker.com", "production.cloudfront.docker.com",
+             "production.cloudflare.docker.com", "*.r2.cloudflarestorage.com"],
+            "hub", "https://hub.docker.com", ["index.docker.io", "registry-1.docker.io"],
+        ),
+        "ghcr.io": OciRegistry("https://ghcr.io", ["pkg-containers.githubusercontent.com"]),
+        "quay.io": OciRegistry(
+            "https://quay.io", ["cdn*.quay.io", "quayio-production-s3.s3.amazonaws.com"], "quay", "https://quay.io"
+        ),
+        "registry.k8s.io": OciRegistry(
+            "https://registry.k8s.io",
+            ["*-docker.pkg.dev", "cdn.registry.k8s.io", "prod-registry-k8s-io-*.s3.dualstack.*.amazonaws.com"],
+            "gcr",
+        ),
+        "gcr.io": OciRegistry("https://gcr.io", ["storage.googleapis.com"], "gcr"),
+        "mcr.microsoft.com": OciRegistry(
+            "https://mcr.microsoft.com", ["*.data.mcr.microsoft.com"], "mcr", "https://mcr.microsoft.com"
+        ),
+        "public.ecr.aws": OciRegistry("https://public.ecr.aws", ["*.cloudfront.net"]),
+    }  # fmt: skip
+
+
+class OciUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # A tag with nothing old enough is refused, except during the first `default_delay_days` after this instance
+    # started serving images: it has no tag history yet, so it serves the current digest and records a fail-open
+    # event. False: strict from the first day (docs/design/oci.md).
+    fail_open: bool | None = None
+    # Image layers are streamed and checked, not stored: they would evict the package files the artifact cache is
+    # for. A budget above 0 keeps them in a separate store under <data_dir>/cache/oci-layers.
+    layer_cache_gb: float = 0
+    # More registries, or changes to the built-in ones (docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io,
+    # mcr.microsoft.com, public.ecr.aws: only the keys set change), keyed by the name clients use in image references.
+    registries: dict[str, OciRegistry] = {}
+
+    def all_registries(self) -> dict[str, OciRegistry]:
+        return {name: reg for name, reg in {**_oci_builtin(), **self.registries}.items() if reg.enabled}
+
+    def canonical(self, repository: str) -> str:
+        """A normalised repository with a configured alias of its registry replaced by the registry's own name, so
+        exceptions, blocks and history have one key whichever name a client uses."""
+        registry, sep, path = repository.partition("/")
+        for name, reg in self.all_registries().items():
+            if registry in {a.lower() for a in reg.aliases}:
+                return f"{name}{sep}{path}"
+        return repository
+
+
 class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     pypi: PypiUpstream = msgspec.field(default_factory=PypiUpstream)
     npm: NpmUpstream = msgspec.field(default_factory=NpmUpstream)
     go: GoUpstream = msgspec.field(default_factory=GoUpstream)
     maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
     cargo: CargoUpstream = msgspec.field(default_factory=CargoUpstream)
+    oci: OciUpstream = msgspec.field(default_factory=OciUpstream)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):
@@ -194,6 +279,7 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     feeds: Feeds = msgspec.field(default_factory=Feeds)
     cache: CacheConfig = msgspec.field(default_factory=CacheConfig)
     exceptions: list[ExceptionRule] = []
+    blocks: list[BlockRule] = []
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +445,7 @@ def _apply_env(cfg: Config) -> None:
         ("SLOWSHIELD_GO_ENABLED", lambda b: setattr(cfg.upstreams.go, "enabled", b)),
         ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
         ("SLOWSHIELD_CARGO_ENABLED", lambda b: setattr(cfg.upstreams.cargo, "enabled", b)),
+        ("SLOWSHIELD_OCI_ENABLED", lambda b: setattr(cfg.upstreams.oci, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
         ("SLOWSHIELD_RECORD_CLIENT_IP", lambda b: setattr(cfg, "record_client_ip", b)),
@@ -385,6 +472,8 @@ _PUBLIC_URL = re.compile(
 
 
 _HOSTNAME = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)*")
+_OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 
 def _validate(cfg: Config) -> None:
@@ -438,9 +527,50 @@ def _validate(cfg: Config) -> None:
     for host in cargo.download_hosts:
         if not _HOSTNAME.fullmatch(host):
             raise ConfigError(f"upstreams.cargo.download_hosts entries must be host names, got {host!r}")
+    oci = cfg.upstreams.oci
+    if oci.layer_cache_gb < 0:
+        raise ConfigError("upstreams.oci.layer_cache_gb must be >= 0")
+    for name in oci.registries:
+        if not _OCI_REGISTRY.fullmatch(name):
+            raise ConfigError(
+                f"upstreams.oci.registries: {name!r} must be a registry host name (e.g. registry.example.com)"
+            )
+    for name, reg in oci.all_registries().items():
+        if not reg.url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.oci.registries.{name}: url must be an http(s) URL, got {reg.url!r}")
+        for host in reg.download_hosts:
+            if not _HOST_PATTERN.fullmatch(host):
+                raise ConfigError(
+                    f"upstreams.oci.registries.{name}: download_hosts entries must be host names or `*` patterns, "
+                    f"got {host!r}"
+                )
+        if reg.times_url and not reg.times_url.startswith(("https://", "http://")):
+            raise ConfigError(
+                f"upstreams.oci.registries.{name}: times_url must be an http(s) URL, got {reg.times_url!r}"
+            )
+        if reg.times in ("hub", "quay", "mcr") and not reg.times_url:
+            raise ConfigError(f"upstreams.oci.registries.{name}: times = {reg.times!r} needs times_url")
+        if bool(reg.username) != bool(reg.token_file):
+            raise ConfigError(f"upstreams.oci.registries.{name}: username and token_file go together")
+    # One registry per name: an alias shared by two registries, or one that is another registry's name, would route
+    # to one registry while exceptions and blocks resolve to the other.
+    owners: dict[str, str] = {name: name for name in oci.all_registries()}
+    for name, reg in oci.all_registries().items():
+        for alias in reg.aliases:
+            key = alias.lower()
+            if not _OCI_REGISTRY.fullmatch(key):
+                raise ConfigError(f"upstreams.oci.registries.{name}: alias {alias!r} must be a registry host name")
+            owner = owners.setdefault(key, name)
+            if owner != name:
+                raise ConfigError(f"upstreams.oci.registries: {alias!r} names both {owner!r} and {name!r}")
     overlap = set(map(str.lower, cfg.upstreams.pypi.hostnames)) & set(map(str.lower, cfg.upstreams.npm.hostnames))
     if overlap:
         raise ConfigError(f"a hostname cannot serve both pypi and npm: {sorted(overlap)}")
+    for block in cfg.blocks:
+        if not block.package.strip() or (block.version is not None and not block.version.strip()):
+            raise ConfigError(f"blocks: {block.ecosystem}/{block.package!r} needs a package (and a non-empty version)")
+        if block.url and not block.url.startswith(("https://", "http://")):
+            raise ConfigError(f"blocks: {block.ecosystem}/{block.package}: url must be an http(s) URL")
     for rule in cfg.exceptions:
         if rule.delay_days < 0:
             raise ConfigError(f"exception for {rule.ecosystem}/{rule.package}: delay_days must be >= 0")
@@ -463,6 +593,8 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
     ver_rules: dict[tuple[str, str, str], float] = {}
     for rule in cfg.exceptions:
         name = normalize(rule.ecosystem, rule.package)
+        if rule.ecosystem == "oci":
+            name = cfg.upstreams.oci.canonical(name)
         if rule.version:
             version = rule.version.strip()
             if rule.ecosystem == "go" and not version.startswith("v"):
@@ -496,6 +628,19 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
     )
 
 
+def _merge_builtin_registries(data: dict[str, Any]) -> None:
+    """A table for a built-in registry changes only the keys it sets: `token_file` for docker.io keeps Docker Hub's
+    CDN hosts and time source."""
+    upstreams = data.get("upstreams")
+    oci = upstreams.get("oci") if isinstance(upstreams, dict) else None
+    regs = oci.get("registries") if isinstance(oci, dict) else None
+    if not isinstance(regs, dict):
+        return
+    for name, builtin in _oci_builtin().items():
+        if isinstance(regs.get(name), dict):
+            regs[name] = {**msgspec.to_builtins(builtin), **regs[name]}
+
+
 def parse(text: str, *, path: Path | None = None, generation: int = 0) -> LoadedConfig:
     warnings: list[str] = []
     try:
@@ -503,6 +648,7 @@ def parse(text: str, *, path: Path | None = None, generation: int = 0) -> Loaded
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path or 'config'}: invalid TOML: {exc}") from exc
     _strip_legacy(data, warnings)
+    _merge_builtin_registries(data)
     try:
         cfg = msgspec.convert(data, Config, strict=False)
     except msgspec.ValidationError as exc:
@@ -558,6 +704,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         f"upstreams.maven.{name}"
         for name in ("central", "google", "gradle_plugins", "repos")
         if getattr(old.upstreams.maven, name) != getattr(new.upstreams.maven, name)
+    )
+    changed.extend(  # registries decide which upstream hosts the client may reach
+        f"upstreams.oci.{name}"
+        for name in ("registries", "layer_cache_gb")
+        if getattr(old.upstreams.oci, name) != getattr(new.upstreams.oci, name)
     )
     changed.extend(  # these decide which upstream hosts the client may reach
         f"upstreams.cargo.{name}"

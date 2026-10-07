@@ -284,6 +284,18 @@ def package_versions(conn: sqlite3.Connection, eco: str, name: str) -> list[sqli
     )
 
 
+def oci_tags(conn: sqlite3.Connection, repo: str, limit: int = 200) -> list[sqlite3.Row]:
+    """Every digest the tags of image repository `repo` have pointed to, newest first per tag, with both clocks and
+    whether the registry took the digest down."""
+    return _rows(
+        conn,
+        "SELECT t.tag, t.digest, t.first_seen, t.registry_time, d.gone FROM oci_tags t "
+        "LEFT JOIN oci_digests d ON d.repository = t.repository AND d.digest = t.digest WHERE t.repository = ? "
+        "ORDER BY t.tag, min(t.first_seen, coalesce(t.registry_time, t.first_seen)) DESC LIMIT ?",
+        (repo, limit),
+    )
+
+
 def package_series(conn: sqlite3.Connection, eco: str, name: str, w: Window) -> dict[int, int]:
     return {
         int(b): int(s)

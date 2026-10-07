@@ -60,6 +60,20 @@ index_url = "https://index.crates.io"  # each line's `pubtime` is the publish ti
 download_url = "https://static.crates.io/crates"
 download_hosts = []                    # hosts download_url may redirect to
 
+[upstreams.oci]                        # container images at /v2/ (docs/design/oci.md)
+enabled = true
+# fail_open = true                     # unset: the top-level fail_open, and only ever during this instance's
+                                       # first default_delay_days (tags it has no history for yet)
+layer_cache_gb = 0                     # 0: layers are streamed and checked, not stored; > 0: a separate LRU store
+                                       # under data_dir/cache/oci-layers
+# Built in: docker.io, ghcr.io, quay.io, registry.k8s.io, gcr.io, mcr.microsoft.com, public.ecr.aws.
+# A table for a built-in registry changes only the keys it sets.
+# [upstreams.oci.registries."docker.io"]
+# username = "ci-bot"                  # a Docker Hub "Public Repo Read-only" token, so pulls count against an
+# token_file = "/run/secrets/dockerhub" # account instead of a shared IP
+# [upstreams.oci.registries."gcr.io"]
+# enabled = false
+
 # --- caches -------------------------------------------------------------------------------------
 [cache]
 metadata_max_mb = 1024                 # upstream metadata + rendered responses: one SQLite file (data_dir/
@@ -94,3 +108,13 @@ enabled = true
 # version = "1.15.1"
 # delay_days = 0
 # note = "urgent security fix, reviewed by SecOps"
+
+# --- operator blocks -------------------------------------------------------------------------------
+# Refuse a package, a version, or an image repository, tag or digest, like known malware (451; 403 for images).
+# For what no feed covers yet, and for container images, which no malware feed covers.
+# [[blocks]]
+# ecosystem = "oci"
+# package = "docker.io/aquasec/trivy"
+# version = "0.69.4"                   # optional: a version, image tag or digest; without it the whole package
+# reason = "compromised release"
+# url = "https://www.docker.com/blog/trivy-supply-chain-compromise-what-docker-hub-users-should-know/"

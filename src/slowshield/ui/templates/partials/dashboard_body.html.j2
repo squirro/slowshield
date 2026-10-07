@@ -46,14 +46,14 @@
         {% endfor %}
         </tbody>
       </table>
-      {% else %}<p class="empty">No installs in this period yet. <a href="/ui/setup">Point pip, uv, npm, go, Maven, Gradle or Cargo at SlowShield →</a></p>{% endif %}
+      {% else %}<p class="empty">No installs in this period yet. <a href="/ui/setup">Point pip, uv, npm, go, Maven, Gradle, Cargo or your container runtime at SlowShield →</a></p>{% endif %}
     </section>
     <section class="card">
       <header class="card-head"><h2>Recent security events</h2><a href="/ui/security">Timeline →</a></header>
       {% if events %}
       <ul class="events">
         {% for e in events %}
-        <li>{{ m.event_badge(e.type) }} {{ m.pkg_link(e.ecosystem, e.package) }}{% if e.version %} <code>{{ e.version }}</code>{% endif %}
+        <li>{{ m.event_badge(e.type) }} {{ m.pkg_link(e.ecosystem, e.package) }}{% if e.version %} {{ m.ver(e.version) }}{% endif %}
             {% if e["count"] > 1 %}<span class="muted">×{{ e["count"] }}</span>{% endif %}<br><span class="muted small">{{ ago(e.ts) }}{% if e.client_ip %} · {{ e.client_ip }}{% endif %}</span></li>
         {% endfor %}
       </ul>

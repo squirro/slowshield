@@ -22,7 +22,7 @@ from slowshield.upstream import UpstreamError
 
 log = logging.getLogger(__name__)
 
-ECOSYSTEMS = {e.github: e.id for e in REGISTRY.values()}  # GitHub name -> ours
+ECOSYSTEMS = {e.github: e.id for e in REGISTRY.values() if e.github}  # GitHub name -> ours
 MAX_PAGES = 200
 PER_PAGE = 100
 _NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')

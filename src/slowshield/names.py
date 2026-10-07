@@ -1,4 +1,4 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven and Cargo."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo and OCI images."""
 
 from __future__ import annotations
 
@@ -79,6 +79,44 @@ def normalize_cargo(name: str) -> str:
 
 def is_valid_cargo(name: str) -> bool:
     return _CARGO_NAME.match(name) is not None
+
+
+# OCI image repositories: `<registry>/<path>` as Docker spells references. A first component with a `.` or `:`, or
+# `localhost`, is the registry; anything else is on Docker Hub, where one-component names live under `library/`.
+# Path components follow the distribution spec: lower-case letters and digits, separated by `.`, `_`, `__` or dashes.
+_OCI_COMPONENT = re.compile(r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*")
+_OCI_HOST = re.compile(r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)+|localhost)(?::[0-9]{1,5})?")
+OCI_DOCKER_HUB = "docker.io"
+OCI_HUB_ALIASES = frozenset({"docker.io", "index.docker.io", "registry-1.docker.io"})
+OCI_MAX_LEN = 255
+
+
+def oci_split(name: str) -> tuple[str, str]:
+    """`nginx` -> (`docker.io`, `library/nginx`); `ghcr.io/a/b` -> (`ghcr.io`, `a/b`)."""
+    name = name.strip().lower()
+    first, _, rest = name.partition("/")
+    if rest and ("." in first or ":" in first or first == "localhost"):
+        registry, path = first, rest
+    else:
+        registry, path = OCI_DOCKER_HUB, name
+    if registry in OCI_HUB_ALIASES:
+        registry = OCI_DOCKER_HUB
+        if "/" not in path:
+            path = f"library/{path}"
+    return registry, path
+
+
+def normalize_oci(name: str) -> str:
+    """The canonical repository: `docker.io/library/nginx`, `ghcr.io/squirro/slowshield`."""
+    registry, path = oci_split(name)
+    return f"{registry}/{path}"
+
+
+def is_valid_oci(name: str) -> bool:
+    if not (0 < len(name) <= OCI_MAX_LEN):
+        return False
+    registry, path = oci_split(name)
+    return _OCI_HOST.fullmatch(registry) is not None and all(_OCI_COMPONENT.fullmatch(c) for c in path.split("/"))
 
 
 def normalize_go(path: str) -> str:

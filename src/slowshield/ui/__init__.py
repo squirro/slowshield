@@ -8,6 +8,7 @@ import hashlib
 import io
 import math
 import os
+import re
 from datetime import UTC, datetime
 from functools import cache, partial
 from pathlib import Path
@@ -23,8 +24,11 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
+from slowshield.blocklist import PackageBlocks
+from slowshield.config import LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
+from slowshield.ecosystems.oci.service import delay_days
 from slowshield.policy import DAY
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
@@ -115,6 +119,18 @@ def fmt_pct(x: float | None) -> str:
     return "—" if x is None else f"{x * 100:.1f}%"
 
 
+_DIGEST = re.compile(r"(sha256|sha384|sha512):[0-9a-f]{32,}")
+
+
+def short_version(version: str) -> str:
+    """A version as the UI shows it: digests (container images) like Docker's short IDs, sha256:3734a9c4892e…;
+    everything else in full. The macro `m.ver` puts the full value in the title."""
+    if _DIGEST.fullmatch(version):
+        algo, _, hexdigits = version.partition(":")
+        return f"{algo}:{hexdigits[:12]}…"
+    return version
+
+
 class UI:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
@@ -126,7 +142,10 @@ class UI:
             auto_reload=os.environ.get("SLOWSHIELD_DEV_TEMPLATES") == "1",
             cache_size=400,
         )
-        env.filters.update(bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href)
+        env.filters.update(
+            bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href,
+            short_version=short_version,
+        )  # fmt: skip
         cast(dict[str, Any], env.globals).update(
             version=__version__,
             asset=asset,
@@ -315,10 +334,11 @@ class UI:
                 "series": Q.package_series(conn, eco, name, w),
                 "events": Q.package_events(conn, eco, name, 50),
                 "blocks": Q.package_blocks(conn, eco, name),
+                "tags": Q.oci_tags(conn, name) if eco == "oci" else [],
             }
 
         data = await self._q(collect)
-        if data["pkg"] is None and not data["blocks"]:
+        if data["pkg"] is None and not data["blocks"] and not data["tags"] and not data["events"]:
             return self._render("not_found.html.j2", request, what="package", name=name, eco=eco)
         versions = []
         for v in data["versions"]:
@@ -348,7 +368,8 @@ class UI:
             title=f"Downloads of {name}",
             height=160,
         )
-        held = sum(1 for v in versions if v["status"] == "held")
+        tags = _oci_tags(data["tags"], name, cfg, blocks, now)
+        held = sum(1 for v in [*versions, *tags] if v["status"] == "held")
         return self._render(
             "package.html.j2",
             request,
@@ -356,6 +377,7 @@ class UI:
             name=name,
             pkg=data["pkg"],
             versions=versions,
+            tags=tags,
             held=held,
             chart=chart,
             events=data["events"],
@@ -522,6 +544,7 @@ class UI:
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         age_days = S.client_age_days(raw.default_delay_days)
+        images = S.oci_tools(local or base, tuple(sorted(raw.upstreams.oci.all_registries())), age_days=age_days)
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
@@ -536,8 +559,10 @@ class UI:
             legacy_hosts=legacy_hosts,
             secure=secure,
             snippets=snippets,
-            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days),
-            tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0),
+            docs=S.docs_url,
+            docs_home=S.DOCS,
+            tools=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=age_days) + images,
+            tools_plain=S.tools(pypi_index, npm_registry, go_proxy, maven_base, cargo_index, age_days=0) + images,
             age_days=age_days,
             ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
             ci_plain=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=0),
@@ -553,6 +578,34 @@ class UI:
             text = _read_doc(name)
             docs[name] = Markup(self.md.render(text)) if text else None  # noqa: S704 - markdown-it with html disabled
         return self._render("about.html.j2", request, docs=docs, info=build_info())
+
+
+def _oci_tags(rows: list[Any], repo: str, cfg: LoadedConfig, blocks: PackageBlocks, now: float) -> list[dict]:
+    """The package page's tag history: each digest a tag pointed to, judged as a pull by that tag would be, and which
+    one the tag serves now (the newest available one)."""
+    out: list[dict] = []
+    served: set[str] = set()
+    for r in rows:  # newest first within each tag
+        registry_time = r["registry_time"]
+        time = r["first_seen"] if registry_time is None else min(r["first_seen"], registry_time)
+        delay = delay_days(cfg, repo, r["digest"], r["tag"])
+        block = blocks.match("oci", r["digest"]) or blocks.match("oci", r["tag"])
+        until = None
+        if block is not None:
+            status = "blocked"
+        elif r["gone"] is not None:
+            status = "taken_down"
+        elif now - time < delay * DAY:
+            status, until = "held", time + delay * DAY
+        else:
+            status = "available"
+        serving = status == "available" and r["tag"] not in served
+        if serving:
+            served.add(r["tag"])
+        clock = "registry" if registry_time is not None and registry_time <= r["first_seen"] else "first seen"
+        out.append({**dict(r), "time": time, "clock": clock, "status": status, "until": until, "block": block,
+                    "serving": serving})  # fmt: skip
+    return out
 
 
 def _client_os(request: Request) -> str:

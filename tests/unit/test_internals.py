@@ -198,7 +198,7 @@ def test_split_sql() -> None:
 async def test_writer_isolates_failures(tmp_path: Path) -> None:
     path = tmp_path / "w.db"
     migrate(path)
-    assert migrate(path) == 4  # idempotent
+    assert migrate(path) == 5  # idempotent
     db = Database(path)
     db.open()
     try:
@@ -606,3 +606,29 @@ def test_healthcheck_only_accepts_http_urls(capsys: pytest.CaptureFixture[str]) 
 
     assert cmd_healthcheck(argparse.Namespace(url="file:///etc/passwd", timeout=1)) == 2
     assert "must be http(s)" in capsys.readouterr().err
+
+
+async def test_config_blocks_sync_to_the_blocklist(tmp_path: Path) -> None:
+    from slowshield.blocklist import sync_config_blocks
+
+    path = tmp_path / "b.db"
+    migrate(path)
+    db = Database(path)
+    db.open()
+    try:
+
+        def rows() -> list[tuple]:
+            return [tuple(r) for r in db.readers.query(
+                "SELECT ecosystem, name, version, reason FROM blocklist WHERE source = 'config' ORDER BY name"
+            )]  # fmt: skip
+
+        blocks = [("oci", "docker.io/library/evil", None, "miner", None), ("npm", "left-pad-ng", "2.0.0", None, None)]
+        assert await db.writer.run(lambda c: sync_config_blocks(c, blocks, 1.0)) == 2
+        assert await db.writer.run(lambda c: sync_config_blocks(c, blocks, 2.0)) == 0  # unchanged: nothing written
+        gen = db.meta("blocklist_generation")
+        changed = [("oci", "docker.io/library/evil", None, "miner, confirmed", None)]
+        assert await db.writer.run(lambda c: sync_config_blocks(c, changed, 3.0)) == 2  # one updated, one removed
+        assert rows() == [("oci", "docker.io/library/evil", None, "miner, confirmed")]
+        assert db.meta("blocklist_generation") != gen
+    finally:
+        db.close()

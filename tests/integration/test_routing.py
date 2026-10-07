@@ -169,6 +169,11 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "sbt",
         "Coursier",
         "Cargo",
+        "containerd",
+        "Docker",
+        "Podman",
+        "BuildKit",
+        "Image names",
     ]
     assert re.findall(r'<option value="([^"]+)">', page) == names  # the native pulldown
     assert re.findall(r'data-tool-pick="([^"]+)"', page) == names
@@ -184,6 +189,16 @@ async def test_setup_page_tool_finder(start_app) -> None:
         in page
     )
     assert "allowInsecureProtocol" not in page and "maven-default-http-blocker" not in page  # HTTPS instance
+    # Containers: containerd and Docker's containerd store get SlowShield as the `server`, so they never fall back.
+    assert page.count("server = &#34;https://slowshield.example.com&#34;\ncapabilities = [&#34;pull&#34;") == 2
+    assert "prefix = &#34;quay.io&#34;\nlocation = &#34;slowshield.example.com/quay.io&#34;" in page
+    assert "insecure = true" not in page and "http = true" not in page
+    assert "prefix = &#34;gcr.io&#34;" not in page  # switched off in this config
+    assert "FROM slowshield.example.com/docker.io/library/nginx" in page
+    # Every tool links to its section of the guide on slowshield.org.
+    assert 'href="https://slowshield.org/docs/python/#poetry"' in page
+    assert 'href="https://slowshield.org/docs/containers/#image-names"' in page
+    assert 'href="https://slowshield.org/docs/container-builds/"' in page
 
 
 async def test_setup_page_offers_the_package_managers_own_release_age(start_app) -> None:

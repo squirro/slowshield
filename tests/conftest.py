@@ -63,8 +63,24 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
                 "repos": {"snapshots": {"url": f"{fake_url}/maven/snapshots", "snapshots": True}},
             },
             "cargo": {"index_url": f"{fake_url}/cargo-index", "download_url": f"{fake_url}/cargo-static/crates"},
+            "oci": {"registries": fake_oci_registries(fake_url)},
         },
         "feeds": {"osv_base_url": f"{fake_url}/osv", "github_api_url": f"{fake_url}/github"},
+    }
+
+
+def fake_oci_registries(fake_url: str) -> dict[str, Any]:
+    """The built-in registries pointed at the fake (blobs redirect to its `localhost` CDN); the rest switched off."""
+
+    def fake(name: str, **extra: Any) -> dict[str, Any]:
+        return {"url": f"{fake_url}/oci/{name}", "download_hosts": ["localhost"], **extra}
+
+    return {
+        "docker.io": fake("docker.io", times="hub", times_url=f"{fake_url}/hub", aliases=["index.docker.io"]),
+        "quay.io": fake("quay.io", times="quay", times_url=f"{fake_url}/quay"),
+        "registry.k8s.io": fake("registry.k8s.io", times="gcr"),
+        "ghcr.io": fake("ghcr.io"),
+        **{n: {"url": f"https://{n}", "enabled": False} for n in ("gcr.io", "mcr.microsoft.com", "public.ecr.aws")},
     }
 
 

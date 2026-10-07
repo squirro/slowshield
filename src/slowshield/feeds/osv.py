@@ -28,7 +28,7 @@ from slowshield.upstream import TooLargeError, UpstreamError
 
 log = logging.getLogger(__name__)
 
-ECOSYSTEMS = {e.osv: e.id for e in REGISTRY.values()}  # OSV name -> ours
+ECOSYSTEMS = {e.osv: e.id for e in REGISTRY.values() if e.osv}  # OSV name -> ours
 MAX_ZIP_BYTES = 4 << 30
 MAX_ENTRY_BYTES = 8 << 20
 MAX_DOC_BYTES = 8 << 20

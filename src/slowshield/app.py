@@ -23,19 +23,21 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from slowshield import __version__, telemetry
-from slowshield.blocklist import Blocklist
+from slowshield.blocklist import Blocklist, sync_config_blocks
 from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock, SystemClock
-from slowshield.config import ConfigHolder, LoadedConfig, load
+from slowshield.config import BlockRule, ConfigHolder, LoadedConfig, load
 from slowshield.context import AppContext
 from slowshield.db import Database
+from slowshield.ecosystems import normalize
 from slowshield.ecosystems.artifacts import ArtifactServer
 from slowshield.ecosystems.cargo.service import CargoService
 from slowshield.ecosystems.go.service import GoService
 from slowshield.ecosystems.maven.service import MavenService
 from slowshield.ecosystems.npm.service import NpmService
+from slowshield.ecosystems.oci.service import OciService
 from slowshield.ecosystems.pypi.service import PypiService
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
@@ -73,6 +75,9 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
     allowed |= {h.lower() for h in raw.upstreams.go.download_hosts}
     cargo = raw.upstreams.cargo
     allowed |= _hosts([cargo.index_url, cargo.download_url]) | {h.lower() for h in cargo.download_hosts}
+    if raw.upstreams.oci.enabled:
+        for reg in raw.upstreams.oci.all_registries().values():
+            allowed |= _hosts([reg.url, reg.times_url or ""]) | {h.lower() for h in reg.download_hosts}
     for repo in raw.upstreams.maven.all_repos().values():
         allowed |= _hosts([repo.url]) | {h.lower() for h in repo.download_hosts}
     upstream = Upstream(
@@ -86,7 +91,17 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
         max_bytes=int(raw.cache.artifacts_max_gb * (1 << 30)),
         enabled=raw.cache.artifacts_enabled,
     )
-    artifacts = ArtifactServer(db=db, cache=cache, upstream=upstream, recorder=recorder, clock=clock)
+    layers = None
+    if raw.upstreams.oci.enabled and raw.upstreams.oci.layer_cache_gb > 0:
+        layers = ArtifactCache(
+            cfg.cache_dir / "oci-layers",
+            db,
+            clock,
+            max_bytes=int(raw.upstreams.oci.layer_cache_gb * (1 << 30)),
+            table="oci_layer_entries",
+            label="oci_layers",
+        )
+    artifacts = ArtifactServer(db=db, cache=cache, upstream=upstream, recorder=recorder, clock=clock, layers=layers)
     return AppContext(
         config=ConfigHolder(cfg),
         clock=clock,
@@ -155,7 +170,9 @@ class SlowShield:
         ctx.started_at = self.clock.now()
         await asyncio.to_thread(ctx.db.open)
         await asyncio.to_thread(ctx.metadata_store.open)
-        ctx.artifact_cache.prepare()
+        await sync_blocks(ctx)
+        for store in ctx.artifacts.stores.values():
+            store.prepare()
         for w in self.cfg.warnings:
             log.warning(w)
         pypi = PypiService(ctx) if self.cfg.raw.upstreams.pypi.enabled else None
@@ -163,13 +180,14 @@ class SlowShield:
         go = GoService(ctx) if self.cfg.raw.upstreams.go.enabled else None
         maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         cargo = CargoService(ctx) if self.cfg.raw.upstreams.cargo.enabled else None
+        oci = OciService(ctx) if self.cfg.raw.upstreams.oci.enabled else None
         from slowshield.ui import UI
 
         ui = UI(ctx)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
-        self._register_gauges(ctx)
+        self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
-            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, ui=ui)
+            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, oci=oci, ui=ui)
         )
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
@@ -186,6 +204,7 @@ class SlowShield:
                 "go": bool(go),
                 "maven": bool(maven),
                 "cargo": bool(cargo),
+                "oci": bool(oci),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
             },
@@ -211,27 +230,33 @@ class SlowShield:
         self._tasks.append(asyncio.ensure_future(coro))
         self._tasks[-1].set_name(f"slowshield-{name}")
 
-    def _register_gauges(self, ctx: AppContext) -> None:
+    def _register_gauges(self, ctx: AppContext, oci: OciService | None) -> None:
         process.register()
         instruments.observe("slowshield.db.writer.queue", lambda: [(ctx.db.writer.queue_depth, {})], unit="{op}")
-        instruments.observe(
-            "slowshield.cache.size",
-            lambda: [
+        layers = ctx.artifacts.stores.get("layers")  # the optional OCI layer store
+
+        def sizes() -> list[tuple[float, dict[str, str | int | float | bool]]]:
+            out: list[tuple[float, dict[str, str | int | float | bool]]] = [
                 (ctx.artifact_cache.size_bytes, {"cache": "artifact"}),
                 (ctx.metadata_store.usage(max_age=60)[1], {"cache": "metadata"}),
                 (ctx.metadata_cache.bytes, {"cache": "metadata_memory"}),
-            ],
-            unit="By",
-        )
-        instruments.observe(
-            "slowshield.cache.limit",
-            lambda: [
+            ]
+            if layers is not None:
+                out.append((layers.size_bytes, {"cache": "oci_layers"}))
+            return out
+
+        def limits() -> list[tuple[float, dict[str, str | int | float | bool]]]:
+            out: list[tuple[float, dict[str, str | int | float | bool]]] = [
                 (ctx.artifact_cache.max_bytes, {"cache": "artifact"}),
                 (ctx.metadata_store.max_bytes, {"cache": "metadata"}),
                 (ctx.metadata_cache.max_bytes, {"cache": "metadata_memory"}),
-            ],
-            unit="By",
-        )
+            ]
+            if layers is not None:
+                out.append((layers.max_bytes, {"cache": "oci_layers"}))
+            return out
+
+        instruments.observe("slowshield.cache.size", sizes, unit="By")
+        instruments.observe("slowshield.cache.limit", limits, unit="By")
         from slowshield import build_info
 
         info = build_info()
@@ -250,12 +275,15 @@ class SlowShield:
             ],
         )
         instruments.observe("slowshield.leader", lambda: [(1 if ctx.is_leader else 0, {})])
+        if oci is not None:
+            instruments.observe("slowshield.oci.ratelimit.remaining", oci.client.remaining, unit="{request}")
 
     async def _config_watcher(self, ctx: AppContext) -> None:
         while True:
             await asyncio.sleep(5)
             if await asyncio.to_thread(ctx.config.maybe_reload):
                 ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
+                await sync_blocks(ctx)
 
     async def _leader_loop(self, ctx: AppContext) -> None:
         if self._scheduler is None:  # pragma: no cover - startup always creates it
@@ -267,7 +295,8 @@ class SlowShield:
             follower.cancel()
             ctx.is_leader = True
             log.info("this worker is the leader (feeds, cache maintenance, retention)")
-            await asyncio.to_thread(ctx.artifact_cache.cleanup)
+            for store in ctx.artifacts.stores.values():
+                await asyncio.to_thread(store.cleanup)
             await asyncio.gather(self._scheduler.run_forever(), self._maintenance(ctx))
         finally:
             follower.cancel()
@@ -276,8 +305,9 @@ class SlowShield:
         last_scrub = last_retention = 0.0
         while True:
             try:
-                await ctx.artifact_cache.evict()
-                await asyncio.to_thread(ctx.artifact_cache.purge_trash)
+                for store in ctx.artifacts.stores.values():
+                    await store.evict()
+                    await asyncio.to_thread(store.purge_trash)
                 await ctx.metadata_store.aevict()
                 now = ctx.clock.now()
                 raw = ctx.cfg.raw
@@ -294,7 +324,8 @@ class SlowShield:
                     )
                 if now - last_scrub > raw.cache.scrub_interval_hours * 3600:
                     last_scrub = now
-                    await ctx.artifact_cache.scrub()
+                    for store in ctx.artifacts.stores.values():
+                        await store.scrub()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -312,6 +343,7 @@ class SlowShield:
         go: GoService | None,
         maven: MavenService | None,
         cargo: CargoService | None,
+        oci: OciService | None,
         ui: Any,
     ) -> ASGIApp:
         raw = self.cfg.raw
@@ -331,6 +363,8 @@ class SlowShield:
             main.append(Mount("/maven", app=maven))
         if cargo is not None:
             main.append(Mount("/cargo", app=cargo))
+        if oci is not None:
+            main.append(Mount("/v2", app=oci))  # the OCI distribution API is mandated at the root
         main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
         main.extend(ui.routes())
         # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
@@ -497,6 +531,11 @@ def _route_label(path: str) -> str:
         if "/maven-metadata.xml" in path:
             return "/maven/{repo}/{artifact}/maven-metadata.xml"
         return "/maven/{repo}/{file}"
+    if path.startswith("/v2/") or path == "/v2":
+        for kind in ("/manifests/", "/blobs/", "/referrers/"):
+            if kind in path:
+                return f"/v2/{{name}}{kind}{{reference}}"
+        return "/v2/{name}/tags/list" if path.endswith("/tags/list") else "/v2/"
     if path.startswith("/cargo/"):
         if path.startswith("/cargo/crates/"):
             return "/cargo/crates/{crate}/{version}/download"
@@ -513,6 +552,24 @@ def _route_label(path: str) -> str:
     if "/-/" in path:
         return "/{package}/-/{file}"
     return "/{package}"
+
+
+async def sync_blocks(ctx: AppContext) -> None:
+    """Write config.toml's [[blocks]] to the blocklist (rows with `source = 'config'`)."""
+    now = ctx.clock.now()
+    oci = ctx.cfg.raw.upstreams.oci
+
+    def name(b: BlockRule) -> str:
+        n = normalize(b.ecosystem, b.package)
+        return oci.canonical(n) if b.ecosystem == "oci" else n
+
+    rules = [
+        (b.ecosystem, name(b), b.version.strip() if b.version else None, b.reason, b.url) for b in ctx.cfg.raw.blocks
+    ]
+    changed = await ctx.db.writer.run(lambda c: sync_config_blocks(c, rules, now))
+    if changed:
+        ctx.blocklist.refresh_generation(force=True)
+        log.info("operator blocks applied", extra={"blocks": len(rules), "changed": changed})
 
 
 def create_app(

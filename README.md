@@ -5,8 +5,8 @@
   </picture>
 </p>
 
-SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules**, **Maven** (Maven, Gradle, sbt) and
-**Cargo** (crates.io).
+SlowShield is a supply-chain defence proxy for **PyPI**, **npm**, **Go modules**, **Maven** (Maven, Gradle, sbt),
+**Cargo** (crates.io) and **container images** (Docker Hub, GHCR, Quay, registry.k8s.io and others).
 It sits between your developers,
 CI and production builds and the public registries, and:
 
@@ -21,20 +21,21 @@ CI and production builds and the public registries, and:
   ready-made Grafana dashboards and alerts.
 
 ```
-pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle / cargo
+pip / uv / poetry / npm / pnpm / yarn / bun / go / maven / gradle / cargo / containerd / docker / podman
                  │  HTTPS (TLS 1.3, HTTP/2, HTTP/3)
                  ▼
           Caddy (TLS, H3)  ──────────────── certificates: ACME, your files, or internal CA
                  │
           SlowShield (Python 3.15, Granian)
           ├─ blocklist      OSV + GitHub malware advisories (sync every hour)
-          ├─ release age    per file (PyPI, Maven) / per version (npm, Go, Cargo), exceptions, fail-open
+          ├─ release age    per file (PyPI, Maven) / per version (npm, Go, Cargo) / per digest (images)
           ├─ integrity      registry digests + trust-on-first-use fingerprint, verified cache
           └─ telemetry      OTLP → Alloy → Prometheus / Loki / Tempo → Grafana
                  │  HTTP/2
                  ▼
      pypi.org · files.pythonhosted.org · registry.npmjs.org · proxy.golang.org · sum.golang.org
      repo1.maven.org · dl.google.com (Google Maven) · plugins.gradle.org · index.crates.io · static.crates.io
+     registry-1.docker.io · ghcr.io · quay.io · registry.k8s.io · gcr.io · mcr.microsoft.com · public.ecr.aws
 ```
 
 ## Quick start
@@ -95,10 +96,12 @@ npm config set registry https://slowshield.example.com/npm/
 go env -w GOPROXY=https://slowshield.example.com/go      # without ",direct", which would go around SlowShield
 # Maven: a mirror in ~/.m2/settings.xml; Gradle: an init script in ~/.gradle/init.d/ (both on the Setup page)
 # Cargo: source replacement in ~/.cargo/config.toml, index "sparse+https://slowshield.example.com/cargo/"
+# containerd, Docker: /etc/containerd/certs.d/_default/hosts.toml (Docker: /etc/docker/certs.d/_default/) with
+#   server = "https://slowshield.example.com" and capabilities = ["pull", "resolve"]
 ```
 
 The UI's **Setup** page renders ready-to-copy snippets for pip, uv, Poetry, PDM, Pipenv, npm, pnpm, Yarn,
-Bun, Go, Maven, Gradle, sbt, Coursier and Cargo with your URLs. Every ecosystem lives under a path on the one host
+Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, containerd, Docker, Podman and BuildKit with your URLs. Every ecosystem lives under a path on the one host
 ([docs/design/routing.md](docs/design/routing.md)); per-ecosystem hostnames are deprecated and removed in 0.1.
 
 What clients see:
@@ -111,12 +114,19 @@ What clients see:
 | package or version on the malware blocklist | removed (`451` if nothing is left) | `451` with the advisory |
 | bytes differ from the registry digest or first-seen fingerprint | — | stream aborted, event recorded, later `451` |
 
+Container images: a tag resolves to the newest digest it has pointed to for the delay, so `nginx:latest` keeps
+working about a week behind. A pinned digest that is too new, or a blocked image, gets `403` with the reason
+([docs/design/oci.md](docs/design/oci.md)).
+
 ## Threat feeds
 
 | Feed | Token | Notes |
 |---|---|---|
 | OSV / OpenSSF malicious packages | none | full snapshot once, then incremental via `modified_id.csv` |
 | GitHub Advisory Database (malware) | `GITHUB_TOKEN` (fine-grained PAT, no permissions) | without a token the feed is **off**, the UI shows how to enable it, and `slowshield_feed_enabled{reason="missing_token"}` lets you alert on it |
+
+No feed covers container images; block a repository, tag or digest with `[[blocks]]` in `config.toml`, which also
+works for every other ecosystem.
 
 ## Configuration
 

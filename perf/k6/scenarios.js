@@ -23,6 +23,10 @@ const FULL = { headers: { Accept: "application/json" } };
 // k6 counts every status >= 400 as a failed request. For the blocked request 451 is the success and
 // anything else (a 200 serves the malware) the failure; setup() requests keep the default.
 const BLOCKED = { ...JSON_ACCEPT, responseCallback: http.expectedStatuses(451) };
+const OCI_ACCEPT = {
+  headers: { Accept: "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json" },
+};
+const OCI_REPO = `${TARGET}/v2/quay.io/prometheus/node-exporter`;
 
 // Index URLs are relative ("../../packages/..") to the project page; resolve them against /pypi/.
 function resolve(url) {
@@ -44,6 +48,12 @@ function discover() {
   if (big.status === 200) {
     const files = big.json("files") || [];
     if (files.length) out.big = resolve(files[0].url);
+  }
+  // An image config: the tag's index, its first platform manifest, then that manifest's config blob.
+  const index = http.get(`${OCI_REPO}/manifests/latest`, OCI_ACCEPT);
+  if (index.status === 200) {
+    const image = http.get(`${OCI_REPO}/manifests/${index.json("manifests.0.digest")}`, OCI_ACCEPT);
+    if (image.status === 200) out.ociConfig = `${OCI_REPO}/blobs/${image.json("config.digest")}`;
   }
   return out;
 }
@@ -68,6 +78,10 @@ const SCENARIOS = {
   // Cargo: the index file of a 500-version crate (cargo asks for every crate in the graph), and a cached .crate.
   cargo_index: () => http.get(`${TARGET}/cargo/ma/ny/many-crate`),
   cargo_crate: () => http.get(`${TARGET}/cargo/crates/fake_hello/1.0.0/download`),
+  // Containers: a tag that time-travels (the newest digest is held), served from the tag and manifest caches, and a
+  // cached image config (clients fetch one per platform per pull).
+  oci_manifest: () => http.get(`${OCI_REPO}/manifests/latest`, OCI_ACCEPT),
+  oci_config: (d) => http.get(d.ociConfig),
   dashboard: (d) => http.get(d.dashboard),
   mixed: (d) => {
     const r = Math.random();

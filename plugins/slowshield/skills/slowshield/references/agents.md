@@ -36,9 +36,9 @@ releases back for 7 days and refuses known malware.
 
 An [Agent Skill](https://agentskills.io) that teaches an agent to set up every package manager, Dockerfile and container runtime for a SlowShield instance, check that nothing goes around it, and handle its answers. Its references are this guide, kept in step with it.
 
-- **Claude Code:** `/plugin marketplace add squirro/slowshield`, then `/plugin install slowshield@slowshield`. Or copy the folder to `~/.claude/skills/slowshield/` (all your projects) or `.claude/skills/slowshield/` (one project).
+- **Claude Code:** `/plugin marketplace add squirro/slowshield#v<release>`, then `/plugin install slowshield@slowshield`. The tag pins the skill to that release; add the marketplace again at a newer tag to move on. Or copy the folder to `~/.claude/skills/slowshield/` (all your projects) or `.claude/skills/slowshield/` (one project).
 
-- **Other agents that load Agent Skills:** download [slowshield.zip](https://slowshield.org/skills/slowshield.zip) and unpack it where the agent looks for skills.
+- **Other agents that load Agent Skills:** download [slowshield-skill.zip](https://github.com/squirro/slowshield/releases) from the release, check it with the `slowshield-skill.zip.sha256` next to it (`sha256sum -c slowshield-skill.zip.sha256`), and unpack it where the agent looks for skills.
 
 - **Read it first:** [SKILL.md](https://slowshield.org/skills/slowshield/SKILL.md), or the source in [plugins/slowshield](https://github.com/squirro/slowshield/tree/main/plugins/slowshield).
 
@@ -57,7 +57,7 @@ An [Agent Skill](https://agentskills.io) that teaches an agent to set up every p
 
 3. **No team instance?** An agent working on one machine can run its own, with nothing kept after it stops. Run a release, never `:latest`, and pin its digest where you can:
    ```
-   docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:0.0.7
+   docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:<release>
    export PIP_INDEX_URL=http://localhost:8080/pypi/simple/ UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/ \
      npm_config_registry=http://localhost:8080/npm/ GOPROXY=http://localhost:8080/go
    ```

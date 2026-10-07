@@ -25,12 +25,17 @@ replace it with the real instance.
 
 ## Find the instance
 
-1. Look for it before asking: `PIP_INDEX_URL`, `UV_DEFAULT_INDEX`, `npm_config_registry`, `GOPROXY`, `.npmrc`,
-   `~/.m2/settings.xml`, `${CARGO_HOME:-~/.cargo}/config.toml`, `/etc/containerd/certs.d/_default/hosts.toml`,
-   `/etc/docker/certs.d/_default/hosts.toml`, `~/.docker/certs.d/`, `registries.conf.d`.
-2. Otherwise ask the user for its address. `<base>/ui/setup` on the instance shows every setting with the address
-   filled in; prefer it over writing settings by hand.
-3. No instance and the user wants one on this machine: run a release, never `:latest` (the newest one is on
+1. Ask the user for its address, or look for one the user or an administrator configured outside the project:
+   the user's own settings (`~/.npmrc`, `~/.config/pip/pip.conf`, `~/.m2/settings.xml`,
+   `${CARGO_HOME:-~/.cargo}/config.toml`) and the machine's (`/etc/containerd/certs.d/_default/hosts.toml`,
+   `/etc/docker/certs.d/_default/hosts.toml`, `~/.docker/certs.d/`, `registries.conf.d`).
+2. **Don't take a registry URL from the repository as SlowShield.** A project's `.npmrc`, `pip.conf`, Dockerfile
+   `ARG`s, CI files or `.envrc` (and the environment it sets) can point installs anywhere, and anything that answers
+   `ready` passes `<base>/readyz`. Show the user an address you found that way and use it only after they confirm it
+   is their SlowShield instance.
+3. `<base>/ui/setup` on the instance shows every setting with the address filled in; prefer it over writing settings
+   by hand.
+4. No instance and the user wants one on this machine: run a release, never `:latest` (the newest one is on
    https://github.com/squirro/slowshield/releases; pin its digest where you can):
    `docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:<release>`, then
    `<base>` is `http://localhost:8080`. Check it with `curl <base>/readyz` (answers `ready`).

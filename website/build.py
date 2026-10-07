@@ -81,6 +81,10 @@ SKILL_PAGES = ("python", "javascript", "go", "java", "rust", "containers", "cont
 DEFAULT_RELEASE = tomllib.loads((HERE.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 RELEASE_MARKER = "{{release}}"
 _VERSION = re.compile(r"\d+\.\d+\.\d+")
+# The first release whose tag and GitHub Release carry the Agent Skill: from it on, the site pins the skill to the
+# release it names. The skill's own copy of the guide names no release (it is read at any).
+SKILL_SINCE = (0, 0, 9)
+SKILL_MARKERS = ("{{skill_install}}", "{{skill_marketplace}}", "{{skill_zip}}")
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
@@ -181,10 +185,57 @@ def docs_parts() -> dict[str, str]:
     return flat
 
 
-def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[str, str, str]]:
+def skill_install(release: str | None) -> dict[str, str]:
+    """How to install the Agent Skill, by marker: pinned to `release` once releases carry the skill, unpinned before;
+    `None` for the skill's own copy of the guide, which names no release."""
+    repo = "https://github.com/squirro/slowshield"
+    copy = (
+        " Or copy the folder to <code>~/.claude/skills/slowshield/</code> (all your projects) or "
+        "<code>.claude/skills/slowshield/</code> (one project)."
+    )
+    if release is not None and tuple(int(p) for p in release.split(".")) < SKILL_SINCE:
+        since = ".".join(map(str, SKILL_SINCE))
+        return {
+            "{{skill_marketplace}}": "squirro/slowshield",
+            "{{skill_zip}}": "https://slowshield.org/skills/slowshield.zip",
+            "{{skill_install}}": (
+                "<li><strong>Claude Code:</strong> <code>/plugin marketplace add squirro/slowshield</code>, then "
+                "<code>/plugin install slowshield@slowshield</code>. From "
+                f"{since} on, releases carry the skill: add the marketplace at a release tag "
+                f"(<code>squirro/slowshield#v{since}</code>) to pin it.{copy}</li>\n"
+                '  <li><strong>Other agents that load Agent Skills:</strong> download <a href="/skills/slowshield.zip">'
+                "slowshield.zip</a> and unpack it where the agent looks for skills. From "
+                f"{since} on, each release carries it, with a SHA-256 to check it against.</li>"
+            ),
+        }
+    tag = f"v{release}" if release else "v&lt;release&gt;"
+    zip_url = f"{repo}/releases/download/{tag}/slowshield-skill.zip" if release else f"{repo}/releases"
+    return {
+        "{{skill_marketplace}}": f"squirro/slowshield#{tag}",
+        "{{skill_zip}}": zip_url,
+        "{{skill_install}}": (
+            f"<li><strong>Claude Code:</strong> <code>/plugin marketplace add squirro/slowshield#{tag}</code>, then "
+            "<code>/plugin install slowshield@slowshield</code>. The tag pins the skill to that release; add the "
+            f"marketplace again at a newer tag to move on.{copy}</li>\n"
+            f'  <li><strong>Other agents that load Agent Skills:</strong> download <a href="{zip_url}">'
+            "slowshield-skill.zip</a> from the release, check it with the <code>slowshield-skill.zip.sha256</code> "
+            "next to it (<code>sha256sum -c slowshield-skill.zip.sha256</code>), and unpack it where the agent looks "
+            "for skills.</li>"
+        ),
+    }
+
+
+def fill(text: str, release: str | None) -> str:
+    """The release markers: the release the site names, or for the skill's own copy, a placeholder."""
+    for marker, value in skill_install(release).items():
+        text = text.replace(marker, value)
+    return text.replace(RELEASE_MARKER, release or "&lt;release&gt;")
+
+
+def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[str, str, str, str]]:
     """website/docs/pages/*.html, each starting with a `<!-- title: … | description: … -->` line, into /docs/ as
-    HTML and Markdown. Returns slug -> (title, description, Markdown)."""
-    docs_md: dict[str, tuple[str, str, str]] = {}
+    HTML and Markdown. Returns slug -> (title, description, Markdown, Markdown for the skill's references)."""
+    docs_md: dict[str, tuple[str, str, str, str]] = {}
     layout = (DOCS / "layout.html").read_text(encoding="utf-8")
     parts = docs_parts()
     pages = {p.stem: p for p in (DOCS / "pages").glob("*.html")}
@@ -210,7 +261,8 @@ def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[s
                 return m.group(0)
             return parts[key]
 
-        body = DOCS_MARKER.sub(include, body).replace(RELEASE_MARKER, release)
+        template = DOCS_MARKER.sub(include, body)
+        body = fill(template, release)
         nav = "\n".join(
             f'<a href="/docs/{s + "/" if s else ""}"{' aria-current="page"' if s == slug else ""}>{label}</a>'
             for s, label in DOCS_NAV
@@ -233,32 +285,36 @@ def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[s
             + f"\n---\n\nThis page as HTML: {url}. All of the guide in one file: https://slowshield.org/llms-full.txt\n"
         )
         dest.with_name("index.md").write_text(md, encoding="utf-8")
-        docs_md[slug] = (head.group(1), head.group(2), md)
+        skill_md = (
+            to_markdown(fill(template, None))
+            + f"\n---\n\nThis page as HTML: {url}. All of the guide in one file: https://slowshield.org/llms-full.txt\n"
+        )
+        docs_md[slug] = (head.group(1), head.group(2), md, skill_md)
     return docs_md
 
 
 def write_agent_files(
-    out: Path, docs_md: dict[str, tuple[str, str, str]], errors: list[str], *, write_skill: bool
+    out: Path, docs_md: dict[str, tuple[str, str, str, str]], errors: list[str], *, write_skill: bool, release: str
 ) -> None:
     """/llms.txt, /llms-full.txt, the skill's references (checked against the committed copy, or written with
     `--write-skill`), and the skill itself under /skills/ (a folder and a zip)."""
     index = "\n".join(
         f"- [{title}](https://slowshield.org/docs/{slug + '/' if slug else ''}index.md): {description}"
         for slug, _ in DOCS_NAV
-        for title, description, _ in [docs_md.get(slug, ("", "", ""))]
+        for title, description, _, _ in [docs_md.get(slug, ("", "", "", ""))]
         if title
     )
-    llms = (DOCS / "llms.txt").read_text(encoding="utf-8").replace("{{pages}}", index)
+    llms = fill((DOCS / "llms.txt").read_text(encoding="utf-8").replace("{{pages}}", index), release)
     (out / "llms.txt").write_text(llms, encoding="utf-8")
     full = "\n\n".join(
-        md for _, (_, _, md) in sorted(docs_md.items(), key=lambda kv: [s for s, _ in DOCS_NAV].index(kv[0]))
+        md for _, (_, _, md, _) in sorted(docs_md.items(), key=lambda kv: [s for s, _ in DOCS_NAV].index(kv[0]))
     )
     (out / "llms-full.txt").write_text(llms + "\n\n" + full, encoding="utf-8")
 
     refs = SKILL / "references"
     wanted = {
         f"{page}.md": f"<!-- Generated by website/build.py from website/docs/pages/{page}.html; run it with "
-        f"--write-skill after changing that page. -->\n\n{docs_md[page][2]}"
+        f"--write-skill after changing that page. -->\n\n{docs_md[page][3]}"
         for page in SKILL_PAGES
         if page in docs_md
     }
@@ -351,11 +407,11 @@ def build(out: Path, *, write_skill: bool = False, release: str = DEFAULT_RELEAS
     snippets = load_snippets()
     snippet_errors: list[str] = []
     docs_md = render_docs(out, snippet_errors, release)
-    write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill)
+    write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill, release=release)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
-        new = new.replace(SPRITE_MARKER, sprite).replace(RELEASE_MARKER, release)
+        new = fill(new.replace(SPRITE_MARKER, sprite), release)
         if new != text:
             page.write_text(new, encoding="utf-8")
     if snippet_errors:

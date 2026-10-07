@@ -13,8 +13,8 @@ For agents: if an install fails with `403` and "too new" (Maven: `425 Too Early`
 ## Agent Skill
 
 - [SKILL.md](https://slowshield.org/skills/slowshield/SKILL.md): set up and use SlowShield for every ecosystem; references in the same folder
-- [slowshield.zip](https://slowshield.org/skills/slowshield.zip): the skill folder, for agents that load Agent Skills
-- Claude Code: `/plugin marketplace add squirro/slowshield`, then `/plugin install slowshield@slowshield`
+- [slowshield-skill.zip]({{skill_zip}}): the skill folder, for agents that load Agent Skills
+- Claude Code: `/plugin marketplace add {{skill_marketplace}}`, then `/plugin install slowshield@slowshield`
 
 ## Optional
 

@@ -292,7 +292,17 @@ jobs:
             echo "- \`${IMAGE}:${version}\`"
             echo "- \`${CADDY_IMAGE}:${version}\`"
           } >> notes.md
-          gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md
+          # The Agent Skill as it is at this tag, with its SHA-256, for agents that don't install it from git.
+          (cd plugins/slowshield/skills && zip -qrX ../../../slowshield-skill.zip slowshield)
+          sha256sum slowshield-skill.zip > slowshield-skill.zip.sha256
+          {
+            echo
+            echo "### Agent Skill"
+            echo
+            echo "- \`slowshield-skill.zip\`, sha256 \`$(cut -d' ' -f1 slowshield-skill.zip.sha256)\`"
+          } >> notes.md
+          gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md \
+            slowshield-skill.zip slowshield-skill.zip.sha256
 
       # A release created with GITHUB_TOKEN starts no workflow by itself; a dispatch does.
       - name: Redeploy the website

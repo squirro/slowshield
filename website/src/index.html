@@ -106,7 +106,7 @@
     <ol class="quick-steps">
       <li class="qbox">
         <h3><span>1</span> Start it</h3>
-        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+        <div class="code"><pre><code>docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       </li>
       <li class="qbox">
         <h3><span>2</span> Install something through it</h3>
@@ -601,7 +601,7 @@
       <div class="code"><pre><code>docker run -d --restart unless-stopped -p 127.0.0.1:8080:8080 \
   -v slowshield:/data \
   -e SLOWSHIELD_PUBLIC_URL=https://slowshield.your-tailnet.ts.net \
-  ghcr.io/squirro/slowshield:latest</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+  ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache; they
         never need to talk to each other.</p>
     </li>
@@ -693,7 +693,7 @@ slowshield.example.com
   </div>
   <h3 class="start-sub">Run it for your team</h3>
   <p class="muted start-images">Images: <code>ghcr.io/squirro/slowshield</code> and <code>ghcr.io/squirro/slowshield-caddy</code>,
-    for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:0.0.7</code>) or a digest
+    for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:{{release}}</code>) or a digest
     in production.</p>
   <ol class="start-steps">
     <li class="reveal">

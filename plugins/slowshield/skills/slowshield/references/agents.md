@@ -55,9 +55,9 @@ An [Agent Skill](https://agentskills.io) that teaches an agent to set up every p
 
 2. **Let only SlowShield out.** With the registries off the sandbox's network allowlist, an agent can't install around SlowShield, even when it passes its own `--index-url`.
 
-3. **No team instance?** An agent working on one machine can run its own, with nothing kept after it stops:
+3. **No team instance?** An agent working on one machine can run its own, with nothing kept after it stops. Run a release, never `:latest`, and pin its digest where you can:
    ```
-   docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
+   docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:0.0.7
    export PIP_INDEX_URL=http://localhost:8080/pypi/simple/ UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/ \
      npm_config_registry=http://localhost:8080/npm/ GOPROXY=http://localhost:8080/go
    ```

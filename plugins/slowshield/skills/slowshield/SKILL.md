@@ -30,8 +30,9 @@ replace it with the real instance.
    `/etc/docker/certs.d/_default/hosts.toml`, `~/.docker/certs.d/`, `registries.conf.d`.
 2. Otherwise ask the user for its address. `<base>/ui/setup` on the instance shows every setting with the address
    filled in; prefer it over writing settings by hand.
-3. No instance and the user wants one on this machine:
-   `docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest`, then
+3. No instance and the user wants one on this machine: run a release, never `:latest` (the newest one is on
+   https://github.com/squirro/slowshield/releases; pin its digest where you can):
+   `docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:<release>`, then
    `<base>` is `http://localhost:8080`. Check it with `curl <base>/readyz` (answers `ready`).
 
 ## Set it up

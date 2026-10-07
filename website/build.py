@@ -75,6 +75,9 @@ DOCS_MARKER = re.compile(r"<!-- @(tools|example) ([a-z.-]+) -->")
 # The Agent Skill: SKILL.md is written by hand, its references are the guide's pages as Markdown.
 SKILL = HERE.parent / "plugins" / "slowshield" / "skills" / "slowshield"
 SKILL_PAGES = ("python", "javascript", "go", "java", "rust", "containers", "container-builds", "agents")
+# The release the site's commands run: pyproject.toml's version, which the release PR sets (docs/releasing.md).
+RELEASE = tomllib.loads((HERE.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+RELEASE_MARKER = "{{release}}"
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
@@ -204,7 +207,7 @@ def render_docs(out: Path, errors: list[str]) -> dict[str, tuple[str, str, str]]
                 return m.group(0)
             return parts[key]
 
-        body = DOCS_MARKER.sub(include, body)
+        body = DOCS_MARKER.sub(include, body).replace(RELEASE_MARKER, RELEASE)
         nav = "\n".join(
             f'<a href="/docs/{s + "/" if s else ""}"{' aria-current="page"' if s == slug else ""}>{label}</a>'
             for s, label in DOCS_NAV
@@ -349,7 +352,7 @@ def build(out: Path, *, write_skill: bool = False) -> None:
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
-        new = new.replace(SPRITE_MARKER, sprite)
+        new = new.replace(SPRITE_MARKER, sprite).replace(RELEASE_MARKER, RELEASE)
         if new != text:
             page.write_text(new, encoding="utf-8")
     if snippet_errors:

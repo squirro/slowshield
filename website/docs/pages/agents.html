@@ -72,8 +72,8 @@ releases back for 7 days and refuses known malware.
   <li><strong>Let only SlowShield out.</strong> With the registries off the sandbox's network allowlist, an agent can't
     install around SlowShield, even when it passes its own <code>--index-url</code>.</li>
   <li><strong>No team instance?</strong> An agent working on one machine can run its own, with nothing kept after it
-    stops:
-    <div class="code"><pre><code>docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:latest
+    stops. Run a release, never <code>:latest</code>, and pin its digest where you can:
+    <div class="code"><pre><code>docker run -d --rm --name slowshield -p 127.0.0.1:8080:8080 ghcr.io/squirro/slowshield:{{release}}
 export PIP_INDEX_URL=http://localhost:8080/pypi/simple/ UV_DEFAULT_INDEX=http://localhost:8080/pypi/simple/ \
   npm_config_registry=http://localhost:8080/npm/ GOPROXY=http://localhost:8080/go</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
     Its dashboard at <code>http://localhost:8080/ui/</code> shows what was installed and what was held back.</li>

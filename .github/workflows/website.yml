@@ -16,6 +16,7 @@ on:
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
       - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
       - "plugins/slowshield/**" # the Agent Skill, served at /skills/ (its references are checked against the guide)
+      - "pyproject.toml" # its version is the release the site's commands run
       - ".github/workflows/website.yml"
   push:
     branches: [main]
@@ -25,6 +26,7 @@ on:
       - "src/slowshield/ui/snippets.toml" # the quick start's snippets are built from it
       - "src/slowshield/ui/snippets.py" # and the guide's per-tool settings
       - "plugins/slowshield/**" # the Agent Skill, served at /skills/ (its references are checked against the guide)
+      - "pyproject.toml" # its version is the release the site's commands run
       - ".github/workflows/website.yml"
   workflow_dispatch:
 

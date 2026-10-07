@@ -56,7 +56,9 @@ until then a minor release (0.X.0) may change configuration or behaviour, and th
 
 1. Merge everything for the release into `main` and wait for CI to pass there.
 2. Set the version in `pyproject.toml` (then `uv lock`) and in `deploy/helm/slowshield/Chart.yaml` (`version`
-   and `appVersion`; the chart's default image tag). The release fails early if the tag does not match.
+   and `appVersion`; the chart's default image tag). The release fails early if the tag does not match. The website
+   takes the image tag in its commands from `pyproject.toml`, so it names the new release as soon as this is on
+   `main`: tag right after merging.
 3. In `CHANGELOG.md`, move the `[Unreleased]` entries under `## [X.Y.Z] - YYYY-MM-DD` (the release notes are
    taken from that section), commit and push to `main`.
 4. Tag and push:

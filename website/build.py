@@ -75,9 +75,12 @@ DOCS_MARKER = re.compile(r"<!-- @(tools|example) ([a-z.-]+) -->")
 # The Agent Skill: SKILL.md is written by hand, its references are the guide's pages as Markdown.
 SKILL = HERE.parent / "plugins" / "slowshield" / "skills" / "slowshield"
 SKILL_PAGES = ("python", "javascript", "go", "java", "rust", "containers", "container-builds", "agents")
-# The release the site's commands run: pyproject.toml's version, which the release PR sets (docs/releasing.md).
-RELEASE = tomllib.loads((HERE.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+# The release the site's commands run. CI passes the latest published GitHub Release (`--release`): the release
+# workflow creates it only once the images are tagged, then redeploys the site (docs/releasing.md). Local builds
+# default to pyproject.toml's version.
+DEFAULT_RELEASE = tomllib.loads((HERE.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 RELEASE_MARKER = "{{release}}"
+_VERSION = re.compile(r"\d+\.\d+\.\d+")
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
@@ -178,7 +181,7 @@ def docs_parts() -> dict[str, str]:
     return flat
 
 
-def render_docs(out: Path, errors: list[str]) -> dict[str, tuple[str, str, str]]:
+def render_docs(out: Path, errors: list[str], release: str) -> dict[str, tuple[str, str, str]]:
     """website/docs/pages/*.html, each starting with a `<!-- title: … | description: … -->` line, into /docs/ as
     HTML and Markdown. Returns slug -> (title, description, Markdown)."""
     docs_md: dict[str, tuple[str, str, str]] = {}
@@ -207,7 +210,7 @@ def render_docs(out: Path, errors: list[str]) -> dict[str, tuple[str, str, str]]
                 return m.group(0)
             return parts[key]
 
-        body = DOCS_MARKER.sub(include, body).replace(RELEASE_MARKER, RELEASE)
+        body = DOCS_MARKER.sub(include, body).replace(RELEASE_MARKER, release)
         nav = "\n".join(
             f'<a href="/docs/{s + "/" if s else ""}"{' aria-current="page"' if s == slug else ""}>{label}</a>'
             for s, label in DOCS_NAV
@@ -329,7 +332,7 @@ def check_headers(out: Path, html_files: list[Path]) -> list[str]:
     return errors
 
 
-def build(out: Path, *, write_skill: bool = False) -> None:
+def build(out: Path, *, write_skill: bool = False, release: str = DEFAULT_RELEASE) -> None:
     if out.exists():
         shutil.rmtree(out)
     shutil.copytree(SRC, out)
@@ -347,12 +350,12 @@ def build(out: Path, *, write_skill: bool = False) -> None:
     sprite = (BRAND / "sprite.html").read_text(encoding="utf-8")
     snippets = load_snippets()
     snippet_errors: list[str] = []
-    docs_md = render_docs(out, snippet_errors)
+    docs_md = render_docs(out, snippet_errors, release)
     write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         new = SNIPPET_MARKER.sub(lambda m, name=page.name: snippet(snippets, m, name, snippet_errors), text)
-        new = new.replace(SPRITE_MARKER, sprite).replace(RELEASE_MARKER, RELEASE)
+        new = new.replace(SPRITE_MARKER, sprite).replace(RELEASE_MARKER, release)
         if new != text:
             page.write_text(new, encoding="utf-8")
     if snippet_errors:
@@ -422,8 +425,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=HERE.parent / "dist" / "site")
     parser.add_argument("--write-skill", action="store_true", help="update the skill's committed references")
+    parser.add_argument("--release", default=DEFAULT_RELEASE, help="the published release the commands run (X.Y.Z)")
     args = parser.parse_args()
-    build(args.out, write_skill=args.write_skill)
+    release = args.release.removeprefix("v")
+    if not _VERSION.fullmatch(release):
+        fail([f"--release: expected X.Y.Z, got {args.release!r}"])
+    build(args.out, write_skill=args.write_skill, release=release)
 
 
 if __name__ == "__main__":

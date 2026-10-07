@@ -212,6 +212,7 @@ jobs:
     timeout-minutes: 20
     environment: production
     permissions:
+      actions: write # redeploy the website, whose commands name the new release
       contents: write # create the GitHub Release and upload its assets
       packages: write # tag the release images on GHCR
     steps:
@@ -292,3 +293,10 @@ jobs:
             echo "- \`${CADDY_IMAGE}:${version}\`"
           } >> notes.md
           gh release create "$REF_NAME" --verify-tag --title "SlowShield ${version}" --notes-file notes.md
+
+      # A release created with GITHUB_TOKEN starts no workflow by itself; a dispatch does.
+      - name: Redeploy the website
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run website.yml --repo "$REPO" --ref main

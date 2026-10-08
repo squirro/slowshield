@@ -51,7 +51,7 @@ helm install slowshield deploy/helm/slowshield \
 | `persistence.data.size` | `25Gi` | Database + artifact cache (`config` → `cache.artifacts_max_gb`) |
 | `persistence.ociLayers.enabled` | `false` | Own volume for the container layer store (`config` → `upstreams.oci.layer_cache_gb`); `ephemeral: true` makes it an `emptyDir` of `size` |
 | `image.digest` / `caddy.image.digest` | `""` | Pin immutable digests |
-| `shieldwall.role` | `standalone` | `leader` makes this release a shield wall leader ([docs/design/shieldwall.md](../../../docs/design/shieldwall.md)) |
+| `shieldwall.role` | `""` | `""` keeps the stored role; `standalone` leaves the wall explicitly; `leader` makes this release a shield wall leader ([docs/design/shieldwall.md](../../../docs/design/shieldwall.md)) |
 | `shieldwall.joinSecret` / `.joinSecretKey` | `""` / `join` | A Secret with a follower's join string (from `slowshield wall invite` on the leader) |
 | `shieldwall.name` / `.location` / `.labels` | `""` / `""` / `{}` | How the leader shows and filters this follower |
 | `shieldwall.leaderEgress` | `[]` | Network policy egress rules to a leader on a private network |

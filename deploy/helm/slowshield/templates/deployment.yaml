@@ -80,9 +80,9 @@ spec:
               value: {{ join " " . | quote }}
             {{- end }}
             {{- with .Values.shieldwall }}
-            {{- if eq .role "leader" }}
+            {{- if or (eq .role "leader") (eq .role "standalone") }}
             - name: SLOWSHIELD_SHIELDWALL_ROLE
-              value: leader
+              value: {{ .role | quote }}
             {{- end }}
             {{- if .joinSecret }}
             - name: SLOWSHIELD_JOIN

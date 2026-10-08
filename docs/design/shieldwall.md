@@ -189,8 +189,9 @@ Transparency's maximum merge delay; it is this project's own construction and de
   follower restored from a backup older than what the leader applied sees the same; joining again resets the mark.)
   A retried sync can't count anything twice. A follower that can't reach its leader for days keeps queueing and
   drains the queue afterwards; entries older than 30 days are dropped.
-- **History at pairing.** The follower queues its statistics tables as they are, its retained events and the
-  packages it served, in the transaction that makes it active. Nothing is lost or counted twice at the seam. It goes
+- **History at pairing.** The follower queues its statistics tables as they are, its retained events, the packages
+  it served, and the first fingerprint of every file it served, in the transaction that makes it active. Nothing is
+  lost or counted twice at the seam, and files served before pairing are compared like any later ones. It goes
   in outbox entries of at most 5,000 rows and about 512 KB each, so no entry comes near the leader's 8 MB request
   limit whatever the rows hold: a Go module path takes up to 1,024 characters, and twice that once its upper case is
   `!`-escaped in an artifact path. (One oversized entry at the front of the outbox would fail every sync with HTTP
@@ -300,6 +301,10 @@ the variables through.
 - **Inviting and removing in the UI,** once the UI has authentication.
 - **Container images through the leader:** they need registry tokens on the leader's side.
 - **Compacting the change log,** and a fresh snapshot for a follower whose cursor is below it.
+- **Comparing fingerprints the other way round.** The leader compares a follower's fingerprint when it arrives. A
+  file the leader serves to its own clients only later isn't compared with what followers reported before, and files
+  followers fetch through the leader don't give it a fingerprint of its own. Followers that disagree among themselves
+  are still reported, and each follower checks every file against its index and its own first download as always.
 - **Resuming** a transfer that broke off midway (HTTP Range); collapsing concurrent misses on the leader.
 - **Promoting a follower** to leader, and backing up the leader's key.
 - **Metrics** per follower in OTLP (`service.instance.id`).

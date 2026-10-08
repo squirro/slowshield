@@ -410,3 +410,49 @@ def test_cargo_resolves_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     assert held.returncode != 0
     assert "got 403" in held.stderr and "fake_hello@1.2.0 is too new" in held.stderr, held.stderr[-3000:]
     assert "--precise 1.1.0" in held.stderr
+
+
+# The .NET SDK the spike used (docs/design/nuget.md); a client image, as the Maven, Gradle and Rust ones.
+DOTNET_IMAGE = (
+    "mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317"
+)
+CSPROJ = """<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><NuGetAudit>false</NuGetAudit></PropertyGroup>
+  <ItemGroup><PackageReference Include="{id}" Version="{version}" /></ItemGroup>
+</Project>
+"""
+
+
+def test_nuget_restores_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real dotnet restore with the Setup page's command. Fake.Deps needs Fake.Hello >= 1.0.0, which resolves to
+    1.0.0. Fake.Hello 1.2.0 is two days old, so it isn't in the version list: a reference to it finds no stable
+    version (NU1103; the next one up is a prerelease), and downloading it directly gets 425. `dotnet add package`
+    picks the newest version that is old enough from the registration."""
+    for name, pid, version in (("deps", "Fake.Deps", "1.0.0"), ("held", "Fake.Hello", "1.2.0")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "app.csproj").write_text(CSPROJ.format(id=pid, version=version))
+    (tmp_path / "add").mkdir()
+    (tmp_path / "add" / "app.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>'
+        "</Project>\n"
+    )
+    setup = snippets.nuget_command("http://localhost:8080/nuget/v3/index.json")
+
+    def dotnet(script: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-e", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "-e", "DOTNET_NOLOGO=1",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", DOTNET_IMAGE, "-c", f"{setup} && {script}"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = dotnet("cp -r /w/deps /tmp/p && cd /tmp/p && dotnet restore && cat obj/project.assets.json")
+    assert ok.returncode == 0, ok.stdout[-3000:] + ok.stderr[-3000:]
+    assert '"Fake.Hello/1.0.0"' in ok.stdout and '"Fake.Deps/1.0.0"' in ok.stdout
+    held = dotnet("cp -r /w/held /tmp/p && cd /tmp/p && dotnet restore")
+    assert held.returncode != 0
+    assert "NU1103" in held.stdout and "Fake.Hello with version (>= 1.2.0)" in held.stdout, held.stdout[-3000:]
+    added = dotnet("cp -r /w/add /tmp/p && cd /tmp/p && dotnet add package Fake.Hello && cat app.csproj")
+    assert added.returncode == 0 and 'Include="Fake.Hello" Version="1.1.0"' in added.stdout, added.stdout[-3000:]
+    status, headers, body = stack.get("/nuget/v3/flatcontainer/fake.hello/1.2.0/fake.hello.1.2.0.nupkg")
+    assert status == 425 and "retry-after" in headers and b"is too new" in body

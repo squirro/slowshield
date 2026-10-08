@@ -130,7 +130,7 @@
         "name": "ecosystem",
         "label": "Ecosystem",
         "type": "custom",
-        "query": "pypi,npm,go,maven,cargo,oci",
+        "query": "pypi,npm,go,maven,cargo,nuget,oci",
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -166,6 +166,11 @@
           {
             "text": "cargo",
             "value": "cargo",
+            "selected": false
+          },
+          {
+            "text": "nuget",
+            "value": "nuget",
             "selected": false
           },
           {
@@ -701,6 +706,21 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#dea584"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "nuget"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#178600"
                 }
               }
             ]

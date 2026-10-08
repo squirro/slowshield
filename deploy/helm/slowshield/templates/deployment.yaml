@@ -74,6 +74,8 @@ spec:
               value: {{ .Values.ecosystems.maven.enabled | quote }}
             - name: SLOWSHIELD_CARGO_ENABLED
               value: {{ .Values.ecosystems.cargo.enabled | quote }}
+            - name: SLOWSHIELD_NUGET_ENABLED
+              value: {{ .Values.ecosystems.nuget.enabled | quote }}
             - name: SLOWSHIELD_OCI_ENABLED
               value: {{ .Values.ecosystems.oci.enabled | quote }}
             {{- with .Values.ecosystems.pypi.hostnames }}

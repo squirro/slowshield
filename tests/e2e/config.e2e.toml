@@ -24,6 +24,13 @@ gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
 index_url = "http://fakeupstream:9000/cargo-index"
 download_url = "http://fakeupstream:9000/cargo-static/crates"
 
+[upstreams.nuget]
+flat_container_url = "http://fakeupstream:9000/nuget-flat/"
+registration_url = "http://fakeupstream:9000/nuget-reg/"
+catalog_url = "http://fakeupstream:9000/nuget-catalog/"
+vulnerability_url = "http://fakeupstream:9000/nuget-vuln/index.json"
+search_url = "http://fakeupstream:9000/nuget-search/query"
+
 # Container registries: blobs redirect to the fake's second name (fakecdn), as real registries redirect to a CDN.
 [upstreams.oci]
 layer_cache_gb = 1

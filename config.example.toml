@@ -62,6 +62,17 @@ index_url = "https://index.crates.io"  # each line's `pubtime` is the publish ti
 download_url = "https://static.crates.io/crates"
 download_hosts = []                    # hosts download_url may redirect to
 
+[upstreams.nuget]                      # clients: <public_url>/nuget/v3/index.json in NuGet.Config, with <clear/>
+enabled = true                         # (docs/design/nuget.md)
+fail_open = false                      # brand-new packages are held too (typosquats, dependency confusion)
+# nuget.org's resources. SlowShield writes its own service index and never reads nuget.org's, so these
+# decide which hosts it may reach (a restart applies changes).
+flat_container_url = "https://api.nuget.org/v3-flatcontainer/"
+registration_url = "https://api.nuget.org/v3/registration5-gz-semver2/"  # `published` is the publish time
+catalog_url = "https://api.nuget.org/v3/catalog0/"  # packageHash (SHA512) of every .nupkg
+vulnerability_url = "https://api.nuget.org/v3/vulnerabilities/index.json"  # for NuGetAudit
+search_url = "https://azuresearch-usnc.nuget.org/query"
+
 [upstreams.oci]                        # container images at /v2/ (docs/design/oci.md)
 enabled = true
 # fail_open = true                     # unset: the top-level fail_open, and only ever during this instance's

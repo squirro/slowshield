@@ -24,8 +24,8 @@ hostnames:
 # Defaults to https://<first hostname>.
 publicUrl: ""
 
-# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/, Maven at /maven/ and Cargo at /cargo/ on every
-# hostname above.
+# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/, Maven at /maven/, Cargo at /cargo/ and NuGet
+# at /nuget/v3/index.json on every hostname above.
 # ecosystems.*.hostnames (per-ecosystem host routing) are deprecated and removed in 0.1: leave them empty.
 ecosystems:
   pypi:
@@ -39,6 +39,9 @@ ecosystems:
   maven:
     enabled: true
   cargo:
+    enabled: true
+  # NuGet (docs/design/nuget.md): clients need a NuGet.Config with <clear/> and this source.
+  nuget:
     enabled: true
   # Container images at /v2/ (docs/design/oci.md). Layers are streamed, not stored, unless config.toml sets
   # [upstreams.oci] layer_cache_gb; persistence.ociLayers can give that store its own volume.

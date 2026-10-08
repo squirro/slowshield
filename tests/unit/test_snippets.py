@@ -79,10 +79,31 @@ def test_the_client_age_never_exceeds_slowshields_delay() -> None:
     assert S.client_age_days(0) == 0
 
 
+def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() -> None:
+    urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
+    tool = {t.name: t for t in S.tools(*urls, nuget="https://h/nuget/v3/index.json")}["NuGet"]
+    assert tool.ecosystem == "nuget" and tool.age == S.NO_AGE_DEFAULT
+    config, command = (code for _, code in tool.snippets)
+    assert config.startswith('<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>')
+    assert "    <clear />\n" in config  # without it, nuget.org stays a source and goes around SlowShield
+    assert '<add key="nuget.org" value="https://h/nuget/v3/index.json" protocolVersion="3" />' in config
+    assert "allowInsecureConnections" not in config
+    assert command.startswith('mkdir -p "$HOME/.nuget/NuGet" && printf ')
+    assert command.endswith(' > "$HOME/.nuget/NuGet/NuGet.Config"') and "'    <clear />'" in command
+    # Plain HTTP on localhost: NuGet refuses an http:// source without it (NU1302).
+    local = {t.name: t for t in S.tools(*urls, nuget="http://localhost/nuget/v3/index.json")}["NuGet"]
+    assert 'protocolVersion="3" allowInsecureConnections="true" />' in local.snippets[0][1]
+    with pytest.raises(ValueError, match="refusing"):
+        S.tools(*urls, nuget="https://h/nuget/'$(id)'")
+    # The guide has no C# page yet: the link goes to its start page.
+    assert S.docs_url("nuget", "NuGet") == S.DOCS and S.docs_url("cargo", "Cargo") == f"{S.DOCS}rust/#cargo"
+
+
 def test_tools_name_the_version_their_release_age_needs() -> None:
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
-    on = {t.name: t for t in S.tools(*urls)}
-    off = {t.name: t for t in S.tools(*urls, age_days=0)}
+    nuget = "https://h/nuget/v3/index.json"
+    on = {t.name: t for t in S.tools(*urls, nuget=nuget)}
+    off = {t.name: t for t in S.tools(*urls, nuget=nuget, age_days=0)}
     assert on["npm"].age.startswith("npm 11.10 or later") and on["uv"].age.startswith("uv 0.9.17 or later")
     assert on["Go"].age == S.NO_AGE_DEFAULT and "min-publish-age" in on["Cargo"].age
     assert all(t.age == "" for t in off.values())

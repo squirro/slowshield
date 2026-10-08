@@ -416,6 +416,25 @@ async def test_vulnerability_data_comes_through_slowshield(running: Running) -> 
         assert (await running.client.get(f"/nuget/v3/vulnerabilities/{path}")).status_code == 404, path
 
 
+# ---- setup ------------------------------------------------------------------------------------------------------
+
+
+async def test_setup_page_shows_the_nuget_config(running: Running) -> None:
+    page = (await running.client.get("/ui/setup")).text
+    assert "https://slowshield.test/nuget/v3/index.json" in page
+    assert "&lt;clear /&gt;" in page and "key=&#34;nuget.org&#34;" in page
+    assert 'data-tool-pick="NuGet"' in page and "NU1603" in page
+
+
+async def test_setup_page_on_local_http_allows_the_insecure_source(start_app) -> None:
+    run = await start_app("local_http = true\n", host="localhost")
+    page = (await run.client.get("/ui/setup")).text
+    assert "http://localhost/nuget/v3/index.json" in page and "allowInsecureConnections=&#34;true&#34;" in page
+    assert "https://slowshield.test/nuget/v3/index.json" in page  # the HTTPS alternative
+    r = await run.client.get("/nuget/v3/index.json")
+    assert r.json()["resources"][0]["@id"] == "http://localhost/nuget/v3/flatcontainer/"
+
+
 # ---- the shield wall ---------------------------------------------------------------------------------------------
 
 

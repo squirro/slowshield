@@ -127,7 +127,12 @@ def test_other_rustsec_advisories_are_no_blocks(extra: str, categories: str, ali
 
 def test_cargo_setup_snippets() -> None:
     tool = S.tools(
-        "https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "http://localhost/cargo/"
+        "https://h/pypi/simple/",
+        "https://h/npm/",
+        "https://h/go",
+        "https://h/maven",
+        "http://localhost/cargo/",
+        nuget="n",
     )
     cargo = next(t for t in tool if t.name == "Cargo")
     config, command = (code for _, code in cargo.snippets)
@@ -136,7 +141,7 @@ def test_cargo_setup_snippets() -> None:
     )
     assert command.startswith('mkdir -p "${CARGO_HOME:-$HOME/.cargo}" && printf ')
     with pytest.raises(ValueError, match="refusing"):
-        S.tools("a", "b", "c", "d", "https://h/cargo/'$(id)'")
+        S.tools("a", "b", "c", "d", "https://h/cargo/'$(id)'", nuget="n")
 
 
 def test_rustsec_categories_are_read_at_either_level() -> None:

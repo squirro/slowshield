@@ -169,6 +169,7 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "sbt",
         "Coursier",
         "Cargo",
+        "NuGet",
         "containerd",
         "Docker",
         "Podman",
@@ -189,6 +190,8 @@ async def test_setup_page_tool_finder(start_app) -> None:
         in page
     )
     assert "allowInsecureProtocol" not in page and "maven-default-http-blocker" not in page  # HTTPS instance
+    assert "value=&#34;https://slowshield.example.com/nuget/v3/index.json&#34;" in page
+    assert "allowInsecureConnections" not in page
     # Containers: containerd and Docker's containerd store get SlowShield as the `server`, so they never fall back.
     assert page.count("server = &#34;https://slowshield.example.com&#34;\ncapabilities = [&#34;pull&#34;") == 2
     assert "prefix = &#34;quay.io&#34;\nlocation = &#34;slowshield.example.com/quay.io&#34;" in page

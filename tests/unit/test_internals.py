@@ -322,6 +322,10 @@ def test_integrity_verifier() -> None:
     sha1_bad = StreamVerifier(Expected(sha1="0" * 40))
     sha1_bad.update(data)
     assert sha1_bad.problems() == ["sha1 does not match dist.shasum"]
+    # npm's dist.integrity and NuGet's packageHash are both a SHA512 from the registry: one message for both.
+    sha512_bad = StreamVerifier(Expected(sha512=hashlib.sha512(b"other").digest()))
+    sha512_bad.update(data)
+    assert sha512_bad.problems() == ["sha512 does not match the registry digest"]
 
 
 # ---- filenames ---------------------------------------------------------------------------------------------

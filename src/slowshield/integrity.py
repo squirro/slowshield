@@ -16,7 +16,7 @@ class Expected:
     sha256: str | None = None  # from the index (PyPI) or our TOFU record
     tofu_sha256: str | None = None
     blake2b_256: str | None = None  # PyPI path component
-    sha512: bytes | None = None  # npm dist.integrity
+    sha512: bytes | None = None  # npm dist.integrity, NuGet packageHash
     sha1: str | None = None  # npm dist.shasum (legacy)
     go_mod_h1: str | None = None  # Go checksum database `h1:` of a go.mod file
     size: int | None = None
@@ -91,7 +91,7 @@ class StreamVerifier:
         ):
             out.append("blake2b-256 does not match the artifact path")
         if e.sha512 and self._sha512 is not None and not hmac.compare_digest(self._sha512.digest(), e.sha512):
-            out.append("sha512 does not match dist.integrity")
+            out.append("sha512 does not match the registry digest")
         if self._sha1 is not None and e.sha1 and not hmac.compare_digest(self._sha1.hexdigest(), e.sha1.lower()):
             out.append("sha1 does not match dist.shasum")
         if e.go_mod_h1 and not hmac.compare_digest(go_mod_h1(got), e.go_mod_h1):

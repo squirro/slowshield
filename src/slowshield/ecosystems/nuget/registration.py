@@ -115,7 +115,7 @@ def page_urls(index: Any, base: str) -> list[str]:
         if "items" in page:
             continue
         url = page.get("@id")
-        if not isinstance(url, str) or not url.startswith(base) or "?" in url or "#" in url:
+        if not isinstance(url, str) or not url.startswith(base) or any(c in url for c in ("?", "#", "/..", "\\")):
             raise RegistrationError(f"registration page outside the configured hive: {url!r}")
         out.append(url)
     return out

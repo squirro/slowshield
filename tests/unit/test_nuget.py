@@ -430,6 +430,8 @@ def test_registration_documents_slowshield_refuses() -> None:
     with pytest.raises(R.RegistrationError):
         R.page_urls({"items": [{"@id": f"{UP}x.y/page/1/2.json?x=1"}]}, UP)
     with pytest.raises(R.RegistrationError):
+        R.page_urls({"items": [{"@id": f"{UP}../../v3-flatcontainer/x.json"}]}, UP)  # out of the hive
+    with pytest.raises(R.RegistrationError):
         R.parse("x.y", {"items": [{"@id": f"{UP}x.y/page/1/2.json"}]}, {})  # a page missing from the snapshot
     with pytest.raises(R.RegistrationError):
         R.page_urls([], UP)

@@ -3,6 +3,7 @@ late-news rule."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -244,7 +245,7 @@ def test_malformed_fingerprints_are_ignored() -> None:
     from slowshield.shieldwall.leader import _fingerprint
 
     good = ["pypi", "/packages/a.whl", "a" * 64, 1.0, "alpha", "1.0"]
-    assert _fingerprint(good) is not None
+    assert _fingerprint(good, NOW) is not None
     for bad in (
         good[:5],
         ["cobol", *good[1:]],
@@ -252,5 +253,49 @@ def test_malformed_fingerprints_are_ignored() -> None:
         [*good[:4], "", "1.0"],
         [*good[:2], "A" * 64, *good[3:]],
         {"ecosystem": "pypi"},
+        ["pypi", "/packages/a.whl\nsother", *good[2:]],  # a control character would split the change key
+        [*good[:3], float("inf"), *good[4:]],
+        [*good[:3], NOW + 3600, *good[4:]],  # seen in the future
+        [*good[:3], True, *good[4:]],
     ):
-        assert _fingerprint(bad) is None
+        assert _fingerprint(bad, NOW) is None
+
+
+def test_a_followers_fingerprint_is_evidence_about_that_follower_only(conn: sqlite3.Connection) -> None:
+    from slowshield.shieldwall.leader import apply_outbox
+
+    conn.execute(
+        "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, first_seen, last_seen) "
+        "VALUES ('pypi', '/p/alpha.whl', 'alpha', '1.0', 'alpha.whl', ?, 0, 0)",
+        ("a" * 64,),
+    )
+    conn.executemany("INSERT INTO shieldwall_members (id, pubkey, name, state, joined) VALUES (?, ?, ?, 'active', 0)",
+                     [("sliar", b"1", "liar"), ("shonest", b"2", "honest")])  # fmt: skip
+
+    def report(member: str, *rows: list[object]) -> None:
+        apply_outbox(conn, member, 0, [{"seq": 1, "kind": "fingerprints", "body": json.dumps(rows)}], NOW)
+
+    def events() -> list[tuple[str, str, str]]:
+        return conn.execute("SELECT type, package, instance FROM events ORDER BY rowid").fetchall()
+
+    # Other bytes than the leader's, for the package and version the leader has on record: refused on that
+    # follower only (a change only it receives), never on the leader.
+    report("sliar", ["pypi", "/p/alpha.whl", "b" * 64, NOW, "alpha", "1.0"])
+    assert conn.execute("SELECT dataset, key FROM shieldwall_changes").fetchall() == [
+        ("flag", "pypi\n/p/alpha.whl\nsliar")
+    ]
+    assert events() == [("tampered", "alpha", "sliar")]
+    assert conn.execute("SELECT tampered FROM artifacts").fetchall() == [(0,)]
+    # A fingerprint that names another package or version for a file the leader knows is refused outright.
+    report("shonest", ["pypi", "/p/alpha.whl", "b" * 64, NOW, "beta", "1.0"])
+    report("shonest", ["pypi", "/p/alpha.whl", "b" * 64, NOW, "alpha", "6.6.6"])
+    assert conn.execute("SELECT count(*) FROM shieldwall_fingerprints WHERE instance = 'shonest'").fetchone() == (0,)
+    assert len(events()) == 1
+    # A file the leader has no record of: a liar who reports first can't put an event on an honest follower's
+    # timeline. The disagreement is the leader's own finding, naming both, and refuses nothing.
+    report("sliar", ["pypi", "/p/gamma.whl", "c" * 64, NOW, "gamma", "1.0"])
+    report("shonest", ["pypi", "/p/gamma.whl", "d" * 64, NOW, "gamma", "1.0"])
+    assert events()[1:] == [("integrity_mismatch", "gamma", "")]
+    details = json.loads(conn.execute("SELECT details FROM events ORDER BY rowid DESC").fetchone()[0])
+    assert details["problems"] == [f"honest: {'d' * 64}", f"liar: {'c' * 64}"]
+    assert conn.execute("SELECT count(*) FROM shieldwall_changes").fetchone() == (1,)

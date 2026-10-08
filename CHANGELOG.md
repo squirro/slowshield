@@ -22,7 +22,8 @@ All notable changes to this project are documented here. The format is based on
   - Package files come through the leader's cache when it is up (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`), checked by the
     follower as always; a follower that can't reach its leader works on its own.
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
-    bytes refuses the file, and the leader records it.
+    bytes refuses the file, and the leader records it. A follower's fingerprint only ever refuses a file on that
+    follower, and one that names another package or version than the leader's record of the file is refused.
 
 ### Changed
 - The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at

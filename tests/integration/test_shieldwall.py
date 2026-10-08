@@ -403,8 +403,9 @@ async def test_followers_that_disagree_are_reported_not_flagged(pair: Pair) -> N
     await p.sync()
     await p.sync()
     assert p.leader.rows("SELECT count(*) FROM artifacts WHERE path = ?", (path,)) == [(0,)]
-    assert p.leader.rows("SELECT type, package FROM events WHERE ecosystem = 'pypi'") == [
-        ("integrity_mismatch", "alpha")
+    # The leader can't tell which of them is right: the finding is its own, not pinned on either follower.
+    assert p.leader.rows("SELECT type, package, instance FROM events WHERE ecosystem = 'pypi'") == [
+        ("integrity_mismatch", "alpha", "")
     ]
     assert (await p.follower.client.get(f"/pypi{path}")).status_code == 200
 

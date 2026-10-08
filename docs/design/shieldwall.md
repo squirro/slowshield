@@ -200,6 +200,27 @@ Transparency's maximum merge delay; it is this project's own construction and de
   Followers that disagree among themselves, on a file the leader has no fingerprint for, are recorded as an
   `integrity_mismatch` event for the operator. Fingerprints followers report are never sent down as references.
 
+  **The rule for a follower's fingerprint.** The leader can't see what a follower served: everything a follower
+  says about its own traffic is its own claim. So a fingerprint is evidence about the follower that sent it, and
+  nothing more, and the leader acts on it only where it can check it:
+
+  1. It must be well formed: a known ecosystem, a path, package and version of bounded length without control
+     characters, a lower-case hex sha256, and a first-seen time that is a finite number no later than now (plus the
+     ±5 minutes signatures allow). Anything else is dropped and logged.
+  2. Where the leader has its own fingerprint of the file (`artifacts`, same ecosystem and path), the follower must
+     name the same package and version the leader recorded for it; one that names another is refused and logged.
+     Only then is its digest compared, and only with the leader's own.
+  3. A difference refuses the file on that follower only, and only if that follower has those very bytes on
+     record for that path: the follower applies a flag only to its own `artifacts` row with the same sha256, that
+     is, to a file it actually served with those bytes. A fingerprint for a file it never served refuses nothing.
+  4. Where the leader has no fingerprint of its own, it can't tell who is right. Followers that disagree produce one
+     `integrity_mismatch` event on the leader's own timeline, listing each instance and the digest it reported; no
+     follower is named as the culprit, so a follower that reports first with a made-up digest can't put an event
+     on an honest one's timeline. Nothing is refused.
+
+  A follower that is taken over can therefore block files on itself and add noise to the leader's timeline, as it
+  can with its statistics, and nothing else.
+
 ## Files through the leader
 
 A follower that misses its cache asks the leader first (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`, on by default):
@@ -248,7 +269,7 @@ the variables through.
 |---|---|---|
 | A leader that is taken over | the floor; the hour's wait and the page that shows it; blocks are a union with the follower's own feeds; the late-news rule; evidence direct and every byte checked; the "never" class | after an hour it can lower delays to the floor; it can backdate observations by about one sync (a day after an outage); after a day it can lift GitHub-only blocks on followers without a token; it can deny service with bogus blocks or tamper flags, and stop syncing (the page shows the sync age) |
 | A leader taken over before a follower pairs | none beyond the floor: pairing trusts the leader's past | planted history is accepted; said so on this page |
-| A follower that is taken over | everything is attributed to it; its fingerprints are checked and compared, and refuse files on that follower only; the leader fetches only from its own upstream hosts; `wall remove` | polluted statistics until removed; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
+| A follower that is taken over | everything is attributed to it; its fingerprints are checked against the leader's own record and refuse files on that follower only (see "The rule for a follower's fingerprint"); the leader fetches only from its own upstream hosts; `wall remove` | polluted statistics until removed; `integrity_mismatch` noise on the leader's timeline for files the leader never served; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
 | Someone with the join string | single use, 10 minutes; bound to the follower's key; the follower checks the leader's key hash | whoever uses it first joins; the operator sees every follower on the leader |
 | Someone on a follower's UI | the leader comes from the environment; Join only confirms it, from the page itself | they can click Join for the leader the operator configured |
 | A network attacker | TLS (the leader's URL must be https); signatures on every message, responses bound to their requests; only a signed refusal removes a follower; acknowledgements never delete reports that weren't sent | none beyond TLS's own |

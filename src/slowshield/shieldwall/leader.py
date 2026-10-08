@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import AsyncIterator
@@ -193,50 +194,76 @@ def apply_outbox(conn: Any, member: str, hwm: int, entries: list[dict[str, Any]]
             write_batch(conn, msgspec.json.decode(entry["body"], type=Batch), instance=member)
         elif kind == "fingerprints":
             for item in json.loads(entry["body"]):
-                fp = _fingerprint(item)
-                if fp is None:
-                    log.warning("ignored a malformed fingerprint", extra={"member": member})
-                    continue
-                eco, path, sha256, first_seen, package, version = fp
-                added = conn.execute(
-                    "INSERT OR IGNORE INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen, "
-                    "package, version) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (eco, path, member, sha256, first_seen, package, version),
-                ).rowcount
-                if added:
-                    _compare_fingerprint(conn, member, (eco, path, package, version), sha256=sha256, now=now)
+                _take_fingerprint(conn, member, item, now)
         hwm = seq
     return hwm
 
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
-def _fingerprint(item: Any) -> tuple[str, str, str, float, str, str | None] | None:
-    """A reported fingerprint, checked: (ecosystem, path, sha256, first_seen, package, version)."""
+def _text_ok(value: Any, limit: int) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= limit and _CONTROL.search(value) is None
+
+
+def _fingerprint(item: Any, now: float) -> tuple[str, str, str, float, str, str | None] | None:
+    """A reported fingerprint, checked: (ecosystem, path, sha256, first_seen, package, version). It can't have been
+    seen after `now` (beyond the clock skew signatures allow)."""
     if not isinstance(item, list) or len(item) != 6:
         return None
     eco, path, sha256, first_seen, package, version = item
     ok = (
-        eco in ECOSYSTEMS and isinstance(path, str) and 0 < len(path) <= 2048 and isinstance(sha256, str)
-        and _HEX64.fullmatch(sha256) is not None and isinstance(first_seen, (int, float))
-        and isinstance(package, str) and 0 < len(package) <= 300
-        and (version is None or (isinstance(version, str) and len(version) <= 300))
+        eco in ECOSYSTEMS and _text_ok(path, 2048) and isinstance(sha256, str) and _HEX64.fullmatch(sha256) is not None
+        and isinstance(first_seen, (int, float)) and not isinstance(first_seen, bool) and math.isfinite(first_seen)
+        and 0 <= first_seen <= now + signing.MAX_SKEW and _text_ok(package, 300)
+        and (version is None or _text_ok(version, 300))
     )  # fmt: skip
     return (eco, path, sha256, float(first_seen), package, version) if ok else None
 
 
+def _take_fingerprint(conn: Any, member: str, item: Any, now: float) -> None:
+    """A follower's first fingerprint of a file it served. The leader can't see what a follower served, so what it
+    reports is evidence about that follower only, and it is checked against what the leader knows itself: when the
+    leader has a record of the file, the follower must name the same package and version for it."""
+    fp = _fingerprint(item, now)
+    if fp is None:
+        log.warning("ignored a malformed fingerprint", extra={"member": member})
+        return
+    eco, path, sha256, first_seen, package, version = fp
+    mine = conn.execute(
+        "SELECT sha256, package, version FROM artifacts WHERE ecosystem = ? AND path = ? AND sha256 IS NOT NULL",
+        (eco, path),
+    ).fetchone()
+    if mine is not None and (mine[1], mine[2]) != (package, version):
+        log.warning(
+            "refused a fingerprint that names another package than the leader's record of the file",
+            extra={"member": member, "ecosystem": eco, "artifact": path},
+        )
+        return
+    added = conn.execute(
+        "INSERT OR IGNORE INTO shieldwall_fingerprints (ecosystem, path, instance, sha256, first_seen, package, "
+        "version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (eco, path, member, sha256, first_seen, package, version),
+    ).rowcount
+    if added:
+        _compare_fingerprint(conn, member, (eco, path, package, version), sha256=sha256,
+                             leader_sha256=mine[0] if mine else None, now=now)  # fmt: skip
+
+
 def _compare_fingerprint(
-    conn: Any, member: str, file: tuple[str, str, str, str | None], *, sha256: str, now: float
-) -> None:
+    conn: Any, member: str, file: tuple[str, str, str, str | None], *, sha256: str, leader_sha256: str | None,
+    now: float,
+) -> None:  # fmt: skip
     """A follower saw other bytes for an immutable file than this leader did: one of them was served something
     else. A follower's word is never enough to refuse a file everywhere (it could be lying), so the file is refused
-    on that follower only. Followers that disagree among themselves, where this leader has no fingerprint of its
-    own, are recorded for the operator."""
+    on that follower only, and only if that follower has those very bytes on record (apply._flag). Followers that
+    disagree among themselves, where this leader has no fingerprint of its own, are recorded for the operator on the
+    leader's own timeline: the leader can't tell which of them is right, so none of them is named as the culprit."""
     eco, path, package, version = file
-    mine = conn.execute("SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (eco, path)).fetchone()
-    if mine and mine[0]:
-        if mine[0] == sha256:
+    instance = member
+    if leader_sha256 is not None:
+        if leader_sha256 == sha256:
             return
         conn.execute(
             "UPDATE shieldwall_fingerprints SET flagged = ? WHERE ecosystem = ? AND path = ? AND instance = ?",
@@ -249,27 +276,27 @@ def _compare_fingerprint(
         kind = "tampered"
         details: dict[str, Any] = {
             "artifact": path, "reason": "this instance saw different bytes than the leader", "observed_sha256": sha256,
-            "stored_sha256": mine[0],
+            "stored_sha256": leader_sha256,
         }  # fmt: skip
     else:
-        others = {
-            r[0]
-            for r in conn.execute(
-                "SELECT sha256 FROM shieldwall_fingerprints WHERE ecosystem = ? AND path = ? AND instance != ?",
-                (eco, path, member),
-            )
-        }
-        if not others or others == {sha256}:
+        seen = dict(
+            conn.execute(
+                "SELECT f.instance, f.sha256 FROM shieldwall_fingerprints f WHERE f.ecosystem = ? AND f.path = ?",
+                (eco, path),
+            ).fetchall()
+        )
+        if len(set(seen.values())) < 2:
             return
-        kind = "integrity_mismatch"
+        names = dict(conn.execute("SELECT id, name FROM shieldwall_members").fetchall())
+        kind, instance = "integrity_mismatch", ""
         details = {
-            "artifact": path, "reason": "instances saw different bytes; the leader has none to compare",
-            "problems": [f"fingerprints: {', '.join(sorted({*others, sha256}))}"],
+            "artifact": path, "reason": "instances saw different bytes; the leader has none of its own to compare",
+            "problems": [f"{names.get(i, i)}: {s}" for i, s in sorted(seen.items())],
         }  # fmt: skip
     conn.execute(
         "INSERT INTO events (ts, type, ecosystem, package, version, count, details, instance) "
         "VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-        (now, kind, eco, package, version, json.dumps(details), member),
+        (now, kind, eco, package, version, json.dumps(details), instance),
     )
 
 

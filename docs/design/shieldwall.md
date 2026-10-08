@@ -182,8 +182,10 @@ Transparency's maximum merge delay; it is this project's own construction and de
   transaction, to `shieldwall_outbox` while the follower is paired. So does the first fingerprint of every file it
   serves.
 - **Delivery.** A sync sends up to 200 entries (4 MB), oldest first. The leader applies them in order, at most once
-  each, by a high-water mark per follower, and acknowledges the mark; the follower deletes what was acknowledged,
-  never past the last entry that request carried.
+  each, by a high-water mark per follower, and acknowledges the mark; the follower deletes what was acknowledged.
+  An acknowledgement past the last entry the request carried can only come from a buggy leader or one that was taken
+  over: the follower refuses it, keeps its whole outbox, logs an error and shows it on its Shield wall page. (A
+  follower restored from a backup older than what the leader applied sees the same; joining again resets the mark.)
   A retried sync can't count anything twice. A follower that can't reach its leader for days keeps queueing and
   drains the queue afterwards; entries older than 30 days are dropped.
 - **History at pairing.** The follower queues its statistics tables as they are, its retained events and the

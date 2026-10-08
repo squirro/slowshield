@@ -33,9 +33,8 @@ _TEXT = 300
 
 def apply_sync(conn: Any, cfg: LoadedConfig, doc: dict[str, Any], now: float, *, sent: int, me: str) -> int:
     """Apply one sync response. `cfg` is this instance's own config (not the merged one), `sent` the last outbox
-    entry the request carried, `me` this instance's ID. Returns the new cursor."""
-    # Reports go only once the leader has them: never past what this request carried, whatever it acknowledges.
-    conn.execute("DELETE FROM shieldwall_outbox WHERE seq <= ?", (min(int(doc.get("ack", 0)), sent),))
+    entry the request carried (0: none), `me` this instance's ID. Returns the new cursor."""
+    problem = acknowledge(conn, int(doc.get("ack", 0)), sent)
     head = int(doc.get("head", 0))
     row = conn.execute("SELECT cursor, boot_head FROM shieldwall_leader WHERE id = 1").fetchone()
     cursor, boot_head = int(row[0]), int(row[1])
@@ -71,12 +70,31 @@ def apply_sync(conn: Any, cfg: LoadedConfig, doc: dict[str, Any], now: float, *,
     leader = doc.get("leader")
     leader_name = str(leader.get("name") or "")[:100] or None if isinstance(leader, dict) else None
     conn.execute(
-        "UPDATE shieldwall_leader SET cursor = ?, last_sync = ?, last_attempt = ?, last_error = NULL, "
+        "UPDATE shieldwall_leader SET cursor = ?, last_sync = ?, last_attempt = ?, last_error = ?, "
         "name = coalesce(?, name) WHERE id = 1",
-        (cursor, now, now, leader_name),
+        (cursor, now, now, problem, leader_name),
     )
     promote_due(conn, now)
     return cursor
+
+
+def acknowledge(conn: Any, ack: int, sent: int) -> str | None:
+    """Delete the reports the leader acknowledged. Returns what was wrong with the acknowledgement, if anything.
+
+    The leader applies what a request carries and acknowledges its high-water mark, which is never past the last
+    entry the request carried (`sent`). One that is (a buggy leader, or one that was taken over) is refused, and
+    the whole outbox stays: deleting "up to the ack" would erase reports that were never sent. With nothing sent,
+    there is nothing to delete, and the mark the leader returns is just its own."""
+    if not sent:
+        return None
+    if ack > sent:
+        log.error(
+            "refused the leader's acknowledgement: it names reports this instance never sent; keeping the outbox",
+            extra={"ack": ack, "sent": sent},
+        )
+        return f"the leader acknowledged report {ack}, but this instance sent up to {sent}: kept every report"
+    conn.execute("DELETE FROM shieldwall_outbox WHERE seq <= ?", (ack,))
+    return None
 
 
 # ---- the late-news rule -----------------------------------------------------------------------------------

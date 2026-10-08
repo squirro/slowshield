@@ -227,7 +227,9 @@ def test_late_news_rule(conn: sqlite3.Connection) -> None:
     assert credited(conn, NOW + 999, 121, NOW, boot_head=100) == NOW
 
 
-def test_acknowledgements_never_reach_past_what_was_sent(conn: sqlite3.Connection) -> None:
+def test_acknowledgements_never_reach_past_what_was_sent(
+    conn: sqlite3.Connection, caplog: pytest.LogCaptureFixture
+) -> None:
     from slowshield.shieldwall.apply import apply_sync
 
     conn.execute(
@@ -237,8 +239,25 @@ def test_acknowledgements_never_reach_past_what_was_sent(conn: sqlite3.Connectio
     conn.executemany(
         "INSERT INTO shieldwall_outbox (seq, created, kind, body) VALUES (?, 0, 'stats', '{}')", [(1,), (2,), (3,)]
     )
-    apply_sync(conn, _cfg(), {"ack": 999, "head": 0}, NOW, sent=1, me="sme")
-    assert [r[0] for r in conn.execute("SELECT seq FROM shieldwall_outbox")] == [2, 3]
+
+    def outbox() -> list[int]:
+        return [r[0] for r in conn.execute("SELECT seq FROM shieldwall_outbox ORDER BY seq")]
+
+    def last_error() -> str | None:
+        return conn.execute("SELECT last_error FROM shieldwall_leader").fetchone()[0]
+
+    # An acknowledgement past the last report the request carried is refused: every report stays, and it is shown.
+    with caplog.at_level("ERROR", logger="slowshield.shieldwall.apply"):
+        apply_sync(conn, _cfg(), {"ack": 999, "head": 0}, NOW, sent=1, me="sme")
+    assert outbox() == [1, 2, 3]
+    assert "never sent" in caplog.text
+    assert "sent up to 1" in (last_error() or "")
+    # With nothing sent there is nothing to delete; the leader's own mark is no error.
+    apply_sync(conn, _cfg(), {"ack": 999, "head": 0}, NOW, sent=0, me="sme")
+    assert outbox() == [1, 2, 3] and last_error() is None
+    # A proper acknowledgement deletes what it names.
+    apply_sync(conn, _cfg(), {"ack": 2, "head": 0}, NOW, sent=3, me="sme")
+    assert outbox() == [3] and last_error() is None
 
 
 def test_malformed_fingerprints_are_ignored() -> None:

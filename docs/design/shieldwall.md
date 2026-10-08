@@ -97,7 +97,8 @@ carry `created` and are refused beyond ±5 minutes; clocks are assumed to be NTP
 by the signer's ID; a removed member gets a signed 403 with `"removed"`.
 
 The traffic carries statistics, events and client IPs, so the leader's URL must be `https://`; join strings and
-`invite` refuse plain `http://` except for `localhost`. A leader whose certificate a private CA signed (its Caddy's
+`invite` refuse plain `http://` except for `localhost`, `127.0.0.1` and `[::1]`, and a follower checks the leader URL
+it stored as well before it sends anything, syncs or package file requests alike. A leader whose certificate a private CA signed (its Caddy's
 internal CA, say) needs that CA on its followers, in `SLOWSHIELD_LEADER_CA_FILE`: Helm has
 `shieldwall.leaderCaSecret`, Compose `LEADER_CA_SECRET_FILE` (`deploy/docker/secrets/README.md`), and `invite`
 says so. A leader with an ACME certificate needs nothing. Request bodies are capped at 8 MB, read before the sender is

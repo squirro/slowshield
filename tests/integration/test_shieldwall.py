@@ -428,6 +428,20 @@ async def test_only_the_leader_can_remove_a_follower(pair: Pair) -> None:
     assert p.follower.ctx.cfg.raw.default_delay_days == 3  # still the leader's policy
 
 
+async def test_a_follower_never_talks_to_a_plaintext_leader(pair: Pair, start: Any) -> None:
+    p = pair
+    await _join(p)
+    # A leader URL stored in plain http (by hand, or by an older build) is refused before anything is sent.
+    await p.follower.ctx.db.writer.run(lambda c: c.execute("UPDATE shieldwall_leader SET url = 'http://leader.test'"))
+    calls = len(p.net.calls)
+    with pytest.raises(TransportError, match="must be https"):
+        await p.service.step()
+    assert len(p.net.calls) == calls
+    # Restarted without a join string, it doesn't fetch files through that leader either.
+    follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert follower.ctx.cfg.raw.shieldwall.role == "follower" and follower.ctx.artifacts.via is None
+
+
 async def test_files_served_before_pairing_are_compared_too(pair: Pair) -> None:
     p = pair
     path = _wheel(p.follower)

@@ -37,6 +37,12 @@ class JoinString:
     token_id: str
     secret: str
 
+    def __post_init__(self) -> None:
+        # However it is made (parsed, or built by `invite`), a join string never names a plaintext leader.
+        problem = leader_url_problem(self.url)
+        if problem:
+            raise JoinStringError(problem)
+
     def __str__(self) -> str:
         return f"{PREFIX}{self.url}#{self.key_hash}.{self.token_id}.{self.secret}"
 
@@ -45,11 +51,7 @@ class JoinString:
         m = _JOIN.match(text.strip())
         if m is None:
             raise JoinStringError("not a SlowShield join string (ssj1:<url>#<key>.<token>.<secret>)")
-        url = m.group(1).rstrip("/")
-        problem = leader_url_problem(url)
-        if problem:
-            raise JoinStringError(problem)
-        return cls(url, m.group(2), m.group(3), m.group(4))
+        return cls(m.group(1).rstrip("/"), m.group(2), m.group(3), m.group(4))
 
 
 def leader_url_problem(url: str) -> str | None:

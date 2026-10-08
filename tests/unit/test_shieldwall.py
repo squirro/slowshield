@@ -97,6 +97,10 @@ def test_join_string_round_trip_and_proof() -> None:
         with pytest.raises(JoinStringError):
             JoinString.parse(bad)
     assert JoinString.parse("ssj1:http://localhost:8080" + tail).url == "http://localhost:8080"
+    assert JoinString.parse("ssj1:http://[::1]:8080" + tail).url == "http://[::1]:8080"
+    for plain in ("http://hq.example.com", "http://10.0.0.5:8080", "http://localhost.evil.example"):
+        with pytest.raises(JoinStringError, match="must be https"):
+            JoinString(plain, "a" * 26, token, secret)  # however it is made
 
 
 def test_config_takes_the_join_string_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:

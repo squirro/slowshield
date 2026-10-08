@@ -23,7 +23,7 @@ from slowshield.context import AppContext
 from slowshield.recorder import Batch
 from slowshield.shieldwall import signing
 from slowshield.shieldwall.identity import Identity, key_hash
-from slowshield.shieldwall.join import JoinString, proof
+from slowshield.shieldwall.join import JoinString, leader_url_problem, proof
 from slowshield.shieldwall.leader import PROTOCOL
 from slowshield.shieldwall.runtime import refresh
 from slowshield.shieldwall.transport import Reply, Send, Transport, TransportError
@@ -291,6 +291,9 @@ class FollowerService:
     async def _signed(
         self, state: LeaderState, method: str, path: str, query: str, body: bytes, *, limit: float
     ) -> Reply:
+        problem = leader_url_problem(state.url)  # the stored URL too: nothing goes to a leader in plain text
+        if problem:
+            raise TransportError(problem)
         now = self.ctx.clock.now()
         headers = signing.sign_request(self.identity, method, path, query, body, now=now)
         headers["Content-Type"] = "application/json"

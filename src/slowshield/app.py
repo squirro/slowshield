@@ -233,9 +233,14 @@ class SlowShield:
 
                 url: str | None = JoinString.parse(sw.join).url
             else:  # paired before: the leader it found then
+                from slowshield.shieldwall.join import leader_url_problem
+
                 url = await ctx.db.writer.run(wall.stored_leader_url)
                 if url is None:
                     log.error("shield wall: a follower needs the join string from its leader (SLOWSHIELD_JOIN)")
+                elif problem := leader_url_problem(url):
+                    log.error("shield wall: not fetching files through the leader: %s", problem)
+                    url = None
             if sw.via_leader and url is not None:
                 from slowshield.shieldwall.transport import Transport
                 from slowshield.shieldwall.via import ViaLeader

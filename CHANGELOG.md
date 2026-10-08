@@ -27,6 +27,8 @@ All notable changes to this project are documented here. The format is based on
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
     bytes refuses the file, and the leader records it. A follower's fingerprint only ever refuses a file on that
     follower, and one that names another package or version than the leader's record of the file is refused.
+  - A follower skips the leader's settings for an ecosystem it doesn't know, with a warning that names it, and
+    applies the rest of the policy.
 - NuGet (C#) at `/nuget/`: nuget.org through SlowShield ([docs/design/nuget.md](docs/design/nuget.md),
   https://github.com/squirro/slowshield/issues/38). Clients use a `NuGet.Config` with `<clear/>` and one source
   named `nuget.org` at `/nuget/v3/index.json`; the Setup page has the file and a command for CI and images.

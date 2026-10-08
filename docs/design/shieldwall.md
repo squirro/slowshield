@@ -17,7 +17,7 @@ and catches up when it can.
   the source of policy, and a shared cache. It is never a follower. Followers never talk to each other.
 - **Followers dial out; the leader never dials in.** One signed HTTPS exchange, long-polled for up to 25 seconds,
   carries reports up and changes down and is the heartbeat. Followers need no inbound port and work behind NAT.
-- **Pairing like k3s.** `slowshield shieldwall invite` on the leader prints a join string: the leader's URL, a hash
+- **Pairing like k3s.** `slowshield wall invite` on the leader prints a join string: the leader's URL, a hash
   of its Ed25519 key, and a single-use secret that expires after 10 minutes. The follower gets it in its environment,
   checks the leader's key against the hash, and its Shield wall page asks the operator to confirm the leader's
   fingerprint and click **Join** (`SLOWSHIELD_JOIN_CONFIRM=auto` skips the click for automated installs).
@@ -47,14 +47,14 @@ wrote every 5 seconds.
 
 ## Pairing
 
-1. On the leader: `slowshield shieldwall invite --name zurich-1 --location zurich` (in a container:
-   `docker exec slowshield slowshield shieldwall invite …`). It needs `public_url` (or `--url`): the URL followers
+1. On the leader: `slowshield wall invite --name zurich-1 --location zurich` (in a container:
+   `docker exec slowshield slowshield wall invite …`). It needs `public_url` (or `--url`): the URL followers
    reach the leader at. The token is stored with its secret; it works once, for 10 minutes (`--minutes`, up to 60).
 2. The follower starts with `SLOWSHIELD_JOIN='ssj1:https://hq.example.com#<key hash>.<token>.<secret>'`.
 3. It fetches `/.well-known/slowshield-shieldwall`, and refuses unless the key hashes to the value in the join string
    (and isn't its own). It pins the key.
 4. Its Shield wall page, and a banner on every page, show the leader's name, URL and fingerprint, and a **Join**
-   button. `slowshield shieldwall invite` printed the same fingerprint on the leader.
+   button. `slowshield wall invite` printed the same fingerprint on the leader.
 5. On Join, the follower sends a signed `POST /_shieldwall/v1/join` with its public key, name, location, labels,
    and a proof: an HMAC of its key and the leader's ID under the token's secret. A copied request can't be replayed
    with another key. The leader checks the signature, the token (known, unused, not expired) and the proof, records
@@ -68,7 +68,7 @@ the page, and the request must come from the page itself (`Sec-Fetch-Site` and `
 them). There is no UI control to pick another leader, leave, or lower anything. Inviting stays in the CLI until the
 UI has authentication.
 
-**Removing a follower:** `slowshield shieldwall remove zurich-1`. Its next sync gets a signed refusal; it then runs
+**Removing a follower:** `slowshield wall remove zurich-1`. Its next sync gets a signed refusal; it then runs
 on its own with its own config. Joining again takes a new join string. A follower that joins again replaces the
 history the leader had for it.
 
@@ -234,7 +234,7 @@ the variables through.
 |---|---|---|
 | A leader that is taken over | the floor; the hour's wait and the page that shows it; blocks are a union with the follower's own feeds; the late-news rule; evidence direct and every byte checked; the "never" class | after an hour it can lower delays to the floor; it can backdate observations by about one sync (a day after an outage); after a day it can lift GitHub-only blocks on followers without a token; it can deny service with bogus blocks or tamper flags, and stop syncing (the page shows the sync age) |
 | A leader taken over before a follower pairs | none beyond the floor: pairing trusts the leader's past | planted history is accepted; said so on this page |
-| A follower that is taken over | everything is attributed to it; its fingerprints are checked and compared, and refuse files on that follower only; the leader fetches only from its own upstream hosts; `shieldwall remove` | polluted statistics until removed; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
+| A follower that is taken over | everything is attributed to it; its fingerprints are checked and compared, and refuse files on that follower only; the leader fetches only from its own upstream hosts; `wall remove` | polluted statistics until removed; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
 | Someone with the join string | single use, 10 minutes; bound to the follower's key; the follower checks the leader's key hash | whoever uses it first joins; the operator sees every follower on the leader |
 | Someone on a follower's UI | the leader comes from the environment; Join only confirms it, from the page itself | they can click Join for the leader the operator configured |
 | A network attacker | TLS (the leader's URL must be https); signatures on every message, responses bound to their requests; only a signed refusal removes a follower; acknowledgements never delete reports that weren't sent | none beyond TLS's own |

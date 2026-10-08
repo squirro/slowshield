@@ -41,7 +41,7 @@ services:
       # Same switch as Caddy's: the Setup page and npm tarball URLs then offer http://localhost.
       SLOWSHIELD_LOCAL_HTTP: ${SLOWSHIELD_LOCAL_HTTP:-on}
       # Shield wall (docs/design/shieldwall.md): SLOWSHIELD_SHIELDWALL_ROLE=leader on the leader; SLOWSHIELD_JOIN on a
-      # follower (from `docker compose exec slowshield slowshield shieldwall invite` on the leader).
+      # follower (from `docker compose exec slowshield slowshield wall invite` on the leader).
       SLOWSHIELD_SHIELDWALL_ROLE: ${SLOWSHIELD_SHIELDWALL_ROLE:-}
       SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
       SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}

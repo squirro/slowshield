@@ -42,12 +42,12 @@
   <header class="card-head"><h2>Add a follower</h2>{% if invitations %}<span class="badge">{{ invitations }} open invitation{{ "s" if invitations != 1 }}</span>{% endif %}</header>
   <ol class="steps">
     <li>On this instance, print a join string. It works once, for 10 minutes:
-      <pre><code>docker exec slowshield slowshield shieldwall invite --name zurich-1 --location zurich</code></pre></li>
+      <pre><code>docker exec slowshield slowshield wall invite --name zurich-1 --location zurich</code></pre></li>
     <li>Start the new instance with it: <code>SLOWSHIELD_JOIN='ssj1:…'</code>. Nothing else to configure.</li>
     <li>Open the new instance's Shield wall page and click <strong>Join</strong> once its fingerprint matches this one:
       <pre><code>{{ fingerprint }}</code></pre></li>
   </ol>
-  <p class="muted small">Remove a follower with <code>slowshield shieldwall remove &lt;name&gt;</code>: it keeps running, on its own.</p>
+  <p class="muted small">Remove a follower with <code>slowshield wall remove &lt;name&gt;</code>: it keeps running, on its own.</p>
 </section>
 
 {% elif shieldwall_role == "follower" %}
@@ -62,7 +62,7 @@
   {% if leader.state == "pending" and not leader.confirmed_by %}
   <section class="card">
     <header class="card-head"><h2>Join {{ leader.name or "the leader" }}?</h2></header>
-    <p>The join string this instance was started with points to this leader. Compare the fingerprint with the one <code>slowshield shieldwall invite</code> printed on the leader, then join.</p>
+    <p>The join string this instance was started with points to this leader. Compare the fingerprint with the one <code>slowshield wall invite</code> printed on the leader, then join.</p>
     <dl class="facts">
       <dt>Leader</dt><dd>{{ leader.name or "—" }} <span class="muted mono small">{{ leader.leader_id }}</span></dd>
       <dt>URL</dt><dd><code>{{ leader.url }}</code></dd>
@@ -87,7 +87,7 @@
       <dt>Blocks from the leader</dt><dd>{{ leader_blocks|num }}</dd>
       {% if leader.last_error %}<dt>Last error</dt><dd class="error-text">{{ leader.last_error }}</dd>{% endif %}
     </dl>
-    {% if leader.state == "join_failed" %}<p>Ask for a new join string (<code>slowshield shieldwall invite</code> on the leader) and restart this instance with it.</p>{% endif %}
+    {% if leader.state == "join_failed" %}<p>Ask for a new join string (<code>slowshield wall invite</code> on the leader) and restart this instance with it.</p>{% endif %}
     {% if leader.state == "removed" %}<p>This instance runs on its own with its own settings. To join again, start it with a new join string.</p>{% endif %}
   </section>
   {% if policy %}
@@ -119,7 +119,7 @@
   <p>Several SlowShield instances can work as one: a leader holds the policy and shows every instance's traffic, followers take its policy and fetch package files through it, and each keeps working when the others are down.</p>
   <ol class="steps">
     <li>On the instance that leads, set <code>SLOWSHIELD_SHIELDWALL_ROLE=leader</code> and restart it.</li>
-    <li>On it, run <code>slowshield shieldwall invite</code> and start each follower with the join string it prints (<code>SLOWSHIELD_JOIN</code>).</li>
+    <li>On it, run <code>slowshield wall invite</code> and start each follower with the join string it prints (<code>SLOWSHIELD_JOIN</code>).</li>
     <li>Confirm the leader on each follower's Shield wall page.</li>
   </ol>
 </section>

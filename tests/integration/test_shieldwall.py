@@ -351,16 +351,16 @@ async def test_cli_invite_members_and_remove(
     raw = p.leader.ctx.cfg.raw
     conf = tmp_path / "leader.toml"
     conf.write_text(f'data_dir = "{raw.data_dir}"\npublic_url = "{LEADER_URL}"\n[shieldwall]\nrole = "leader"\n')
-    assert cli.main(["shieldwall", "invite", "--config", str(conf), "-q"]) == 0
+    assert cli.main(["wall", "invite", "--config", str(conf), "-q"]) == 0
     join = JoinString.parse(capsys.readouterr().out.strip())
     assert join.url == LEADER_URL and join.key_hash == key_hash(p.leader.app._identity.public_key)  # type: ignore[union-attr]
-    assert cli.main(["shieldwall", "members", "--config", str(conf)]) == 0
+    assert cli.main(["wall", "members", "--config", str(conf)]) == 0
     assert "zurich-1" in capsys.readouterr().out
-    assert cli.main(["shieldwall", "remove", "zurich-1", "--config", str(conf)]) == 0
+    assert cli.main(["wall", "remove", "zurich-1", "--config", str(conf)]) == 0
     assert p.leader.rows("SELECT state FROM shieldwall_members") == [("removed",)]
     standalone = tmp_path / "standalone.toml"
     standalone.write_text(f'data_dir = "{tmp_path / "solo"}"\npublic_url = "{LEADER_URL}"\n')
-    assert cli.main(["shieldwall", "invite", "--config", str(standalone)]) == 2
+    assert cli.main(["wall", "invite", "--config", str(standalone)]) == 2
 
 
 async def test_followers_that_disagree_are_reported_not_flagged(pair: Pair) -> None:

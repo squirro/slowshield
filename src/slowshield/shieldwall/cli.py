@@ -1,6 +1,6 @@
-"""`slowshield shieldwall ...`: invitations and members on a leader, the pairing on a follower.
+"""`slowshield wall ...`: invitations and members on a leader, the pairing on a follower.
 
-Runs next to the server (in its container: `docker exec slowshield slowshield shieldwall invite`), on the same database.
+Runs next to the server (in its container: `docker exec slowshield slowshield wall invite`), on the same database.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def cmd_members(args: argparse.Namespace) -> int:
                                     r[:8], strict=True)) for r in rows], indent=2))  # fmt: skip
         return 0
     if not rows:
-        print("no followers yet: `slowshield shieldwall invite` prints a join string")
+        print("no followers yet: `slowshield wall invite` prints a join string")
         return 0
     print(f"{'ID':<18} {'NAME':<24} {'LOCATION':<16} {'STATE':<8} {'VERSION':<12} LAST SEEN")
     for r in rows:
@@ -133,8 +133,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
-    wall = sub.add_parser("shieldwall", help="one leader, many followers: invitations, members, status")
-    ssub = wall.add_subparsers(dest="shieldwall_cmd", required=True)
+    wall = sub.add_parser("wall", help="one leader, many followers: invitations, members, status")
+    ssub = wall.add_subparsers(dest="wall_cmd", required=True)
 
     p = ssub.add_parser("invite", help="print a single-use join string for a new follower (leader)")
     p.add_argument("--name", help="the follower's name on the leader (default: what the follower reports)")

@@ -266,7 +266,7 @@ class ShieldwallConfig(msgspec.Struct, forbid_unknown_fields=True):
     """A shield wall: one leader, many followers (docs/design/shieldwall.md). Usually set through the environment."""
 
     role: ShieldwallRole = "standalone"  # SLOWSHIELD_SHIELDWALL_ROLE; a join string makes it `follower`
-    # The join string from the leader's `slowshield shieldwall invite` (SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE).
+    # The join string from the leader's `slowshield wall invite` (SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE).
     join: str | None = None
     join_confirm: Literal["ui", "auto"] = "ui"  # SLOWSHIELD_JOIN_CONFIRM: `auto` joins without the UI click
     name: str | None = None  # SLOWSHIELD_INSTANCE_NAME (default: the host name)

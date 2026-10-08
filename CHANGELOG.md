@@ -9,7 +9,7 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - Shield wall: several instances standing together, one leader and many followers
   ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
-  - Pairing: `slowshield shieldwall invite` on the leader prints a join string (single use, 10 minutes); a follower
+  - Pairing: `slowshield wall invite` on the leader prints a join string (single use, 10 minutes); a follower
     started with it (`SLOWSHIELD_JOIN`) checks the leader's key and asks for a click on Join on its new Shield wall
     page (`SLOWSHIELD_JOIN_CONFIRM=auto` skips it). Every message is signed with the instances' Ed25519 keys.
   - The leader's overview, security timeline and CSV cover every instance, and narrow to one, a location or a label.

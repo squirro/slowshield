@@ -124,7 +124,7 @@ caddy:
     limits: { memory: 256Mi }
 
 # Shield wall (docs/design/shieldwall.md): one leader, many followers. A leader sets role: leader and prints join
-# strings with `kubectl exec deploy/<release> -c slowshield -- slowshield shieldwall invite`; a follower gets one.
+# strings with `kubectl exec deploy/<release> -c slowshield -- slowshield wall invite`; a follower gets one.
 shieldwall:
   role: standalone  # standalone | leader (a join string makes this instance a follower)
   # A follower's join string, from a Secret: kubectl create secret generic slowshield-join --from-literal=join='ssj1:…'

@@ -168,9 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("version", help="print version information")
     p.set_defaults(fn=cmd_version)
 
-    from slowshield.shieldwall.cli import add_parser as add_shieldwall
+    from slowshield.shieldwall.cli import add_parser as add_wall
 
-    add_shieldwall(sub)
+    add_wall(sub)
 
     args = parser.parse_args(argv)
     return int(args.fn(args))

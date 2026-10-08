@@ -100,7 +100,7 @@ enabled = true
 # One leader, many followers (docs/design/shieldwall.md). Usually set through the environment.
 # [shieldwall]
 # role = "standalone"                  # SLOWSHIELD_SHIELDWALL_ROLE: standalone | leader (a join string: follower)
-# join = "ssj1:…"                      # SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE: from `slowshield shieldwall invite`
+# join = "ssj1:…"                      # SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE: from `slowshield wall invite`
 # join_confirm = "ui"                  # SLOWSHIELD_JOIN_CONFIRM: ui (click Join on the Shield wall page) | auto
 # name = "zurich-1"                    # SLOWSHIELD_INSTANCE_NAME (default: the host name)
 # location = "zurich"                  # SLOWSHIELD_INSTANCE_LOCATION

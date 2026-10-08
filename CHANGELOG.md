@@ -27,6 +27,24 @@ All notable changes to this project are documented here. The format is based on
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
     bytes refuses the file, and the leader records it. A follower's fingerprint only ever refuses a file on that
     follower, and one that names another package or version than the leader's record of the file is refused.
+- NuGet (C#) at `/nuget/`: nuget.org through SlowShield ([docs/design/nuget.md](docs/design/nuget.md),
+  https://github.com/squirro/slowshield/issues/38). Clients use a `NuGet.Config` with `<clear/>` and one source
+  named `nuget.org` at `/nuget/v3/index.json`; the Setup page has the file and a command for CI and images.
+  - SlowShield writes the service index itself: the flat container, one SemVer 2 registration hive, vulnerability
+    data (NuGetAudit keeps working) and search. The upstream URLs come from `[upstreams.nuget]`, so the hosts it may
+    reach stay fixed.
+  - Versions younger than the delay or blocked are left out of the flat container, the registration pages
+    (recounted and rebounded, empty pages dropped) and search results. A download of one gets `425 Too Early`
+    with `Retry-After`, or `451`. A version's publish time is its registration `published`, never earlier than
+    first seen; an unlisted version that never had a real date is timed from when SlowShield first listed it.
+  - Every `.nupkg` is checked against the catalog's `packageHash` (SHA512) and its first fingerprint, and never
+    changed, so the repository signature stays valid. A package nuget.org signs again is refused as tampering.
+  - Ids and versions use nuget.org's spellings (lower case, normalized: `1.0` and `1.0.0.0` are `1.0.0`) in every
+    key, exceptions and blocks included; other spellings in a path are a `404`. Malware from OSV `NuGet` and
+    GitHub `nuget`. `fail_open` is off, as for Maven and Cargo. `SLOWSHIELD_NUGET_ENABLED`, Helm
+    `ecosystems.nuget.enabled`.
+  - Shield wall followers learn when the leader first listed a NuGet version, and the leader now sends
+    `fail_open` for every ecosystem it has.
 
 ### Changed
 - The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
@@ -36,6 +54,8 @@ All notable changes to this project are documented here. The format is based on
   it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
   `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
   stored and no longer needs the join string; one that hasn't joined yet still does.
+- A sha512 mismatch is reported as "sha512 does not match the registry digest" (npm and NuGet), not as npm's
+  `dist.integrity`.
 
 ## [0.0.8] - 2026-10-07
 

@@ -1,8 +1,20 @@
 # NuGet and C#
 
 Status: implemented (https://github.com/squirro/slowshield/issues/38). The protocol facts below come from a spike on
-2026-10-08 against api.nuget.org and the .NET SDK 10.0.401 (`mcr.microsoft.com/dotnet/sdk:10.0`). The service is
-tested against a fake registry. A real `dotnet restore` through SlowShield is in `tests/e2e`, but it hasn't run yet.
+2026-10-08 against api.nuget.org and the .NET SDK 10.0.401 (`mcr.microsoft.com/dotnet/sdk:10.0`). The same day the
+service was checked twice:
+
+- **Against nuget.org**, in process: the generated service index, Newtonsoft.Json's flat container and inlined
+  pages, AWSSDK.Core's 24 linked pages recomputed, a verified Newtonsoft.Json 13.0.1 download, `425` for the
+  unlisted 13.0.5-beta1, search, and the vulnerability files.
+- **With real dotnet 10.0.401** against SlowShield and the fake registry: `dotnet restore` resolved a dependency
+  to the newest allowed version and NuGetAudit reported the fake vulnerability (`NU1903`); a reference to a held
+  version failed with `NU1103` (the next version up was a prerelease); `dotnet add package` without a version
+  picked the newest allowed version from inlined and from linked registration pages; `dotnet package search`
+  left out held and blocked versions; a blocked package failed with `451` (`NU1301`).
+
+The e2e test (`tests/e2e/test_stack.py::test_nuget_restores_through_the_proxy`) runs the same client through the
+Compose stack. It hasn't run yet.
 
 SlowShield serves nuget.org at `/nuget/`. NuGet has no release-age setting of its own, so SlowShield's delay is the
 only one. Versions younger than the delay are left out of the version lists and refused on download, known malware is
@@ -124,7 +136,8 @@ container `index.json` on nuget.org is never fetched.
 
 Why versions are removed instead of marked, as cargo's are marked yanked: the flat container, the only list restore
 reads, has no flag to set. It lists unlisted versions like any other, as the spike showed. Removing the version
-makes a minimum-version reference resolve the next version up, with warning `NU1603`, as the spike also showed. That version is normally newer still and therefore held too, but on a package with several maintained
+makes a minimum-version reference resolve the next version up, with warning `NU1603`, as the spike also showed. When the next version up is a prerelease, restore finds nothing and fails with `NU1103`. That version is
+normally newer still and therefore held too, but on a package with several maintained
 lines (6.0.30 released yesterday, 7.0.0 a year ago) restore moves to the next line. Projects that need exact
 versions should treat `NU1603` as an error (`<WarningsAsErrors>NU1603</WarningsAsErrors>`) or use a lock file.
 

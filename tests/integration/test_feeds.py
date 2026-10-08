@@ -139,7 +139,7 @@ async def test_github_feed_with_token(start_app, monkeypatch) -> None:
     assert not any(n == "withdrawn-npm" for _, n, _, _ in gh)
     assert run.fake.control("hits", prefix="/github/").get("/github/advisories", 0) > 3
     state = run.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'github:%'")
-    assert len(state) == 5  # pip, npm, go, maven, rust
+    assert len(state) == 6  # pip, npm, go, maven, rust, nuget
 
     doc = (await run.client.get("/pypi/simple/partly-bad/", headers={"Accept": JSON_V1})).json()
     assert doc["versions"] == ["1.0.0", "1.3.0"]

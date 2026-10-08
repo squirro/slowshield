@@ -1,11 +1,12 @@
 """Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), Maven, crates.io
-(sparse index and static downloads), OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub
-endpoints, plus control hooks."""
+(sparse index and static downloads), nuget.org (flat container, registration, catalog, search, vulnerability data),
+OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub endpoints, plus control hooks."""
 
 from __future__ import annotations
 
 import asyncio
 import email.utils
+import gzip
 import hashlib
 import io
 import json
@@ -25,7 +26,21 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response, Strea
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from fakeupstream.catalog import DAY, Advisory, Blob, Catalog, GoModule, GoVersion, iso, iso_s, pep503
+from fakeupstream.catalog import (
+    DAY,
+    NUGET_INLINE_MAX,
+    NUGET_PAGE_SIZE,
+    NUGET_UNLISTED,
+    Advisory,
+    Blob,
+    Catalog,
+    GoModule,
+    GoVersion,
+    NugetVersion,
+    iso,
+    iso_s,
+    pep503,
+)
 
 JSON_V1 = "application/vnd.pypi.simple.v1+json"
 _PSEUDO = re.compile(r"-(?:0\.)?\d{14}-[0-9a-f]{12}(?:\+incompatible)?$")
@@ -482,6 +497,192 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
         return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
 
+    # ---- nuget.org --------------------------------------------------------------------------------------
+    # /nuget-flat/ (flat container), /nuget-reg/ (a gzipped SemVer 2 registration hive), /nuget-catalog/ (catalog
+    # leaves with packageHash), /nuget-search/query, /nuget-vuln/index.json and its files. Lower-case paths only.
+
+    def nuget_missing() -> Response:
+        return Response(b"<Error><Code>BlobNotFound</Code></Error>", status_code=404, media_type="application/xml")
+
+    def nuget_gz(request: Request, doc: Any) -> Response:
+        body = json.dumps(doc, separators=(",", ":")).encode()
+        tag = _etag(body)
+        headers = {"ETag": tag, "Content-Encoding": "gzip", "Cache-Control": "max-age=60"}
+        if request.headers.get("if-none-match") == tag:
+            return Response(status_code=304, headers=headers)
+        return Response(gzip.compress(body, mtime=0), media_type="application/json", headers=headers)
+
+    def nuget_leaf(b: str, nv: NugetVersion) -> dict[str, Any]:
+        lid, lv = nv.pid.lower(), nv.lower
+        content = f"{b}/nuget-flat/{lid}/{lv}/{lid}.{lv}.nupkg"
+        groups = (
+            [{"@type": "PackageDependencyGroup", "targetFramework": ".NETStandard2.0",
+              "dependencies": [{"@type": "PackageDependency", "id": d, "range": f"[{r}, )"} for d, r in nv.deps]}]
+            if nv.deps else []
+        )  # fmt: skip
+        return {
+            "@id": f"{b}/nuget-reg/{lid}/{lv}.json",
+            "@type": "Package",
+            "commitId": f"commit-{int(nv.commit)}",
+            "commitTimeStamp": iso(nv.commit),
+            "catalogEntry": {
+                "@id": b + state.catalog.nuget_catalog_path(nv),
+                "@type": "PackageDetails",
+                "authors": "SlowShield tests",
+                "dependencyGroups": groups,
+                "description": "Fake package for SlowShield's tests.",
+                "iconUrl": f"{b}/nuget-flat/{lid}/{lv}/icon",
+                "id": nv.pid,
+                "listed": nv.listed,
+                "packageContent": content,
+                "published": iso(nv.published) if nv.listed else NUGET_UNLISTED,
+                "version": nv.version,
+            },
+            "packageContent": content,
+            "registration": f"{b}/nuget-reg/{lid}/index.json",
+        }
+
+    def nuget_pages(lid: str) -> list[list[NugetVersion]]:
+        versions = list(state.catalog.nuget[lid].values())
+        return [versions[i : i + NUGET_PAGE_SIZE] for i in range(0, len(versions), NUGET_PAGE_SIZE)]
+
+    def nuget_page(b: str, lid: str, page: list[NugetVersion], inline: bool) -> dict[str, Any]:
+        index = f"{b}/nuget-reg/{lid}/index.json"
+        lo, hi = page[0].lower, page[-1].lower
+        doc: dict[str, Any] = {
+            "@id": f"{index}#page/{lo}/{hi}" if inline else f"{b}/nuget-reg/{lid}/page/{lo}/{hi}.json",
+            "@type": "catalog:CatalogPage",
+            "commitId": f"commit-{int(max(nv.commit for nv in page))}",
+            "commitTimeStamp": iso(max(nv.commit for nv in page)),
+            "count": len(page),
+            "lower": lo,
+            "upper": hi,
+        }
+        if inline:
+            doc["items"] = [nuget_leaf(b, nv) for nv in page]
+            doc["parent"] = index
+        return doc
+
+    async def nuget_reg(request: Request) -> Response:
+        lid, rest = request.path_params["id"], request.path_params["rest"]
+        if lid not in state.catalog.nuget:
+            return nuget_missing()
+        b = base(request)
+        pages = nuget_pages(lid)
+        inline = len(state.catalog.nuget[lid]) <= NUGET_INLINE_MAX
+        if rest == "index.json":
+            items = [nuget_page(b, lid, p, inline) for p in pages]
+            return nuget_gz(
+                request,
+                {
+                    "@id": f"{b}/nuget-reg/{lid}/index.json",
+                    "@type": ["catalog:CatalogRoot", "PackageRegistration", "catalog:Permalink"],
+                    "commitId": "root",
+                    "commitTimeStamp": max(i["commitTimeStamp"] for i in items),
+                    "count": len(items),
+                    "items": items,
+                    "@context": {"@vocab": "http://schema.nuget.org/schema#"},
+                },
+            )
+        for p in pages:
+            if not inline and rest == f"page/{p[0].lower}/{p[-1].lower}.json":
+                doc = nuget_page(b, lid, p, inline=False)
+                doc["items"] = [nuget_leaf(b, nv) for nv in p]
+                doc["parent"] = f"{b}/nuget-reg/{lid}/index.json"
+                doc["@context"] = {"@vocab": "http://schema.nuget.org/schema#"}
+                return nuget_gz(request, doc)
+        return nuget_missing()
+
+    async def nuget_flat(request: Request) -> Response:
+        lid, rest = request.path_params["id"], request.path_params["rest"]
+        pkg = state.catalog.nuget.get(lid)
+        if pkg is None:
+            return nuget_missing()
+        if rest == "index.json":  # unlisted versions too, as on nuget.org
+            return _maybe_304(request, json.dumps({"versions": list(pkg)}).encode(), "application/json")
+        ver, _, file = rest.partition("/")
+        nv = pkg.get(ver)
+        if nv is None or file != f"{lid}.{ver}.nupkg":
+            return nuget_missing()
+        return _stream(nv.blob, tampered=request.url.path in state.tampered)
+
+    async def nuget_catalog(request: Request) -> Response:
+        path = "/nuget-catalog/" + request.path_params["rest"]
+        body = state.catalog.nuget_catalog.get(path)
+        if body is None:
+            return nuget_missing()
+        doc = json.loads(body)
+        doc["@id"] = base(request) + doc["@id"]
+        return nuget_gz(request, doc)
+
+    async def nuget_search(request: Request) -> Response:
+        q = request.query_params
+        term = q.get("q", "").lower().removeprefix("packageid:")
+        prerelease = q.get("prerelease", "false").lower() == "true"
+        b = base(request)
+        data = []
+        for lid, pkg in sorted(state.catalog.nuget.items()):
+            if term not in lid:
+                continue
+            listed = [nv for nv in pkg.values() if nv.listed and (prerelease or "-" not in nv.version)]
+            if not listed:
+                continue
+            index = f"{b}/nuget-reg/{lid}/index.json"
+            data.append(
+                {
+                    "@id": index,
+                    "@type": "Package",
+                    "registration": index,
+                    "id": listed[-1].pid,
+                    "version": listed[-1].version,
+                    "description": "Fake package for SlowShield's tests.",
+                    "totalDownloads": 10 * len(listed),
+                    "verified": False,
+                    "packageTypes": [{"name": "Dependency"}],
+                    "versions": [
+                        {"version": nv.version, "downloads": 10, "@id": f"{b}/nuget-reg/{lid}/{nv.lower}.json"}
+                        for nv in listed
+                    ],
+                    "vulnerabilities": [],
+                }
+            )
+        skip, take = int(q.get("skip", "0") or 0), int(q.get("take", "20") or 20)
+        return nuget_gz(
+            request,
+            {
+                "@context": {"@vocab": "http://schema.nuget.org/schema#", "@base": f"{b}/nuget-reg/"},
+                "totalHits": len(data),
+                "data": data[skip : skip + take],
+            },
+        )
+
+    vuln_files = {
+        "2026.09.20/vulnerability.base.json": {
+            "fake.hello": [
+                {"url": "https://github.com/advisories/GHSA-aaaa-0009-0009", "severity": 2, "versions": "(, 1.1.0)"}
+            ]
+        },
+        "2026.09.20/2026.09.21/vulnerability.update.json": {},
+    }
+
+    async def nuget_vuln_index(request: Request) -> Response:
+        b = base(request)
+        return nuget_gz(
+            request,
+            [
+                {"@name": "base", "@id": f"{b}/nuget-vuln-data/2026.09.20/vulnerability.base.json",
+                 "@updated": "2026-09-20T00:00:00Z", "comment": "The base data for vulnerability update periodically"},
+                {"@name": "update", "@id": f"{b}/nuget-vuln-data/2026.09.20/2026.09.21/vulnerability.update.json",
+                 "@updated": "2026-09-21T00:00:00Z", "comment": "The patch data for the vulnerability."},
+                {"@name": "elsewhere", "@id": "https://example.com/not-the-vulnerability-host.json",
+                 "@updated": "2026-09-21T00:00:00Z", "comment": "On another host: SlowShield leaves it out."},
+            ],
+        )  # fmt: skip
+
+    async def nuget_vuln_file(request: Request) -> Response:
+        doc = vuln_files.get(request.path_params["rest"])
+        return nuget_missing() if doc is None else nuget_gz(request, doc)
+
     # ---- OCI registries -------------------------------------------------------------------------------
     # /oci/<registry>/v2/...: docker.io, quay.io and ghcr.io want a token (from /oci/token); registry.k8s.io doesn't,
     # and adds gcr.io's `manifest` map to tags/list. Blobs redirect to /oci-cdn/ on another host than the one
@@ -722,7 +923,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/")):
+        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -746,6 +947,18 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         state.catalog.publish(
             q.get("ecosystem", "pypi"), q["name"], q["version"], None if age == "none" else float(age)
         )
+        return JSONResponse({"ok": True})
+
+    async def ctl_nuget_list(request: Request) -> Response:
+        """Unlist (listed=false) or relist a NuGet version: a new catalog commit, and `published` 1900 while
+        unlisted."""
+        q = request.query_params
+        state.catalog.nuget_set_listed(q["id"], q["version"], q.get("listed", "true") == "true")
+        return JSONResponse({"ok": True})
+
+    async def ctl_nuget_resign(request: Request) -> Response:
+        """nuget.org re-signs a package: new bytes, and a catalog commit whose packageHash matches them."""
+        state.catalog.nuget_resign(request.query_params["id"], request.query_params["version"])
         return JSONResponse({"ok": True})
 
     async def ctl_oci_remove(request: Request) -> Response:
@@ -811,6 +1024,21 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     }
                     for name, crate in cat.crates.items()
                 },
+                "nuget": {
+                    lid: {
+                        lv: {
+                            "id": nv.pid,
+                            "version": nv.version,
+                            "published": nv.published,
+                            "listed": nv.listed,
+                            "sha256": nv.blob.digests()["sha256"],
+                            "sha512": nv.blob.digests()["sha512_b64"],
+                            "catalog": cat.nuget_catalog_path(nv),
+                        }
+                        for lv, nv in pkg.items()
+                    }
+                    for lid, pkg in cat.nuget.items()
+                },
             }
         )
 
@@ -824,6 +1052,14 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
         Route("/cargo-index/{rest:path}", cargo_index, methods=["GET", "HEAD"]),
         Route("/cargo-static/crates/{name}/{version}/download", cargo_static, methods=["GET", "HEAD"]),
+        Route("/nuget-flat/{id}/{rest:path}", nuget_flat, methods=["GET", "HEAD"]),
+        Route("/nuget-reg/{id}/{rest:path}", nuget_reg, methods=["GET", "HEAD"]),
+        Route("/nuget-catalog/{rest:path}", nuget_catalog, methods=["GET", "HEAD"]),
+        Route("/nuget-search/query", nuget_search),
+        Route("/nuget-vuln/index.json", nuget_vuln_index),
+        Route("/nuget-vuln-data/{rest:path}", nuget_vuln_file),
+        Route("/_control/nuget-list", ctl_nuget_list, methods=["POST"]),
+        Route("/_control/nuget-resign", ctl_nuget_resign, methods=["POST"]),
         Route("/oci/token", oci_token),
         Route("/oci/{registry}/v2/{rest:path}", oci, methods=["GET", "HEAD"]),
         Route("/oci/{registry}/v2", oci, methods=["GET", "HEAD"]),

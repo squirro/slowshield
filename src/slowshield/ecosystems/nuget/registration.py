@@ -12,6 +12,7 @@ Catalog, icon, licence and readme URLs stay as nuget.org wrote them. See docs/de
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -187,6 +188,25 @@ def parse(pid: str, index: Any, pages: dict[str, Any], raw_size: int = 0) -> Sna
     content_id = hashlib.blake2b(body, digest_size=12).hexdigest()
     meta_index = {k: v for k, v in index.items() if k != "items"}
     return Snapshot(pid, meta_index, tuple(out_pages), ordered, content_id, 1024 + 3 * (raw_size or len(body)))
+
+
+def package_hash(doc: Any, pid: str, version: str) -> tuple[bytes, int | None] | str:
+    """The SHA512 and size a catalog leaf states for `pid` (lower case) `version` (canonical), or what is wrong with
+    it. `packageHash` is base64, `packageHashAlgorithm` "SHA512"."""
+    if not isinstance(doc, dict):
+        return "no catalog entry"
+    if str(doc.get("id", "")).lower() != pid or NV.canonical(str(doc.get("version", ""))) != version:
+        return "the catalog entry names another package"
+    if str(doc.get("packageHashAlgorithm", "")).upper() != "SHA512":
+        return "the catalog entry has no SHA512 packageHash"
+    try:
+        digest = base64.b64decode(str(doc.get("packageHash", "")), validate=True)
+    except ValueError:
+        return "the catalog entry's packageHash is not base64"
+    if len(digest) != 64:
+        return "the catalog entry's packageHash is not a SHA512"
+    size = doc.get("packageSize")
+    return digest, size if isinstance(size, int) and not isinstance(size, bool) and size > 0 else None
 
 
 # ---- rendering -----------------------------------------------------------------------------------------------

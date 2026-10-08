@@ -15,10 +15,10 @@ a credentials problem. `dotnet` shows only the status line. Upstream failures ar
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -101,6 +101,19 @@ def nuget_error(status: int, code: str, *, headers: dict[str, str] | None = None
     if status == 502:
         status, headers = 503, {**RETRY_SOON, **(headers or {})}
     return text_error(status, msg, headers=headers)
+
+
+def plausible(published: float | None, now: float) -> float | None:
+    """`published` if it can be a publish time: not missing, not 1900-01-01 (unlisted), not in the future."""
+    return published if published is not None and EARLIEST <= published <= now + CLOCK_SKEW else None
+
+
+def publish_time(published: float | None, known: Sequence[float | None], now: float) -> float:
+    """The latest of the clocks known for a version: its plausible `published` now, and the stored ones (the first
+    plausible `published` seen, and when it was first listed without one). Each is no earlier than the real publish
+    time, so the latest is the safest. Without any clock: now."""
+    clocks = [c for c in (plausible(published, now), *known) if c is not None]
+    return max(clocks) if clocks else now
 
 
 def _json_response(doc: Any, *, headers: dict[str, str] | None = None) -> Response:
@@ -349,12 +362,12 @@ class NugetService:
 
     @staticmethod
     def _plausible(leaf: R.Leaf, now: float) -> float | None:
-        p = leaf.published
-        return p if p is not None and EARLIEST <= p <= now + CLOCK_SKEW else None
+        return plausible(leaf.published, now)
 
     def _record(self, snap: R.Snapshot) -> None:
-        """Keep each version's first plausible `published` (or, without one, when it was first listed) and whether
-        it is unlisted."""
+        """Keep each version's first plausible `published`, or, for a version that never had one, when it was first
+        listed; and whether it is unlisted. A version that had a plausible `published` and is unlisted later (its
+        `published` turns into 1900-01-01) keeps that time: unlisting doesn't start the clock again."""
         ctx = self.ctx
         now = ctx.clock.now()
         times = self._times(snap.id)
@@ -363,12 +376,14 @@ class NugetService:
         for leaf in snap.versions.values():
             pub = self._plausible(leaf, now)
             known = times.setdefault(leaf.version, [None, None])
-            if pub is None:
+            listed_now = None
+            if pub is not None:
+                known[0] = known[0] or pub
+            elif known[0] is None:
                 untimed += 1
                 known[1] = known[1] or now
-            else:
-                known[0] = known[0] or pub
-            rows.append((ECO, snap.id, leaf.version, pub, None if pub is not None else now, int(not leaf.listed)))
+                listed_now = now
+            rows.append((ECO, snap.id, leaf.version, pub, listed_now, int(not leaf.listed)))
         if untimed:
             log.warning("NuGet versions without a usable publish time", extra={"package": snap.id, "versions": untimed})
 
@@ -377,7 +392,8 @@ class NugetService:
                 "INSERT INTO package_versions (ecosystem, name, version, published, first_listed, yanked) "
                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
                 "published = coalesce(package_versions.published, excluded.published), "
-                "first_listed = coalesce(package_versions.first_listed, excluded.first_listed), "
+                "first_listed = coalesce(package_versions.first_listed, "
+                "CASE WHEN package_versions.published IS NULL THEN excluded.first_listed END), "
                 "yanked = excluded.yanked",
                 rows,
             )
@@ -386,11 +402,7 @@ class NugetService:
         ctx.db.writer.enqueue(op)
 
     def _published(self, leaf: R.Leaf, times: dict[str, list[float | None]], now: float) -> float:
-        """The latest of the clocks known for a version: its plausible `published` now, the first one seen, and when
-        it was first listed without one. Each is no earlier than the real publish time, so the latest is the
-        safest."""
-        clocks = [c for c in (self._plausible(leaf, now), *times.get(leaf.version, ())) if c is not None]
-        return max(clocks) if clocks else now
+        return publish_time(leaf.published, times.get(leaf.version, ()), now)
 
     # ---- policy -------------------------------------------------------------------------------------------
 
@@ -581,27 +593,11 @@ class NugetService:
         except (UpstreamError, msgspec.DecodeError) as exc:
             detail = exc.detail if isinstance(exc, UpstreamError) else "unreadable catalog entry"
             return text_error(503, f"slowshield: the nuget.org catalog is unavailable: {detail}", headers=RETRY_SOON)
-        problem = None
-        digest: bytes | None = None
-        size: int | None = None
-        if not isinstance(doc, dict):
-            problem = "no catalog entry"
-        elif str(doc.get("id", "")).lower() != pid or NV.canonical(str(doc.get("version", ""))) != leaf.version:
-            problem = "the catalog entry names another package"
-        elif str(doc.get("packageHashAlgorithm", "")).upper() != "SHA512":
-            problem = "the catalog entry has no SHA512 packageHash"
-        else:
-            try:
-                digest = base64.b64decode(str(doc.get("packageHash", "")), validate=True)
-            except ValueError:
-                digest = None
-            raw_size = doc.get("packageSize")
-            size = raw_size if isinstance(raw_size, int) and raw_size > 0 else None
-            if digest is None or len(digest) != 64:
-                problem = "the catalog entry's packageHash is not a SHA512"
-        if problem is not None or digest is None:
+        got = R.package_hash(doc, pid, leaf.version)
+        if isinstance(got, str):
             log.warning("unusable NuGet catalog entry", extra={"package": pid, "version": leaf.version, "url": url})
-            return text_error(503, f"slowshield: {pid} {leaf.version}: {problem}", headers=RETRY_SOON)
+            return text_error(503, f"slowshield: {pid} {leaf.version}: {got}", headers=RETRY_SOON)
+        digest, size = got
         return Expected(sha512=digest, size=size)
 
     # ---- search --------------------------------------------------------------------------------------------

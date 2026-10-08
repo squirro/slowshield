@@ -1,7 +1,11 @@
 """NuGet: ids and versions in their canonical spellings, NuGet's version order (cases from NuGet.Versioning's own
-tests), and the configuration."""
+tests), the configuration, packageHash, registration snapshots, pages and URLs, and the publish-time rule."""
 
 from __future__ import annotations
+
+import base64
+import hashlib
+from typing import Any
 
 import msgspec
 import pytest
@@ -10,7 +14,9 @@ from slowshield import config as C
 from slowshield import names, versions
 from slowshield.config import ExceptionRule, NugetUpstream, rule_tables
 from slowshield.ecosystems import ECOSYSTEMS
+from slowshield.ecosystems.nuget import registration as R
 from slowshield.ecosystems.nuget import version as NV
+from slowshield.ecosystems.nuget.service import plausible, publish_time
 from slowshield.feeds import BlockSpec
 from slowshield.shieldwall.leader import policy_body
 
@@ -269,3 +275,200 @@ def test_the_leader_sends_every_ecosystem_s_fail_open() -> None:
     cfg = C.parse("[upstreams.nuget]\nfail_open = true")
     assert policy_body(cfg)["fail_open_by_ecosystem"]["nuget"] is True
     assert set(policy_body(C.parse(""))["fail_open_by_ecosystem"]) >= {"maven", "cargo", "nuget"}
+
+
+# ---- packageHash -----------------------------------------------------------------------------------------------
+
+DIGEST = hashlib.sha512(b"package bytes").digest()
+
+
+def _catalog(**fields: object) -> dict[str, object]:
+    doc: dict[str, object] = {
+        "id": "Newtonsoft.Json",
+        "version": "13.0.1",
+        "packageHash": base64.b64encode(DIGEST).decode(),
+        "packageHashAlgorithm": "SHA512",
+        "packageSize": 2065787,
+    }
+    doc.update(fields)
+    return {k: v for k, v in doc.items() if v is not None}
+
+
+def test_package_hash_from_a_catalog_leaf() -> None:
+    assert R.package_hash(_catalog(), "newtonsoft.json", "13.0.1") == (DIGEST, 2065787)
+    # Spellings don't matter, and the size is optional.
+    lenient = _catalog(version="13.0.1.0", packageHashAlgorithm="sha512", packageSize=None)
+    assert R.package_hash(lenient, "newtonsoft.json", "13.0.1") == (DIGEST, None)
+    # The digest from the spike: Newtonsoft.Json 13.0.1 on 2026-10-08.
+    real = "g3MbZi6vBTeaI/hEbvR7vBETSd1DWLe9i1E4P+nPY34v5i94zqUqDXvdWC3G+7tYN9SnsdU9zzegrnRz4h7nsQ=="
+    got = R.package_hash(_catalog(packageHash=real), "newtonsoft.json", "13.0.1")
+    assert isinstance(got, tuple) and got[0] == base64.b64decode(real) and len(got[0]) == 64
+
+
+@pytest.mark.parametrize(
+    ("fields", "problem"),
+    [
+        ({"id": "Other.Package"}, "names another package"),
+        ({"version": "13.0.2"}, "names another package"),
+        ({"packageHashAlgorithm": "SHA256"}, "no SHA512"),
+        ({"packageHashAlgorithm": None}, "no SHA512"),
+        ({"packageHash": "not base64!"}, "not base64"),
+        ({"packageHash": base64.b64encode(b"short").decode()}, "not a SHA512"),
+    ],
+)
+def test_unusable_catalog_leaves(fields: dict[str, object], problem: str) -> None:
+    got = R.package_hash(_catalog(**fields), "newtonsoft.json", "13.0.1")
+    assert isinstance(got, str) and problem in got
+    assert R.package_hash(None, "newtonsoft.json", "13.0.1") == "no catalog entry"
+
+
+# ---- snapshots, pages and URLs ---------------------------------------------------------------------------------
+
+UP = "https://api.nuget.org/v3/registration5-gz-semver2/"
+FLAT = "https://api.nuget.org/v3-flatcontainer/"
+CAT = "https://api.nuget.org/v3/catalog0/data/2026.01.01.00.00.00/"
+URLS = R.Urls(registration="https://ss.test/nuget/v3/registration/", flat="https://ss.test/nuget/v3/flatcontainer/")
+
+
+def _leaf(version: str, listed: bool = True) -> dict[str, Any]:
+    lv = version.lower()
+    return {
+        "@id": f"{UP}x.y/{lv}.json",
+        "@type": "Package",
+        "catalogEntry": {
+            "@id": f"{CAT}x.y.{lv}.json",
+            "id": "X.Y",
+            "version": version,
+            "listed": listed,
+            "published": "2026-01-01T00:00:00+00:00",
+            "packageContent": f"{FLAT}x.y/{lv}/x.y.{lv}.nupkg",
+            "iconUrl": f"{FLAT}x.y/{lv}/icon",
+        },
+        "packageContent": f"{FLAT}x.y/{lv}/x.y.{lv}.nupkg",
+        "registration": f"{UP}x.y/index.json",
+    }
+
+
+def _page(versions: list[str], *, inline: bool) -> dict[str, Any]:
+    lo, hi = versions[0].lower(), versions[-1].lower()
+    page: dict[str, Any] = {
+        "@id": f"{UP}x.y/index.json#page/{lo}/{hi}" if inline else f"{UP}x.y/page/{lo}/{hi}.json",
+        "@type": "catalog:CatalogPage",
+        "count": len(versions),
+        "lower": lo,
+        "upper": hi,
+    }
+    if inline:
+        page["items"] = [_leaf(v) for v in versions]
+    return page
+
+
+def _snapshot() -> R.Snapshot:
+    pages = [["1.0.0-beta", "1.0.0", "1.9.0"], ["1.10.0", "2.0.0-RC.1"], ["2.0.0"]]
+    items = [_page(pages[0], inline=True), _page(pages[1], inline=False), _page(pages[2], inline=False)]
+    index = {"@id": f"{UP}x.y/index.json", "count": 3, "items": items}
+    linked = {
+        f"{UP}x.y/page/{p[0].lower()}/{p[-1].lower()}.json": {"items": [_leaf(v) for v in p], "@context": {"x": 1}}
+        for p in pages[1:]
+    }
+    assert R.page_urls(index, UP) == list(linked)
+    return R.parse("x.y", index, linked)
+
+
+def test_a_snapshot_reads_inlined_and_linked_pages_in_version_order() -> None:
+    snap = _snapshot()
+    assert list(snap.versions) == ["1.0.0-beta", "1.0.0", "1.9.0", "1.10.0", "2.0.0-rc.1", "2.0.0"]
+    assert snap.served({"1.9.0", "2.0.0"}) == ["1.0.0-beta", "1.0.0", "1.10.0", "2.0.0-rc.1"]
+    assert snap.versions["1.0.0"].catalog_url == f"{CAT}x.y.1.0.0.json"
+
+
+def test_pages_are_recomputed_and_empty_ones_dropped() -> None:
+    doc = R.render_index(_snapshot(), {"1.0.0-beta", "1.10.0", "2.0.0"}, URLS)
+    assert doc["@id"] == "https://ss.test/nuget/v3/registration/x.y/index.json" and doc["count"] == 2
+    first, second = doc["items"]
+    assert (first["count"], first["lower"], first["upper"]) == (2, "1.0.0", "1.9.0")
+    assert first["@id"] == "https://ss.test/nuget/v3/registration/x.y/index.json#page/1.0.0/1.9.0"
+    assert [i["catalogEntry"]["version"] for i in first["items"]] == ["1.0.0", "1.9.0"]
+    assert (second["count"], second["lower"], second["upper"]) == (1, "2.0.0-rc.1", "2.0.0-rc.1")
+    assert second["@id"] == "https://ss.test/nuget/v3/registration/x.y/page/2.0.0-rc.1/2.0.0-rc.1.json"
+    assert "items" not in second  # linked pages stay linked
+    # Nothing dropped: nuget.org's bounds.
+    full = R.render_index(_snapshot(), set(), URLS)
+    bounds = [(p["lower"], p["upper"], p["count"]) for p in full["items"]]
+    assert bounds == [("1.0.0-beta", "1.9.0", 3), ("1.10.0", "2.0.0-rc.1", 2), ("2.0.0", "2.0.0", 1)]
+
+
+def test_a_linked_page_by_its_bounds_and_by_bounds_that_changed() -> None:
+    snap = _snapshot()
+    page = R.render_page(snap, {"1.10.0"}, URLS, "2.0.0-rc.1", "2.0.0-rc.1")
+    assert page["count"] == 1 and page["parent"] == URLS.index("x.y") and page["@context"] == {"x": 1}
+    assert [i["catalogEntry"]["version"] for i in page["items"]] == ["2.0.0-RC.1"]
+    # The client read an older index: no page has these bounds now, so the served versions within them.
+    old = R.render_page(snap, {"1.10.0"}, URLS, "1.10.0", "2.0.0-rc.1")
+    assert [i["catalogEntry"]["version"] for i in old["items"]] == ["2.0.0-RC.1"]
+    assert (old["lower"], old["upper"], old["count"]) == ("1.10.0", "2.0.0-rc.1", 1)
+
+
+def test_urls_clients_follow_point_at_slowshield_and_the_rest_stays() -> None:
+    doc = R.render_index(_snapshot(), set(), URLS)
+    leaf = doc["items"][0]["items"][1]
+    assert leaf["@id"] == "https://ss.test/nuget/v3/registration/x.y/1.0.0.json"
+    assert leaf["registration"] == "https://ss.test/nuget/v3/registration/x.y/index.json"
+    nupkg = "https://ss.test/nuget/v3/flatcontainer/x.y/1.0.0/x.y.1.0.0.nupkg"
+    assert leaf["packageContent"] == leaf["catalogEntry"]["packageContent"] == nupkg
+    assert leaf["catalogEntry"]["@id"] == f"{CAT}x.y.1.0.0.json"  # the catalog isn't served: unchanged
+    assert leaf["catalogEntry"]["iconUrl"].startswith(FLAT)
+    assert doc["items"][0]["parent"] == URLS.index("x.y")
+    single = R.render_leaf(_snapshot(), "2.0.0-rc.1", URLS)
+    assert single["@id"] == URLS.leaf("x.y", "2.0.0-rc.1")
+    assert single["packageContent"] == URLS.nupkg("x.y", "2.0.0-rc.1")
+
+
+def test_registration_documents_slowshield_refuses() -> None:
+    with pytest.raises(R.RegistrationError):
+        R.page_urls({"items": [{"@id": "https://evil.example/x.y/page/1/2.json"}]}, UP)
+    with pytest.raises(R.RegistrationError):
+        R.page_urls({"items": [{"@id": f"{UP}x.y/page/1/2.json?x=1"}]}, UP)
+    with pytest.raises(R.RegistrationError):
+        R.parse("x.y", {"items": [{"@id": f"{UP}x.y/page/1/2.json"}]}, {})  # a page missing from the snapshot
+    with pytest.raises(R.RegistrationError):
+        R.page_urls([], UP)
+    # Entries for another package, or without a readable version, are left out; a second spelling too.
+    odd = _leaf("1.0.0")
+    odd["catalogEntry"] = {**odd["catalogEntry"], "id": "Other"}
+    snap = R.parse("x.y", {"items": [{"items": [odd, _leaf("not-a-version"), _leaf("1.1.0"), _leaf("1.1")]}]}, {})
+    assert list(snap.versions) == ["1.1.0"]
+
+
+# ---- publish time --------------------------------------------------------------------------------------------
+
+NOW = 1_790_000_000.0
+DAY = 86400.0
+UNLISTED = R.parse_time("1900-01-01T00:00:00+00:00")
+
+
+def test_unlisted_versions_say_1900_which_is_not_a_publish_time() -> None:
+    assert UNLISTED is not None and plausible(UNLISTED, NOW) is None
+    assert plausible(R.parse_time("2026-09-21T10:12:19.923+00:00"), NOW) is not None
+    assert plausible(R.parse_time("2009-12-31T00:00:00Z"), NOW) is None  # before nuget.org
+    assert plausible(NOW + 3600, NOW) is None  # in the future
+    assert R.parse_time("2026-09-21T10:12:19") is None  # without a time zone
+    assert R.parse_time(None) is None and R.parse_time("yesterday") is None
+
+
+def test_the_latest_clock_counts() -> None:
+    old = NOW - 100 * DAY
+    # Listed: its own `published`.
+    assert publish_time(old, (), NOW) == old
+    # Unlisted when first seen: from then (first_listed), whatever 1900 says.
+    assert publish_time(UNLISTED, (None, NOW - DAY), NOW) == NOW - DAY
+    # Relisted later with its original date: still from when SlowShield first listed it.
+    assert publish_time(old, (old, NOW - DAY), NOW) == NOW - DAY
+    # Never earlier: the registration now states an earlier time than the one stored first...
+    assert publish_time(NOW - 30 * DAY, (NOW - 2 * DAY, None), NOW) == NOW - 2 * DAY
+    # ...but a later one counts.
+    assert publish_time(NOW - DAY, (NOW - 2 * DAY, None), NOW) == NOW - DAY
+    # A future date isn't one: first listed.
+    assert publish_time(NOW + 30 * DAY, (None, NOW - 3 * DAY), NOW) == NOW - 3 * DAY
+    # Nothing known: now (too new).
+    assert publish_time(None, (), NOW) == NOW

@@ -134,13 +134,18 @@ versions should treat `NU1603` as an error (`<WarningsAsErrors>NU1603</WarningsA
 2. **It never moves earlier.** The first plausible `published` seen for a version is kept in `package_versions`. If
    the registration later states a different one, the later of the two counts.
 3. **Without a plausible `published`** (missing, `1900-01-01` for unlisted versions, before 2010, or in the future),
-   the clock starts when SlowShield first sees the version listed (`first_listed`), and a warning is logged.
+   now or stored, the clock starts when SlowShield first sees the version listed (`first_listed`), and a warning is
+   logged.
 4. **The latest clock wins:** the current plausible `published`, the first one stored and `first_listed`. This is
    cargo's rule (`_record` stores `first_listed` only for a version without a plausible time; `_published` takes the
    maximum of all three). A version first seen unlisted and relisted later is therefore timed from when SlowShield
    first saw it, whatever `published` says after relisting. Maven's rule, where the earlier of two clocks counts, is
-   not used: here both clocks come from the registry, so the later one is safer.
-5. **Per version,** like npm and Cargo. No extra requests.
+   not used: `first_listed` is a fallback here, not a second opinion.
+5. **Unlisting doesn't restart the clock.** One difference from cargo: cargo records `first_listed` whenever the
+   current line has no plausible time, even if an earlier one was stored. On nuget.org that would happen every time
+   a version is unlisted (`published` becomes `1900-01-01`) and would hold an old, pinned version again for the full
+   delay. SlowShield records `first_listed` only for a version that has never had a plausible `published`.
+6. **Per version,** like npm and Cargo. No extra requests.
 
 A fresh SlowShield holds an unlisted version for the full delay, even an old one: its `published` is `1900-01-01`,
 and the catalog's `created` isn't used.

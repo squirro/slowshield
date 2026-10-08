@@ -110,6 +110,27 @@ def test_config_takes_the_join_string_from_the_environment(monkeypatch: pytest.M
         _cfg()
 
 
+def test_only_a_configured_role_replaces_the_stored_one(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SLOWSHIELD_SHIELDWALL_ROLE", "")  # an empty Compose placeholder
+    cfg = _cfg()
+    assert config_mod.keep_role(cfg, "follower") and cfg.raw.shieldwall.role == "follower"  # no join string needed
+    assert not config_mod.keep_role(_cfg(), None) and not config_mod.keep_role(_cfg(), "standalone")
+    monkeypatch.setenv("SLOWSHIELD_SHIELDWALL_ROLE", "standalone")
+    assert not config_mod.keep_role(cfg := _cfg(), "leader") and cfg.raw.shieldwall.role == "standalone"
+    monkeypatch.delenv("SLOWSHIELD_SHIELDWALL_ROLE")
+    path = tmp_path / "config.toml"
+    path.write_text('data_dir = "/tmp/unused"\n[shieldwall]\nrole = "standalone"\n')
+    assert not config_mod.keep_role(config_mod.load(path), "leader")  # set in the file
+    # A reload keeps the role the instance runs with, without a restart warning or a validation error.
+    path.write_text('data_dir = "/tmp/unused"\n')
+    cfg = config_mod.load(path)
+    assert config_mod.keep_role(cfg, "follower")
+    holder = config_mod.ConfigHolder(cfg)
+    path.write_text('data_dir = "/tmp/unused"\ndefault_delay_days = 9\n')
+    assert holder.maybe_reload()
+    assert holder.current.raw.shieldwall.role == "follower" and holder.current.raw.default_delay_days == 9
+
+
 # ---- policy ------------------------------------------------------------------------------------------------
 
 

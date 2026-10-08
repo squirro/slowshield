@@ -28,7 +28,7 @@ from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock, SystemClock
-from slowshield.config import BlockRule, ConfigHolder, LoadedConfig, load
+from slowshield.config import BlockRule, ConfigHolder, LoadedConfig, keep_role, load
 from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems import normalize
@@ -218,16 +218,29 @@ class SlowShield:
 
     async def _shieldwall_startup(self, ctx: AppContext) -> None:
         sw = self.cfg.raw.shieldwall
+        if keep_role(self.cfg, await ctx.db.writer.run(wall.stored_role)):
+            log.warning(
+                "no shield wall role configured: this instance stays a %s, as it was (SLOWSHIELD_SHIELDWALL_ROLE="
+                "standalone leaves the shield wall)",
+                sw.role,
+                extra={"role": sw.role},
+            )
         self._identity = await asyncio.to_thread(wall.identity, ctx)
         await ctx.db.writer.run(partial(wall.set_role, role=sw.role, now=self.clock.now()))
         if sw.role == "follower" and self._identity is not None:
-            if sw.via_leader:
+            if sw.join:
                 from slowshield.shieldwall.join import JoinString
+
+                url: str | None = JoinString.parse(sw.join).url
+            else:  # paired before: the leader it found then
+                url = await ctx.db.writer.run(wall.stored_leader_url)
+                if url is None:
+                    log.error("shield wall: a follower needs the join string from its leader (SLOWSHIELD_JOIN)")
+            if sw.via_leader and url is not None:
                 from slowshield.shieldwall.transport import Transport
                 from slowshield.shieldwall.via import ViaLeader
 
                 transport = Transport(f"SlowShield/{__version__}", sw.leader_ca_file)
-                url = JoinString.parse(sw.join or "").url
                 ctx.artifacts.via = ViaLeader(self._identity, url, transport, self.clock)
             await wall.refresh(ctx)  # the leader's policy applies from the first request on
         if self._identity is not None:

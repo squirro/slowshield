@@ -24,6 +24,18 @@ def identity(ctx: AppContext) -> Identity | None:
     return Identity.load_or_create(Path(ctx.cfg.raw.data_dir))
 
 
+def stored_role(conn: Any) -> str | None:
+    """The role the last start recorded (`set_role`); an instance without a configured role keeps it."""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'shieldwall_role'").fetchone()
+    return row[0] if row else None
+
+
+def stored_leader_url(conn: Any) -> str | None:
+    """The leader a follower found with its join string: a paired follower syncs with it without one."""
+    row = conn.execute("SELECT url FROM shieldwall_leader WHERE id = 1").fetchone()
+    return row[0] if row else None
+
+
 def set_role(conn: Any, role: str, now: float) -> None:
     """Record the role where the change-capture triggers read it. A leader starts its change log with everything
     followers take, so the first follower gets the whole past (the bootstrap). An instance that is no longer a

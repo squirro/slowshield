@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -95,17 +96,37 @@ async def pair(start: Any, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Pai
     )
     join = JoinString(LEADER_URL, key_hash(identity.public_key), token, secret)
     follower = await start("follower", f'[shieldwall]\njoin = "{join}"\n' + FOLLOWER_CONFIG, clock)
+    assert follower.ctx.artifacts.via is not None
+    service, net = await _connect(leader, follower)
+    assert service is not None
+    p = Pair(leader, follower, service, net)
+    yield p
+    await p.net.close()
+    for run in (p.follower, p.leader):  # restarted ones included
+        await stop(run)
+
+
+async def _connect(leader: Running, follower: Running) -> tuple[FollowerService | None, AsgiTransport]:
+    """The follower's traffic to the leader goes straight into the leader app."""
     net = AsgiTransport(leader.app)
     via = follower.ctx.artifacts.via
-    assert via is not None
-    await via.transport.close()
-    via.transport = net
-    assert follower.app._identity is not None
-    service = FollowerService(follower.ctx, follower.app._identity, send=net.send)
-    yield Pair(leader, follower, service, net)
-    await net.close()
-    for run in (follower, leader):
-        await stop(run)
+    if via is not None:
+        await via.transport.close()
+        via.transport = net
+    identity = follower.app._identity  # none once it is standalone
+    return (FollowerService(follower.ctx, identity, send=net.send) if identity else None), net
+
+
+async def _restart(p: Pair, start: Any, which: str, extra: str) -> Running:
+    """Stops the leader or the follower and starts it again on its data directory, with `extra` as its config."""
+    old: Running = getattr(p, which)
+    await stop(old)
+    run = await start(which, extra, old.clock)
+    setattr(p, which, run)
+    await p.net.close()
+    service, p.net = await _connect(p.leader, p.follower)
+    p.service = service or p.service
+    return run
 
 
 LEADER_CONFIG = """
@@ -419,3 +440,110 @@ async def test_files_served_before_pairing_are_compared_too(pair: Pair) -> None:
     await _join(p)  # the history at pairing carries the fingerprint
     await p.sync()
     assert p.follower.rows("SELECT tampered FROM artifacts WHERE path = ?", (path,)) == [(1,)]
+
+
+# ---- restarts: an instance keeps the role it had unless it is given another ------------------------------------
+
+FOLLOWER_ALONE = "[shieldwall]\n" + FOLLOWER_CONFIG  # the follower's config without its join string
+LEADER_ALONE = LEADER_CONFIG.replace('role = "leader"\n', "")  # the leader's without its role
+
+
+async def test_paired_follower_restarted_without_join_stays_and_syncs(
+    pair: Pair, start: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    p = pair
+    await _join(p)
+    monkeypatch.setenv("SLOWSHIELD_SHIELDWALL_ROLE", "")  # an empty Compose placeholder sets nothing
+    with caplog.at_level(logging.WARNING, logger="slowshield.app"):
+        follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert "stays a follower" in caplog.text
+    assert follower.ctx.cfg.raw.shieldwall.role == "follower"
+    assert follower.rows("SELECT state FROM shieldwall_leader") == [("active",)]
+    assert follower.rows("SELECT value FROM meta WHERE key = 'shieldwall_role'") == [("follower",)]
+    via = follower.ctx.artifacts.via
+    assert via is not None and via.base == LEADER_URL and via.active  # the leader it stored
+    assert follower.ctx.cfg.raw.default_delay_days == 3  # the leader's policy, from the first request on
+    page = await follower.client.get("/ui/shieldwall")
+    assert page.status_code == 200 and "Joined" in page.text
+    # It syncs with the leader it stored: what it serves now reaches the leader.
+    assert (await follower.client.get(f"/pypi{_wheel(follower)}")).status_code == 200
+    await p.sync()
+    await p.sync()
+    member = follower.app._identity.id  # type: ignore[union-attr]
+    assert p.leader.rows("SELECT sum(serves) FROM downloads_5min WHERE instance = ?", (member,)) == [(1,)]
+    assert follower.rows("SELECT count(*) FROM shieldwall_outbox") == [(0,)]
+
+
+async def test_explicit_standalone_still_detaches(pair: Pair, start: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    p = pair
+    await _join(p)
+    monkeypatch.setenv("SLOWSHIELD_SHIELDWALL_ROLE", "standalone")
+    follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert follower.ctx.cfg.raw.shieldwall.role == "standalone"
+    assert follower.app._identity is None and follower.ctx.artifacts.via is None
+    assert follower.rows("SELECT state FROM shieldwall_leader") == [("detached",)]
+    assert follower.rows("SELECT value FROM meta WHERE key = 'shieldwall_role'") == [("standalone",)]
+    assert follower.ctx.cfg.raw.default_delay_days == 7  # its own config again
+    # Restarted again without the variable, it stays standalone: that is the role it had.
+    monkeypatch.delenv("SLOWSHIELD_SHIELDWALL_ROLE")
+    follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert follower.ctx.cfg.raw.shieldwall.role == "standalone"
+
+
+async def test_leader_restarted_without_role_stays_leader(
+    pair: Pair, start: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    p = pair
+    await _join(p)
+    changes = p.leader.rows("SELECT count(*) FROM shieldwall_changes")
+    with caplog.at_level(logging.WARNING, logger="slowshield.app"):
+        leader = await _restart(p, start, "leader", LEADER_ALONE)
+    assert "stays a leader" in caplog.text
+    assert leader.ctx.cfg.raw.shieldwall.role == "leader"
+    assert leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_role'") == [("leader",)]
+    assert leader.rows("SELECT count(*) FROM shieldwall_changes") == changes  # no second bootstrap
+    assert (await leader.client.get("/.well-known/slowshield-shieldwall")).status_code == 200
+    assert leader.rows("SELECT state FROM shieldwall_members") == [("active",)]
+    await p.sync()  # its follower still syncs with it
+    assert p.follower.rows("SELECT state, last_error FROM shieldwall_leader") == [("active", None)]
+
+
+async def test_never_paired_instance_without_join_stays_standalone(
+    start: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = FrozenClock(NOW)
+    for _ in range(2):  # the first start, and a restart
+        with caplog.at_level(logging.WARNING, logger="slowshield.app"):
+            run = await start("solo", FOLLOWER_ALONE, clock)
+        try:
+            assert run.ctx.cfg.raw.shieldwall.role == "standalone"
+            assert run.app._identity is None and run.ctx.artifacts.via is None
+            assert run.rows("SELECT value FROM meta WHERE key = 'shieldwall_role'") in ([], [("standalone",)])
+        finally:
+            await stop(run)
+    assert "shield wall" not in caplog.text
+
+
+async def test_removed_follower_restarted_without_join_stays_removed(pair: Pair, start: Any) -> None:
+    p = pair
+    await _join(p)
+    await p.leader.ctx.db.writer.run(lambda c: c.execute("UPDATE shieldwall_members SET state = 'removed'"))
+    await p.sync()
+    follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert follower.ctx.cfg.raw.shieldwall.role == "follower"
+    assert follower.rows("SELECT state FROM shieldwall_leader") == [("removed",)]
+    assert follower.ctx.cfg.raw.default_delay_days == 7  # on its own, with its own config
+    assert await p.service.step() == 30.0  # nothing to do until it gets a new join string
+    page = await follower.client.get("/ui/shieldwall")
+    assert "Removed by the leader" in page.text
+
+
+async def test_pending_follower_restarted_without_join_waits_for_one(pair: Pair, start: Any) -> None:
+    p = pair
+    assert await p.service.step() == 2.0  # discovered, not joined
+    follower = await _restart(p, start, "follower", FOLLOWER_ALONE)
+    assert follower.ctx.cfg.raw.shieldwall.role == "follower"
+    assert await p.service.step() == 300.0
+    assert follower.rows("SELECT state, last_error FROM shieldwall_leader") == [("pending", follower_mod.NO_JOIN)]
+    page = await follower.client.get("/ui/shieldwall")
+    assert page.status_code == 200 and "Join hq?" not in page.text and "SLOWSHIELD_JOIN" in page.text

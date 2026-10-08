@@ -35,6 +35,7 @@ SYNC_WAIT = 25  # seconds the leader may hold a sync open (long poll)
 OUTBOX_PER_SYNC = 200  # entries; each is one flush (5 s of statistics) or a backfill chunk
 BACKFILL_ROWS = 5000  # rows per backfill entry
 SYNC_LOG_KEEP = 40 * 86400
+NO_JOIN = "not paired yet: joining needs the join string from the leader (SLOWSHIELD_JOIN)"
 
 
 @dataclass(slots=True)
@@ -65,7 +66,8 @@ class FollowerService:
         self.ctx = ctx
         self.identity = identity
         sw = ctx.cfg.raw.shieldwall
-        self.join = JoinString.parse(sw.join or "")
+        # Only discovery and joining need it: a paired follower syncs with the leader it stored.
+        self.join = JoinString.parse(sw.join) if sw.join else None
         self._transport: Transport | None = None
         if send is None:
             self._transport = Transport(f"SlowShield/{__version__}", sw.leader_ca_file)
@@ -88,13 +90,13 @@ class FollowerService:
                 raise
             except Exception as exc:  # the leader is down or misbehaving: run on, retry later
                 instruments.shieldwall_syncs.add(1, {"result": "error"})
-                await self._error(exc)
+                await self._error(str(exc) or type(exc).__name__)
                 pause = self.backoff
                 self.backoff = min(self.backoff * 2, 300.0)
             await asyncio.sleep(pause)
 
-    async def _error(self, exc: Exception) -> None:
-        msg = str(exc)[:300] or type(exc).__name__
+    async def _error(self, msg: str) -> None:
+        msg = msg[:300]
         log.warning("shield wall sync failed", extra={"error": msg})
         now = self.ctx.clock.now()
 
@@ -113,12 +115,18 @@ class FollowerService:
     async def step(self) -> float:
         """One round; returns seconds until the next."""
         state = await asyncio.to_thread(lambda: read_state(self.ctx.db.readers.get()))
-        if state is None or state.join_token != self.join.token_id or state.state == "detached":
-            state = await self.discover(state)
+        join = self.join
+        if join is None:
+            if state is None or state.state in ("pending", "detached"):  # not paired, and no join string to pair
+                await self._error(NO_JOIN)
+                return 300.0
+        elif state is None or state.join_token != join.token_id or state.state == "detached":
+            state = await self.discover(join, state)
         if state.state == "pending":
             if state.confirmed_by is None:
                 return 2.0  # waiting for the Join click on the Shield wall page
-            await self.enroll(state)
+            assert join is not None  # noqa: S101 - a pending follower without one returned above
+            await self.enroll(join, state)
             return 0.0
         if state.state == "active":
             more = await self.sync(state)
@@ -127,15 +135,15 @@ class FollowerService:
 
     # ---- discovery and joining ---------------------------------------------------------------------------
 
-    async def discover(self, current: LeaderState | None) -> LeaderState:
+    async def discover(self, join: JoinString, current: LeaderState | None) -> LeaderState:
         """Fetch the leader's identity and pin it if it matches the join string's key hash."""
-        url = self.join.url + "/.well-known/slowshield-shieldwall"
+        url = join.url + "/.well-known/slowshield-shieldwall"
         reply = await self.send("GET", url, {"Accept": "application/json"}, b"", 10.0)
         if reply.status != 200:
             raise TransportError(f"{url}: HTTP {reply.status}")
         doc = json.loads(reply.body)
         pubkey = base64.b64decode(doc["pubkey"], validate=True)
-        if key_hash(pubkey) != self.join.key_hash:
+        if key_hash(pubkey) != join.key_hash:
             raise TransportError("the leader's key doesn't match the join string: refusing to pair")
         if pubkey == self.identity.public_key:
             raise TransportError("the join string points at this instance itself")
@@ -152,7 +160,7 @@ class FollowerService:
             if existing is not None and existing.pubkey == pubkey and existing.state == "active":
                 # The same leader with a new join string (a re-deploy): stay paired.
                 conn.execute("UPDATE shieldwall_leader SET join_token = ?, url = ? WHERE id = 1",
-                             (self.join.token_id, self.join.url))  # fmt: skip
+                             (join.token_id, join.url))  # fmt: skip
             elif existing is not None and existing.state == "active" and existing.pubkey != pubkey:
                 conn.execute(
                     "UPDATE shieldwall_leader SET state = 'key_changed', last_error = ? WHERE id = 1",
@@ -163,7 +171,7 @@ class FollowerService:
                 conn.execute(
                     "INSERT INTO shieldwall_leader (id, leader_id, url, pubkey, name, join_token, state, discovered, "
                     "confirmed_by) VALUES (1, ?, ?, ?, ?, ?, 'pending', ?, ?)",
-                    (str(doc["instance"]), self.join.url, pubkey, name, self.join.token_id, now,
+                    (str(doc["instance"]), join.url, pubkey, name, join.token_id, now,
                      "auto" if auto else None),
                 )  # fmt: skip
             state = read_state(conn)
@@ -172,15 +180,15 @@ class FollowerService:
 
         return await self.ctx.db.writer.run(op)
 
-    async def enroll(self, state: LeaderState) -> None:
+    async def enroll(self, join: JoinString, state: LeaderState) -> None:
         sw = self.ctx.cfg.raw.shieldwall
         now = self.ctx.clock.now()
         created = int(now)
         body = json.dumps({
             "protocol": PROTOCOL,
-            "token": self.join.token_id,
+            "token": join.token_id,
             "created": created,
-            "proof": proof(self.join.secret, self.identity.public_key, state.leader_id, created),
+            "proof": proof(join.secret, self.identity.public_key, state.leader_id, created),
             "pubkey": base64.b64encode(self.identity.public_key).decode(),
             "name": sw.name or socket.gethostname(),
             "location": sw.location,

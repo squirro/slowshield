@@ -54,12 +54,15 @@
 <div class="page-head">
   <div><h1>Shield wall</h1><p class="muted">This instance follows a leader: it takes the leader's policy and blocks, and reports its statistics and events to it. When the leader can't be reached, it keeps working on its own and catches up later.</p></div>
 </div>
-{% if not leader %}
+{% if not leader and not cfg.shieldwall.join %}
+<section class="card"><p>This instance has no join string. Start it with the one <code>slowshield wall invite</code> prints on the leader (<code>SLOWSHIELD_JOIN</code>).</p>
+  <p class="muted small">It works on its own meanwhile.</p></section>
+{% elif not leader %}
 <section class="card"><p>Looking for the leader at <code>{{ cfg.shieldwall.join.split("#")[0][5:] }}</code>…</p>
   {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
   <p class="muted small">This instance keeps trying, and works on its own meanwhile. Check that it can reach that URL.</p></section>
 {% else %}
-  {% if leader.state == "pending" and not leader.confirmed_by %}
+  {% if leader.state == "pending" and not leader.confirmed_by and cfg.shieldwall.join %}
   <section class="card">
     <header class="card-head"><h2>Join {{ leader.name or "the leader" }}?</h2></header>
     <p>The join string this instance was started with points to this leader. Compare the fingerprint with the one <code>slowshield wall invite</code> printed on the leader, then join.</p>

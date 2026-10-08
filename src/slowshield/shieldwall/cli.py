@@ -16,12 +16,15 @@ from slowshield import config as config_mod
 from slowshield.db import connect, migrate
 from slowshield.shieldwall.identity import Identity, key_hash
 from slowshield.shieldwall.join import TOKEN_TTL, JoinString, leader_url_problem, new_token
+from slowshield.shieldwall.runtime import stored_role
 
 
 def _open(args: argparse.Namespace) -> tuple[config_mod.LoadedConfig, sqlite3.Connection]:
     cfg = config_mod.load(Path(args.config) if args.config else None)
     migrate(cfg.db_path)
-    return cfg, connect(cfg.db_path)
+    conn = connect(cfg.db_path)
+    config_mod.keep_role(cfg, stored_role(conn))  # the role the server runs with
+    return cfg, conn
 
 
 def _ago(ts: float | None) -> str:

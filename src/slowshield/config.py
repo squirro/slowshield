@@ -41,6 +41,8 @@ DEFAULT_TRUSTED_PROXIES = [
 # Policy keys a shield wall's leader also sets: on a follower, only the ones set here (file or environment) count
 # against the leader's (stricter wins); the defaults don't.
 POLICY_KEYS = frozenset({"default_delay_days", "fail_open", "enforce_age_on_download"})
+# In `LoadedConfig.explicit` when the file or the environment sets the shield wall role (see `keep_role`).
+ROLE_KEY = "shieldwall.role"
 
 # Keys from the Rust config that are recognised but intentionally unsupported in this version.
 _LEGACY_TOP_LEVEL = {"mode", "mirror_probe_interval_minutes"}
@@ -265,7 +267,9 @@ ShieldwallRole = Literal["standalone", "leader", "follower"]
 class ShieldwallConfig(msgspec.Struct, forbid_unknown_fields=True):
     """A shield wall: one leader, many followers (docs/design/shieldwall.md). Usually set through the environment."""
 
-    role: ShieldwallRole = "standalone"  # SLOWSHIELD_SHIELDWALL_ROLE; a join string makes it `follower`
+    # SLOWSHIELD_SHIELDWALL_ROLE; a join string makes it `follower`. Unset, an instance keeps the role it had
+    # (`keep_role`).
+    role: ShieldwallRole = "standalone"
     # The join string from the leader's `slowshield wall invite` (SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE).
     join: str | None = None
     join_confirm: Literal["ui", "auto"] = "ui"  # SLOWSHIELD_JOIN_CONFIRM: `auto` joins without the UI click
@@ -322,7 +326,7 @@ class LoadedConfig:
     path: Path | None
     generation: int = 0
     warnings: list[str] = field(default_factory=list)
-    explicit: frozenset[str] = frozenset()  # the POLICY_KEYS set in the file or the environment
+    explicit: frozenset[str] = frozenset()  # the POLICY_KEYS (and ROLE_KEY) set in the file or the environment
     github_token: str | None = None
     github_token_status: FeedTokenStatus = FeedTokenStatus(False, "missing")
     _pkg_rules: dict[tuple[str, str], float] = field(default_factory=dict)
@@ -435,7 +439,7 @@ def _strip_legacy(data: dict[str, Any], warnings: list[str]) -> None:
 
 
 def _apply_env(cfg: Config) -> set[str]:
-    """Apply the environment; returns the POLICY_KEYS it set."""
+    """Apply the environment; returns the POLICY_KEYS (and ROLE_KEY) it set."""
     env = os.environ
     explicit: set[str] = set()
     if v := env.get("DATABASE_URL", "").strip():
@@ -489,7 +493,8 @@ def _apply_env(cfg: Config) -> set[str]:
             setter(b)
             if name in ("SLOWSHIELD_FAIL_OPEN", "SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD"):
                 explicit.add(name.removeprefix("SLOWSHIELD_").lower())
-    _apply_shieldwall_env(cfg.shieldwall)
+    if _apply_shieldwall_env(cfg.shieldwall):
+        explicit.add(ROLE_KEY)
     if v := env.get("SLOWSHIELD_ARTIFACT_CACHE_MAX_GB", "").strip():
         try:
             cfg.cache.artifacts_max_gb = float(v)
@@ -498,12 +503,16 @@ def _apply_env(cfg: Config) -> set[str]:
     return explicit
 
 
-def _apply_shieldwall_env(sw: ShieldwallConfig) -> None:
+def _apply_shieldwall_env(sw: ShieldwallConfig) -> bool:
+    """Apply the shield wall environment; returns whether it set the role. An empty value doesn't: Compose passes
+    empty placeholders."""
     env = os.environ
+    role_set = False
     if v := env.get("SLOWSHIELD_SHIELDWALL_ROLE", "").strip().lower():
         if v not in ("standalone", "leader", "follower"):
             raise ConfigError(f"SLOWSHIELD_SHIELDWALL_ROLE must be standalone, leader or follower, got {v!r}")
         sw.role = v
+        role_set = True
     if v := env.get("SLOWSHIELD_JOIN_FILE", "").strip():
         try:
             sw.join = Path(v).read_text(encoding="utf-8").strip() or None
@@ -539,6 +548,18 @@ def _apply_shieldwall_env(sw: ShieldwallConfig) -> None:
         sw.via_leader = b
     if v := env.get("SLOWSHIELD_LEADER_CA_FILE", "").strip():
         sw.leader_ca_file = v
+    return role_set
+
+
+def keep_role(cfg: LoadedConfig, stored: str | None) -> bool:
+    """An instance that nothing gives a shield wall role (no SLOWSHIELD_SHIELDWALL_ROLE, no `shieldwall.role` in the
+    file, no join string) keeps the role it had: `stored`, as the database recorded it at the last start. Only an
+    explicit `standalone` leaves the wall. Returns whether the stored role was kept."""
+    sw = cfg.raw.shieldwall
+    if sw.role != "standalone" or sw.join or ROLE_KEY in cfg.explicit or stored not in ("leader", "follower"):
+        return False
+    sw.role = stored
+    return True
 
 
 _LABEL = re.compile(r"[A-Za-z0-9._-]{1,63}")
@@ -547,8 +568,8 @@ _LABEL = re.compile(r"[A-Za-z0-9._-]{1,63}")
 def _validate_shieldwall(sw: ShieldwallConfig) -> None:
     if sw.role == "leader" and sw.join:
         raise ConfigError("shieldwall: a leader can't also join another leader (remove the join string)")
-    if sw.role == "follower" and not sw.join:
-        raise ConfigError("shieldwall: a follower needs the join string from its leader (SLOWSHIELD_JOIN)")
+    # A follower without a join string is checked at startup, against the database: a paired follower syncs with
+    # the leader it stored, and only an unpaired one needs the join string.
     if sw.join:
         from slowshield.shieldwall.join import JoinString, JoinStringError
 
@@ -773,6 +794,8 @@ def parse(text: str, *, path: Path | None = None, generation: int = 0) -> Loaded
     except msgspec.ValidationError as exc:
         raise ConfigError(f"{path or 'config'}: {exc}") from exc
     explicit = frozenset(POLICY_KEYS & data.keys())
+    if isinstance(data.get("shieldwall"), dict) and "role" in data["shieldwall"]:
+        explicit |= {ROLE_KEY}
     return build(cfg, path=path, warnings=warnings, generation=generation, explicit=explicit)
 
 
@@ -899,6 +922,7 @@ class ConfigHolder:
         except ConfigError as exc:
             log.error("config reload failed, keeping previous config", extra={"error": str(exc)})
             return False
+        keep_role(new, self.local.raw.shieldwall.role)  # as a restart would: the role the database recorded
         ignored = restart_only_changes(self.current.raw, new.raw)
         if ignored:
             log.warning("config changes require a restart and were not applied", extra={"fields": ignored})

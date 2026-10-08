@@ -36,9 +36,16 @@ and catches up when it can.
 
 | Role | Set by | Does |
 |---|---|---|
-| standalone | the default | what SlowShield always did |
+| standalone | the default; `SLOWSHIELD_SHIELDWALL_ROLE=standalone` | what SlowShield always did |
 | leader | `SLOWSHIELD_SHIELDWALL_ROLE=leader` | serves `/_shieldwall/v1/` and `/.well-known/slowshield-shieldwall`; logs changes for followers; shows them |
 | follower | a join string (`SLOWSHIELD_JOIN` or `SLOWSHIELD_JOIN_FILE`) | pairs, syncs, takes policy, fetches files through the leader |
+
+**An instance keeps its role.** Each start records the role in the database (`meta`, `shieldwall_role`). A leader or
+follower restarted without `SLOWSHIELD_SHIELDWALL_ROLE` (or with it empty, as Compose passes it) and without a join
+string keeps the recorded role, and logs a warning that names it. `slowshield wall` reads the role the same way. Only
+an explicit `SLOWSHIELD_SHIELDWALL_ROLE=standalone` (or `shieldwall.role = "standalone"` in the config file) takes an
+instance out of the shield wall: a follower stops syncing (state `detached`) and drops its queued reports, and a
+leader stops logging changes. A config reload keeps the role too; changing it takes a restart.
 
 Each instance that isn't standalone has an Ed25519 key in `<data_dir>/shieldwall/identity.key` (mode 0600, created
 on first start). Its ID is derived from the key. **Back up the leader's key:** losing it means pairing every follower
@@ -62,6 +69,12 @@ wrote every 5 seconds.
 6. In one transaction, the follower queues its history for the leader (below) and turns active; from then on every
    statistics flush also goes into the outbox.
 
+**After a restart** the follower needs the join string only if it hasn't joined yet. A follower that has joined
+syncs with the leader it stored (`shieldwall_leader.url` and the pinned key), with or without the join string, so a
+used, expired join string can stay in its environment or go. One that was still waiting for the Join click, or
+hadn't reached the leader yet, waits for the join string again: its Shield wall page and log say so. A new join
+string for the same leader updates the stored URL.
+
 **The UI can confirm, nothing else.** The UI has no login (docs/security.md), so the Join button can only confirm
 the leader the operator configured: the leader comes from the environment, the form names the leader ID shown on
 the page, and the request must come from the page itself (`Sec-Fetch-Site` and `Origin`, where the browser sends
@@ -70,7 +83,8 @@ UI has authentication.
 
 **Removing a follower:** `slowshield wall remove zurich-1`. Its next sync gets a signed refusal; it then runs
 on its own with its own config. Joining again takes a new join string. A follower that joins again replaces the
-history the leader had for it.
+history the leader had for it. A removed follower restarted without a join string stays a follower in state
+`removed`: it runs on its own as before, and its Shield wall page says it was removed.
 
 **Leader key changed:** if the join string names another key than the pinned one, the follower stops syncing and
 says so (state `key_changed`). Pairing again needs a fresh data directory, on purpose.
@@ -214,8 +228,8 @@ leader comes back, the outbox drains and changes arrive under the late-news rule
 
 | Variable | Config key | Default | Meaning |
 |---|---|---|---|
-| `SLOWSHIELD_SHIELDWALL_ROLE` | `shieldwall.role` | `standalone` | `leader` on the leader; a join string makes an instance a follower |
-| `SLOWSHIELD_JOIN`, `SLOWSHIELD_JOIN_FILE` | `shieldwall.join` | | the join string |
+| `SLOWSHIELD_SHIELDWALL_ROLE` | `shieldwall.role` | the role it had, else `standalone` | `leader` on the leader; a join string makes an instance a follower; `standalone` leaves the shield wall |
+| `SLOWSHIELD_JOIN`, `SLOWSHIELD_JOIN_FILE` | `shieldwall.join` | | the join string; needed until the follower has joined |
 | `SLOWSHIELD_JOIN_CONFIRM` | `shieldwall.join_confirm` | `ui` | `auto` joins without the click |
 | `SLOWSHIELD_INSTANCE_NAME` | `shieldwall.name` | the host name | shown on the leader |
 | `SLOWSHIELD_INSTANCE_LOCATION` | `shieldwall.location` | | the leader's views filter by it |

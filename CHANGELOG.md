@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format is based on
 - The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
   their defaults, commented out: set, they also count against a shield wall leader's policy.
 - Caddy no longer applies the 16 KB request body limit on top of the 10 MB one for `npm audit`.
+- Shield wall: a leader or follower restarted without `SLOWSHIELD_SHIELDWALL_ROLE` or a join string keeps the role
+  it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
+  `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
+  stored and no longer needs the join string; one that hasn't joined yet still does.
 
 ## [0.0.8] - 2026-10-07
 

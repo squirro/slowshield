@@ -102,6 +102,17 @@ def test_host_parsing() -> None:
         ("/cargo/config.json", "/cargo/config.json"),
         ("/cargo/se/rd/serde", "/cargo/{index_file}"),
         ("/cargo/crates/serde/1.0.0/download", "/cargo/crates/{crate}/{version}/download"),
+        ("/nuget/v3/index.json", "/nuget/v3/index.json"),
+        ("/nuget/v3/query", "/nuget/v3/query"),
+        ("/nuget/v3/flatcontainer/a.b/index.json", "/nuget/v3/flatcontainer/{id}/index.json"),
+        ("/nuget/v3/flatcontainer/a.b/1.0.0/a.b.1.0.0.nupkg", "/nuget/v3/flatcontainer/{id}/{version}/{file}"),
+        ("/nuget/v3/registration/a.b/index.json", "/nuget/v3/registration/{id}/index.json"),
+        ("/nuget/v3/registration/a.b/page/1.0.0/2.0.0.json", "/nuget/v3/registration/{id}/page/{lower}/{upper}.json"),
+        ("/nuget/v3/registration/a.b/1.0.0.json", "/nuget/v3/registration/{id}/{version}.json"),
+        ("/nuget/v3/vulnerabilities/index.json", "/nuget/v3/vulnerabilities/index.json"),
+        ("/nuget/v3/vulnerabilities/v3-vulnerabilities/x/base.json", "/nuget/v3/vulnerabilities/{file}"),
+        ("/nuget/v3/whatever/else", "/nuget/v3/{path}"),
+        ("/nuget/feed-id/x", "/nuget/{path}"),
     ],
 )
 def test_route_labels_are_low_cardinality(path: str, label: str) -> None:

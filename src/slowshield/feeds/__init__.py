@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from slowshield import versions
 from slowshield.blocklist import bump_generation
 from slowshield.telemetry import instruments
 
@@ -22,6 +23,11 @@ class BlockSpec:
     name: str
     version: str | None = None
     version_range: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.ecosystem == "nuget" and self.version is not None:
+            # NuGet keys are normalized versions: an advisory for 1.0 names 1.0.0 (docs/design/nuget.md).
+            object.__setattr__(self, "version", versions.canonical("nuget", self.version))
 
 
 @dataclass(slots=True)

@@ -1,4 +1,5 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo and OCI images."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet and OCI
+images."""
 
 from __future__ import annotations
 
@@ -79,6 +80,21 @@ def normalize_cargo(name: str) -> str:
 
 def is_valid_cargo(name: str) -> bool:
     return _CARGO_NAME.match(name) is not None
+
+
+# NuGet package ids as nuget.org accepts them (NuGet's PackageIdValidator, ASCII only): runs of letters, digits and
+# `_`, joined by single `.` or `-`, at most 100 characters. Ids are case-insensitive; nuget.org's paths use lower case.
+_NUGET_ID = re.compile(r"^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*$")
+NUGET_MAX_LEN = 100
+
+
+def normalize_nuget(name: str) -> str:
+    """The lower-case id, as nuget.org's flat container and registration paths spell it."""
+    return name.strip().lower()
+
+
+def is_valid_nuget(name: str) -> bool:
+    return 0 < len(name) <= NUGET_MAX_LEN and _NUGET_ID.match(name) is not None
 
 
 # OCI image repositories: `<registry>/<path>` as Docker spells references. A first component with a `.` or `:`, or

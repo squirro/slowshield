@@ -897,6 +897,15 @@ class Catalog:
                 summary="partly-crate 1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "NuGet",
+                "MAL-2026-5001",
+                "Fake.Evil",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in Fake.Evil (NuGet)",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",

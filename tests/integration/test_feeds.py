@@ -45,7 +45,7 @@ async def test_osv_full_snapshot_and_serving_effects(running: Running) -> None:
     assert ("npm", "@evil/thing", "1.0.0", None) in osv
     assert not any(name in ("alpha", "withdrawn-pkg", "left-pad-ng") for _, name, _, _ in osv)  # non-MAL / withdrawn
     st = running.rows("SELECT source, watermark FROM feed_state WHERE source LIKE 'osv:%' ORDER BY source")
-    assert [s for s, _ in st] == ["osv:Go", "osv:Maven", "osv:PyPI", "osv:crates.io", "osv:npm"]
+    assert [s for s, _ in st] == ["osv:Go", "osv:Maven", "osv:NuGet", "osv:PyPI", "osv:crates.io", "osv:npm"]
     assert all(w for _, w in st)
     assert running.ctx.feeds["osv"].entries == len(osv)
 

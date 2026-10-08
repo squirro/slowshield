@@ -12,8 +12,10 @@ echo 'GITHUB_TOKEN_SECRET_FILE=./secrets/github_token' >> .env
 docker compose up -d
 ```
 
-`leader-ca.empty` is the same for a shield wall follower (docs/design/shieldwall.md) whose leader runs this stack
-with Caddy's internal CA. Give the follower that CA certificate:
+`leader-ca.empty` is the same for a shield wall follower (docs/design/shieldwall.md). A follower must trust its
+leader's certificate, and a leader running this stack with its default `SLOWSHIELD_TLS_MODE=internal` has one signed
+by Caddy's own private CA, which nothing trusts. Without that CA the follower can't discover, join or sync, and its
+Shield wall page says the leader's certificate isn't trusted. Give the follower that CA certificate:
 
 ```sh
 # on the leader

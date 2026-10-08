@@ -9,6 +9,11 @@
 {{- if not .Values.hostnames }}
 {{- fail "hostnames must contain at least one entry" }}
 {{- end }}
+{{- with .Values.shieldwall }}
+{{- if and .joinSecret (not .leaderCaSecret) (not .leaderPubliclyTrusted) }}
+{{- fail "shieldwall.joinSecret makes this release a follower, and a follower must trust its leader's certificate: set shieldwall.leaderCaSecret to a Secret with the CA that signed it (a leader on this chart's default tls.mode internal uses Caddy's private CA), or shieldwall.leaderPubliclyTrusted=true if the leader's certificate is publicly trusted (tls.mode acme)" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

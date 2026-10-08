@@ -103,6 +103,25 @@ def test_join_string_round_trip_and_proof() -> None:
             JoinString(plain, "a" * 26, token, secret)  # however it is made
 
 
+def test_an_untrusted_leader_certificate_says_what_the_follower_needs() -> None:
+    from pyreqwest.exceptions import ConnectError
+
+    from slowshield.shieldwall.transport import failure
+
+    url = "https://hq.example.com/_shieldwall/v1/sync"
+    # As pyreqwest reports a certificate nothing here trusts (Caddy's internal CA on the leader).
+    untrusted = ConnectError("connection error", {"causes": [
+        {"message": f"error sending request for url ({url})"}, {"message": "client error (Connect)"},
+        {"message": "invalid peer certificate: UnknownIssuer"},
+    ]})  # fmt: skip
+    msg = failure(url, untrusted, private_ca=False)
+    assert "SLOWSHIELD_LEADER_CA_FILE" in msg and "leaderCaSecret" in msg and "LEADER_CA_SECRET_FILE" in msg
+    assert len(msg) <= 300  # what the Shield wall page shows of an error
+    assert "is that the CA that signed it" in failure(url, untrusted, private_ca=True)
+    refused = ConnectError("connection error", {"causes": [{"message": "tcp connect error: Connection refused"}]})
+    assert failure(url, refused, private_ca=False) == f"{url}: ConnectError"
+
+
 def test_config_takes_the_join_string_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     token, secret = new_token()
     monkeypatch.setenv("SLOWSHIELD_JOIN", str(JoinString("https://hq.test", "b" * 26, token, secret)))

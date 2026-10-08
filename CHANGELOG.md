@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format is based on
     below `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` (1 day); a block the leader lifts stays a day. Their own stricter
     settings and their own exceptions stay in force. Takedowns, tamper flags, tag history and Maven and Cargo listing
     times come down too, with the leader's observation times bounded by how recently the follower synced.
+  - A follower must trust its leader's certificate, and the shipped stacks default to Caddy's private CA: Helm
+    `shieldwall.leaderCaSecret` (the chart refuses a follower without it, unless `shieldwall.leaderPubliclyTrusted`),
+    Compose `LEADER_CA_SECRET_FILE`. A follower that lacks it says so on its Shield wall page.
   - Package files come through the leader's cache when it is up (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`), checked by the
     follower as always; a follower that can't reach its leader works on its own.
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different

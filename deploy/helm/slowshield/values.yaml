@@ -136,10 +136,16 @@ shieldwall:
   name: ""  # default: the pod's host name
   location: ""
   labels: {}  # e.g. {env: prod, team: ml}
-  # A leader whose certificate a private CA signed (its Caddy's internal CA, say): a Secret with that CA certificate,
-  # mounted for SLOWSHIELD_LEADER_CA_FILE. Not needed for a publicly trusted (ACME) leader.
+  # A follower must trust its leader's certificate, and this chart's default (tls.mode: internal) is Caddy's own
+  # private CA, which nothing trusts. So a follower (joinSecret set) needs one of these two, or the chart refuses:
+  #   leaderCaSecret: a Secret with the CA certificate that signed the leader's (for a leader on this chart with
+  #     tls.mode internal, its Caddy root CA; NOTES on the leader show how to read it), mounted for
+  #     SLOWSHIELD_LEADER_CA_FILE: kubectl create secret generic slowshield-leader-ca --from-file=ca.crt=leader-ca.crt
+  #   leaderPubliclyTrusted: true, when the leader's certificate is publicly trusted (tls.mode acme, or an ingress
+  #     with a public certificate).
   leaderCaSecret: ""
   leaderCaSecretKey: ca.crt
+  leaderPubliclyTrusted: false
   # With networkPolicy enabled, egress rules to a leader that isn't on the public internet, e.g.
   #   - ports: [{port: 443, protocol: TCP}]
   #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]

@@ -32,6 +32,26 @@ class Reply:
     body: bytes
 
 
+def failure(url: str, exc: Exception, *, private_ca: bool) -> str:
+    """What went wrong reaching the leader, in words an operator can act on (the Shield wall page shows it). An
+    untrusted certificate is the usual first failure of a follower whose leader uses Caddy's internal CA."""
+    details = getattr(exc, "details", None)
+    causes = details.get("causes") if isinstance(details, dict) else None
+    text = " ".join(str(c.get("message", "")) for c in causes or [] if isinstance(c, dict))
+    if "certificate" not in text:
+        return f"{url}: {type(exc).__name__}"
+    if private_ca:
+        return (
+            f"{url}: the leader's certificate isn't trusted, not even with SLOWSHIELD_LEADER_CA_FILE: is that the CA "
+            "that signed it?"
+        )
+    return (
+        f"{url}: the leader's certificate isn't trusted. A leader on a private CA (Caddy's internal CA, the shipped "
+        "default) needs that CA here: SLOWSHIELD_LEADER_CA_FILE (Helm shieldwall.leaderCaSecret, Compose "
+        "LEADER_CA_SECRET_FILE)"
+    )
+
+
 Send = Callable[[str, str, dict[str, str], bytes, float], Awaitable[Reply]]
 Stream = Callable[[str, dict[str, str]], "AsyncIterator[tuple[int, dict[str, str], AsyncIterator[bytes]]]"]
 
@@ -50,7 +70,8 @@ class Transport:
             .gzip(True)
         )
         pem = Path(ca_file).read_bytes() if ca_file else b""
-        if pem.strip():  # an empty file (the Compose placeholder) adds nothing
+        self.private_ca = bool(pem.strip())  # an empty file (the Compose placeholder) adds nothing
+        if self.private_ca:
             builder = builder.add_root_certificate_pem(pem)
         self.client: Client = builder.build()
 
@@ -75,7 +96,7 @@ class Transport:
                         raise TransportError(f"{url}: response too large")
                 return Reply(resp.status, {k.lower(): v for k, v in resp.headers.items()}, bytes(data))
         except PyreqwestError as exc:
-            raise TransportError(f"{url}: {type(exc).__name__}") from exc
+            raise TransportError(failure(url, exc, private_ca=self.private_ca)) from exc
 
     @asynccontextmanager
     async def stream(

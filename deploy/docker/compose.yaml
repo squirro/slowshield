@@ -46,8 +46,11 @@ services:
       SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
       SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}
       SLOWSHIELD_INSTANCE_LOCATION: ${SLOWSHIELD_INSTANCE_LOCATION:-}
-      # A leader whose certificate a private CA signed (its Caddy's internal CA): LEADER_CA_SECRET_FILE points at
-      # that CA certificate (secrets/README.md). Empty placeholder otherwise.
+      # A follower must trust its leader's certificate. This stack's default (SLOWSHIELD_TLS_MODE=internal) is
+      # Caddy's own private CA, which nothing trusts, so a follower of such a leader needs that CA certificate:
+      # LEADER_CA_SECRET_FILE points at it (secrets/README.md). Only a leader with a publicly trusted certificate
+      # (SLOWSHIELD_TLS_MODE=acme) needs nothing. Empty placeholder otherwise; a follower that lacks the CA says so on
+      # its Shield wall page.
       SLOWSHIELD_LEADER_CA_FILE: /run/secrets/leader_ca
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token

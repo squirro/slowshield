@@ -98,11 +98,23 @@ by the signer's ID; a removed member gets a signed 403 with `"removed"`.
 
 The traffic carries statistics, events and client IPs, so the leader's URL must be `https://`; join strings and
 `invite` refuse plain `http://` except for `localhost`, `127.0.0.1` and `[::1]`, and a follower checks the leader URL
-it stored as well before it sends anything, syncs or package file requests alike. A leader whose certificate a private CA signed (its Caddy's
-internal CA, say) needs that CA on its followers, in `SLOWSHIELD_LEADER_CA_FILE`: Helm has
-`shieldwall.leaderCaSecret`, Compose `LEADER_CA_SECRET_FILE` (`deploy/docker/secrets/README.md`), and `invite`
-says so. A leader with an ACME certificate needs nothing. Request bodies are capped at 8 MB, read before the sender is
-known; Caddy allows POST to `/_shieldwall/v1/join` and `/sync` with that limit, and to the Join button.
+it stored as well before it sends anything, syncs or package file requests alike.
+
+**A follower must trust its leader's certificate.** The shipped Helm chart and Compose stack default to Caddy's
+internal CA, a private CA that nothing trusts, so a follower of a leader on those defaults needs that CA certificate
+in `SLOWSHIELD_LEADER_CA_FILE`:
+
+- Helm: `shieldwall.leaderCaSecret`, a Secret with the CA certificate (the leader's NOTES show how to read it). The
+  chart refuses to render a follower (`shieldwall.joinSecret`) without it, unless `shieldwall.leaderPubliclyTrusted`
+  says the leader's certificate is publicly trusted.
+- Compose: `LEADER_CA_SECRET_FILE` (`deploy/docker/secrets/README.md`).
+- A leader with a publicly trusted certificate (ACME) needs none of this. `invite` reminds the operator.
+
+A follower without the CA it needs can't discover, join or sync; its Shield wall page says the leader's certificate
+isn't trusted and names the setting.
+
+Request bodies are capped at 8 MB, read before the sender is known; Caddy allows POST to `/_shieldwall/v1/join` and
+`/sync` with that limit, and to the Join button.
 
 ## Down: what a follower takes
 
@@ -268,8 +280,8 @@ leader comes back, the outbox drains and changes arrive under the late-news rule
 | `SLOWSHIELD_LEADER_CA_FILE` | `shieldwall.leader_ca_file` | | a leader whose certificate a private CA signed |
 
 Shield wall settings need a restart. The Helm chart has a `shieldwall` section (`role`, `joinSecret`, `name`,
-`location`, `labels`, and `leaderEgress` for a leader on a private network under the network policy); Compose passes
-the variables through.
+`location`, `labels`, `leaderCaSecret` or `leaderPubliclyTrusted` for how a follower trusts its leader, and
+`leaderEgress` for a leader on a private network under the network policy); Compose passes the variables through.
 
 ## Safety
 

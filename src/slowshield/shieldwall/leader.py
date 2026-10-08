@@ -24,7 +24,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route, Router
 
-from slowshield import __version__
+from slowshield import __version__, names
 from slowshield.config import ECOSYSTEMS, LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import IntegrityAbort, StreamedArtifact
@@ -201,6 +201,10 @@ def apply_outbox(conn: Any, member: str, hwm: int, entries: list[dict[str, Any]]
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# A Go module path takes up to 1024 characters (names.GO_MAX_LEN, the longest name any ecosystem allows) and twice
+# that in an artifact path once its upper case is `!`-escaped, plus the escaped version.
+_MAX_PATH = 8192
+_MAX_NAME = names.GO_MAX_LEN
 
 
 def _text_ok(value: Any, limit: int) -> bool:
@@ -214,10 +218,11 @@ def _fingerprint(item: Any, now: float) -> tuple[str, str, str, float, str, str 
         return None
     eco, path, sha256, first_seen, package, version = item
     ok = (
-        eco in ECOSYSTEMS and _text_ok(path, 2048) and isinstance(sha256, str) and _HEX64.fullmatch(sha256) is not None
+        eco in ECOSYSTEMS and _text_ok(path, _MAX_PATH)
+        and isinstance(sha256, str) and _HEX64.fullmatch(sha256) is not None
         and isinstance(first_seen, (int, float)) and not isinstance(first_seen, bool) and math.isfinite(first_seen)
-        and 0 <= first_seen <= now + signing.MAX_SKEW and _text_ok(package, 300)
-        and (version is None or _text_ok(version, 300))
+        and 0 <= first_seen <= now + signing.MAX_SKEW and _text_ok(package, _MAX_NAME)
+        and (version is None or _text_ok(version, _MAX_NAME))
     )  # fmt: skip
     return (eco, path, sha256, float(first_seen), package, version) if ok else None
 

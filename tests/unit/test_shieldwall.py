@@ -284,6 +284,39 @@ def test_malformed_fingerprints_are_ignored() -> None:
         assert _fingerprint(bad, NOW) is None
 
 
+def test_history_at_pairing_comes_in_small_entries_even_for_long_go_paths(conn: sqlite3.Connection) -> None:
+    from slowshield import names
+    from slowshield.ecosystems.go import module as go
+    from slowshield.shieldwall.follower import BACKFILL_BYTES, _backfill
+    from slowshield.shieldwall.leader import MAX_BODY, _fingerprint
+
+    # The longest valid Go module path, all upper case: its artifact path doubles once `!`-escaped.
+    count = 3000
+    rows = []
+    for i in range(count):
+        module = f"example.com/M{i:04d}/" + "A" * (names.GO_MAX_LEN - 18)
+        assert len(module) == names.GO_MAX_LEN and names.is_valid_go(module)
+        version = "v1.0.0-RC"
+        assert go.is_canonical(version)
+        path = f"/{go.escape(module)}/@v/{go.escape(version)}.zip"
+        rows.append(("go", path, module, version, "x.zip", f"{i:064x}", NOW, NOW))
+    assert len(rows[0][1]) > 2048 and len(rows[0][2]) > 300  # past what the leader took before
+    conn.executemany(
+        "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, first_seen, last_seen) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    _backfill(conn, NOW)
+    bodies = [r[0] for r in conn.execute("SELECT body FROM shieldwall_outbox WHERE kind = 'fingerprints' ORDER BY seq")]
+    # Once 5,000 rows to an entry: about 9 MB here, past the leader's 8 MB limit, and the sync stuck behind it.
+    assert len(bodies) > 1
+    assert all(len(b.encode()) <= BACKFILL_BYTES for b in bodies) and BACKFILL_BYTES * 8 < MAX_BODY
+    sent = [item for b in bodies for item in json.loads(b)]
+    assert len(sent) == count
+    # And the leader takes every one of them: long Go module paths and package names are well formed.
+    assert all(_fingerprint(item, NOW) is not None for item in sent)
+
+
 def test_a_followers_fingerprint_is_evidence_about_that_follower_only(conn: sqlite3.Connection) -> None:
     from slowshield.shieldwall.leader import apply_outbox
 

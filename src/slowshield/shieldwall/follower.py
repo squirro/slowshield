@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,7 +34,8 @@ log = logging.getLogger(__name__)
 
 SYNC_WAIT = 25  # seconds the leader may hold a sync open (long poll)
 OUTBOX_PER_SYNC = 200  # entries; each is one flush (5 s of statistics) or a backfill chunk
-BACKFILL_ROWS = 5000  # rows per backfill entry
+BACKFILL_ROWS = 5000  # rows per backfill entry, at most
+BACKFILL_BYTES = 512 << 10  # and about this much JSON: far below the 4 MB a sync carries and the leader's 8 MB limit
 SYNC_LOG_KEEP = 40 * 86400
 NO_JOIN = "not paired yet: joining needs the join string from the leader (SLOWSHIELD_JOIN)"
 
@@ -357,8 +359,8 @@ def _backfill(conn: Any, now: float, *, packages: bool = True) -> None:
             "WHERE first_served IS NOT NULL"
         )
     for field, table_rows in parts.items():
-        for i in range(0, len(table_rows), BACKFILL_ROWS):
-            batch = Batch(derive=False, **{field: table_rows[i : i + BACKFILL_ROWS]})
+        for chunk in _chunks(table_rows, msgspec.json.encode):
+            batch = Batch(derive=False, **{field: chunk})
             conn.execute(
                 "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'stats', ?)",
                 (now, msgspec.json.encode(batch).decode()),
@@ -366,8 +368,26 @@ def _backfill(conn: Any, now: float, *, packages: bool = True) -> None:
     fingerprints = rows(
         "SELECT ecosystem, path, sha256, first_seen, package, version FROM artifacts WHERE sha256 IS NOT NULL"
     )
-    for i in range(0, len(fingerprints), BACKFILL_ROWS):
+    for chunk in _chunks(fingerprints, lambda r: json.dumps(r).encode()):
         conn.execute(
             "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'fingerprints', ?)",
-            (now, json.dumps(fingerprints[i : i + BACKFILL_ROWS])),
+            (now, json.dumps(chunk)),
         )
+
+
+def _chunks(rows: list[tuple[Any, ...]], encode: Callable[[Any], bytes]) -> list[list[tuple[Any, ...]]]:
+    """`rows` in chunks of at most BACKFILL_ROWS rows and about BACKFILL_BYTES encoded, so that no outbox entry comes
+    near the leader's request limit, whatever the rows hold (a Go module path alone can take 2 KB once escaped)."""
+    out: list[list[tuple[Any, ...]]] = []
+    chunk: list[tuple[Any, ...]] = []
+    size = 0
+    for row in rows:
+        n = len(encode(row)) + 1
+        if chunk and (len(chunk) >= BACKFILL_ROWS or size + n > BACKFILL_BYTES):
+            out.append(chunk)
+            chunk, size = [], 0
+        chunk.append(row)
+        size += n
+    if chunk:
+        out.append(chunk)
+    return out

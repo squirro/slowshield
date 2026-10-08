@@ -190,7 +190,11 @@ Transparency's maximum merge delay; it is this project's own construction and de
   A retried sync can't count anything twice. A follower that can't reach its leader for days keeps queueing and
   drains the queue afterwards; entries older than 30 days are dropped.
 - **History at pairing.** The follower queues its statistics tables as they are, its retained events and the
-  packages it served, in the transaction that makes it active. Nothing is lost or counted twice at the seam.
+  packages it served, in the transaction that makes it active. Nothing is lost or counted twice at the seam. It goes
+  in outbox entries of at most 5,000 rows and about 512 KB each, so no entry comes near the leader's 8 MB request
+  limit whatever the rows hold: a Go module path takes up to 1,024 characters, and twice that once its upper case is
+  `!`-escaped in an artifact path. (One oversized entry at the front of the outbox would fail every sync with HTTP
+  413 until it aged out.)
 - **On the leader** every statistics row and event carries the instance it came from (`instance`, empty for the
   leader's own). The overview, the security timeline and the CSV cover all instances by default, and narrow to one
   follower, a location or a label (`?in=`). The Shield wall page lists the followers with their last sync and

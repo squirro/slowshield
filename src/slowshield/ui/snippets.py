@@ -315,6 +315,8 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, 
                 ("~/.nuget/NuGet/NuGet.Config (Windows: %AppData%\\NuGet\\NuGet.Config), or next to a solution",
                  nuget_config(nuget)),
                 ("CI and Dockerfiles (replaces ~/.nuget/NuGet/NuGet.Config)", nuget_command(nuget)),
+                ("Directory.Build.props next to the solution: fail the build when a held version is skipped (NU1603)",
+                 NUGET_FAIL_ON_SKIPPED),
             ),
         ),
     )  # fmt: skip
@@ -450,6 +452,16 @@ def nuget_command(nuget: str) -> str:
         + " ".join(f"'{line}'" for line in _nuget_lines(nuget))
         + ' > "$HOME/.nuget/NuGet/NuGet.Config"'
     )
+
+
+# A PackageReference to a held version restores the next version up, with only warning NU1603. Failing the build on it
+# keeps a held version from being replaced silently. TreatWarningsAsErrors does the same for every warning.
+NUGET_FAIL_ON_SKIPPED = """<Project>
+  <PropertyGroup>
+    <!-- NU1603: a held version was skipped and a higher one restored. TreatWarningsAsErrors works too. -->
+    <WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>
+  </PropertyGroup>
+</Project>"""
 
 
 def gradle_init(maven: str) -> str:

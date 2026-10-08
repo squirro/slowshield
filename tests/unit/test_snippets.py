@@ -83,13 +83,16 @@ def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() ->
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
     tool = {t.name: t for t in S.tools(*urls, nuget="https://h/nuget/v3/index.json")}["NuGet"]
     assert tool.ecosystem == "nuget" and tool.age == S.NO_AGE_DEFAULT
-    config, command = (code for _, code in tool.snippets)
+    config, command, props = (code for _, code in tool.snippets)
     assert config.startswith('<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>')
     assert "    <clear />\n" in config  # without it, nuget.org stays a source and goes around SlowShield
     assert '<add key="nuget.org" value="https://h/nuget/v3/index.json" protocolVersion="3" />' in config
     assert "allowInsecureConnections" not in config
     assert command.startswith('mkdir -p "$HOME/.nuget/NuGet" && printf ')
     assert command.endswith(' > "$HOME/.nuget/NuGet/NuGet.Config"') and "'    <clear />'" in command
+    # A held version skipped for a higher one is only warning NU1603: the build should fail on it.
+    assert "<WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>" in props
+    assert "TreatWarningsAsErrors" in props and "NU1603" in tool.snippets[2][0]
     # Plain HTTP on localhost: NuGet refuses an http:// source without it (NU1302).
     local = {t.name: t for t in S.tools(*urls, nuget="http://localhost/nuget/v3/index.json")}["NuGet"]
     assert 'protocolVersion="3" allowInsecureConnections="true" />' in local.snippets[0][1]

@@ -144,6 +144,7 @@ async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None
 async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: str) -> None:
     run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
     page = (await run.client.get("/ui/setup", headers={"Host": host})).text
+    page = page.replace("$(WarningsAsErrors)", "")  # the MSBuild property in the NuGet Directory.Build.props
     assert "$(" not in page and "80;id" not in page  # (the settings.xml snippet's escaped <id> contains ";id")
     assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
     doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()

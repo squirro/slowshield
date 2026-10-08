@@ -424,6 +424,9 @@ async def test_setup_page_shows_the_nuget_config(running: Running) -> None:
     assert "https://slowshield.test/nuget/v3/index.json" in page
     assert "&lt;clear /&gt;" in page and "key=&#34;nuget.org&#34;" in page
     assert 'data-tool-pick="NuGet"' in page and "NU1603" in page
+    # The build should fail when a held version is skipped for a higher one.
+    assert "&lt;WarningsAsErrors&gt;$(WarningsAsErrors);NU1603&lt;/WarningsAsErrors&gt;" in page
+    assert "<code>TreatWarningsAsErrors</code>" in page
 
 
 async def test_setup_page_on_local_http_allows_the_insecure_source(start_app) -> None:

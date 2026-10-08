@@ -149,7 +149,8 @@
     <li><strong>NuGet:</strong> versions that are too new or blocked are left out of the version lists and of
       search. A download of one fails with <code>425 Too Early</code> or <code>451</code> (dotnet shows only the
       status line). A <code>PackageReference</code> to a held version resolves the next version up, with
-      warning <code>NU1603</code>; treat that warning as an error where exact versions matter. Packages none of
+      warning <code>NU1603</code>. Make the build fail on it: <code>TreatWarningsAsErrors</code>, or
+      <code>NU1603</code> in <code>WarningsAsErrors</code> (the <code>Directory.Build.props</code> under Per tool). Packages none of
       whose versions is old enough are held too. Keep <code>&lt;clear/&gt;</code> in <code>NuGet.Config</code>:
       without it, nuget.org stays a source and goes around SlowShield.</li>
     <li><strong>Containers:</strong> a tag resolves to the newest image it has pointed to for {{ days }} days, so

@@ -25,7 +25,8 @@ to it ([design/oci.md](design/oci.md)).
   one; a Cargo.lock that pins one gets `403` with the version to use instead, as text cargo prints.
 * **NuGet is evaluated per version.** Too-new versions are left out of the flat container, the registration and
   search; a download of one gets `425 Too Early` (dotnet shows only the status line). A `PackageReference` to a
-  held version resolves the next version up, with warning `NU1603`.
+  held version resolves the next version up, with warning `NU1603`; make the build fail on it
+  (`TreatWarningsAsErrors`, or `NU1603` in `WarningsAsErrors`).
 * **Container tags lag behind.** A tag resolves to the newest digest it has pointed to for the delay, so
   `nginx:latest` keeps working about a week behind; a pinned digest that is too new gets `403`.
 * A file or version **without a publish time is treated as too new.**

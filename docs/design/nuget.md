@@ -86,6 +86,18 @@ written from memory. Checked against the spike:
   bypasses everything.
 - **The source is named `nuget.org`,** so `packageSourceMapping` entries that name `nuget.org` keep working.
 - **Plain HTTP** (`http://localhost/nuget/v3/index.json`) needs `allowInsecureConnections="true"` on the source.
+- **Fail the build on `NU1603`.** A `PackageReference` to a held version restores the next version up, with only
+  that warning (see One snapshot per package). Set `TreatWarningsAsErrors`, or add `NU1603` to `WarningsAsErrors`.
+  The Setup page has a `Directory.Build.props` for it:
+
+  ```xml
+  <Project>
+    <PropertyGroup>
+      <WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>
+    </PropertyGroup>
+  </Project>
+  ```
+
 - **Not enforced by SlowShield:** a repository `NuGet.Config` that adds nuget.org again, `--source` on the command
   line, and packages already in the global packages folder (`~/.nuget/packages`). Hard enforcement needs an egress
   firewall to api.nuget.org.
@@ -138,8 +150,9 @@ Why versions are removed instead of marked, as cargo's are marked yanked: the fl
 reads, has no flag to set. It lists unlisted versions like any other, as the spike showed. Removing the version
 makes a minimum-version reference resolve the next version up, with warning `NU1603`, as the spike also showed. When the next version up is a prerelease, restore finds nothing and fails with `NU1103`. That version is
 normally newer still and therefore held too, but on a package with several maintained
-lines (6.0.30 released yesterday, 7.0.0 a year ago) restore moves to the next line. Projects that need exact
-versions should treat `NU1603` as an error (`<WarningsAsErrors>NU1603</WarningsAsErrors>`) or use a lock file.
+lines (6.0.30 released yesterday, 7.0.0 a year ago) restore moves to the next line. So the build should fail on
+`NU1603`: `TreatWarningsAsErrors`, or `NU1603` in `WarningsAsErrors`, as the Setup page recommends. A lock file
+also keeps the version from changing.
 
 ## Publish time
 
@@ -240,7 +253,7 @@ fixed. Changing them needs a restart. `catalog_url` isn't one of the four resour
 
 ## Limitations
 
-- **The NU1603 upgrade** described under One snapshot per package.
+- **The NU1603 upgrade** described under One snapshot per package, unless the build fails on that warning.
 - **Unlisted versions are held for the full delay on a fresh instance.**
 - **Not served:** the `.nuspec`, icons, readmes, the catalog, autocomplete, symbol packages, publishing (`dotnet nuget
   push` needs nuget.org), and the SemVer 1 registration hives. Clients older than NuGet 4.3, which don't know

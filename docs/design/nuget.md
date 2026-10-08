@@ -170,7 +170,9 @@ also keeps the version from changing.
 5. **Unlisting doesn't restart the clock.** One difference from cargo: cargo records `first_listed` whenever the
    current line has no plausible time, even if an earlier one was stored. On nuget.org that would happen every time
    a version is unlisted (`published` becomes `1900-01-01`) and would hold an old, pinned version again for the full
-   delay. SlowShield records `first_listed` only for a version that has never had a plausible `published`.
+   delay. SlowShield records `first_listed` only for a version that has never had a plausible `published`. So a
+   version that is unlisted and listed again keeps the clock it had, its first `published` or its first
+   `first_listed`; this differs from cargo on purpose.
 6. **Per version,** like npm and Cargo. No extra requests.
 
 A fresh SlowShield holds an unlisted version for the full delay, even an old one: its `published` is `1900-01-01`,

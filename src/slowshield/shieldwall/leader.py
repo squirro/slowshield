@@ -93,14 +93,18 @@ def policy_body(cfg: LoadedConfig) -> dict[str, Any]:
 
 
 def current_policy(conn: Any, cfg: LoadedConfig, now: float, *, seen: int = 0) -> dict[str, Any]:
-    """The policy bundle with a version that only grows: bumped whenever its content changes, and past `seen`, the
-    version a follower already has (a leader restored from a backup would otherwise send versions it ignores)."""
+    """The policy bundle with a version that only grows: bumped whenever its content changes, or when a follower
+    reports a version past it, `seen` (a leader restored from a backup would otherwise send versions it ignores).
+
+    A bump goes to the current Unix time, or one past the last version if that is later. What a follower reports
+    only triggers a bump and never sets the number, so no follower can push the version towards the bound every
+    follower's report is held to (wire.MAX_SEQ), and a restored leader still moves past its followers at once."""
     body = policy_body(cfg)
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
     row = conn.execute("SELECT value FROM meta WHERE key = 'shieldwall_policy'").fetchone()
     state: dict[str, Any] = json.loads(row[0]) if row else {"version": 0, "digest": ""}
     if state["digest"] != digest or int(state["version"]) < seen:
-        state = {"version": max(int(state["version"]), seen) + 1, "digest": digest, "issued": now}
+        state = {"version": max(int(state["version"]) + 1, int(now)), "digest": digest, "issued": now}
         conn.execute(
             "INSERT INTO meta (key, value) VALUES ('shieldwall_policy', ?) ON CONFLICT (key) DO UPDATE SET value = "
             "excluded.value",
@@ -490,7 +494,6 @@ class LeaderService:
             if not isinstance(doc, dict):
                 raise TypeError("expected an object")
             cursor = wire.seq(doc.get("cursor", 0))
-            # Bounded: the version the leader issues next is past it, for every follower.
             policy_version = wire.seq(doc.get("policy_version", 0))
             entries = _entries(doc.get("outbox", []))
             status = doc.get("status", {}) if isinstance(doc.get("status"), dict) else {}

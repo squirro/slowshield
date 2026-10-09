@@ -18,7 +18,7 @@ from slowshield import config as config_mod
 from slowshield.app import create_app, sync_blocks
 from slowshield.clock import FrozenClock
 from slowshield.shieldwall import follower as follower_mod
-from slowshield.shieldwall import runtime
+from slowshield.shieldwall import runtime, wire
 from slowshield.shieldwall.follower import FollowerService
 from slowshield.shieldwall.identity import key_hash
 from slowshield.shieldwall.join import JoinString, new_token
@@ -459,15 +459,28 @@ async def test_numbers_that_break_the_reader_hold_up_nothing(pair: Pair) -> None
     assert p.follower.rows("SELECT count(*) FROM shieldwall_outbox") == [(0,)]
     assert p.leader.rows("SELECT sum(serves) FROM downloads_5min WHERE instance = ?", (member,)) == [(1,)]
     assert p.leader.rows("SELECT count(*) FROM shieldwall_fingerprints WHERE path = '/p/alpha.whl'") == [(0,)]
-    # A policy version past what the leader accepts is refused: the next version it issues, to every follower, would
-    # be too large to store.
-    policy = p.leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_policy'")
-    await p.follower.ctx.db.writer.run(
-        lambda c: c.execute("UPDATE shieldwall_leader SET policy_version = ?", (2**63 - 1,))
-    )
+
+    # A follower that reports the highest policy version the leader accepts only makes it move on by one: the
+    # version the leader issues, to every follower, is never one a follower names.
+    def issued() -> int:
+        return json.loads(p.leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_policy'")[0][0])["version"]
+
+    async def report(version: int) -> None:
+        await p.follower.ctx.db.writer.run(
+            lambda c: c.execute("UPDATE shieldwall_leader SET policy_version = ?", (version,))
+        )
+
+    assert issued() == int(NOW)  # the Unix time of the first bundle
+    await report(wire.MAX_SEQ)
+    await p.service.step()
+    assert issued() == int(NOW) + 1
+    await report(issued())
+    await p.service.step()  # an honest follower syncs on
+    # One past the bound is refused.
+    await report(wire.MAX_SEQ + 1)
     with pytest.raises(TransportError, match="HTTP 400 not a sequence number"):
         await p.service.step()
-    assert p.leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_policy'") == policy
+    assert issued() == int(NOW) + 1
 
 
 async def test_files_served_before_pairing_are_compared_too(pair: Pair) -> None:

@@ -305,14 +305,23 @@ def test_malformed_fingerprints_are_ignored() -> None:
         assert _fingerprint(bad, NOW) is None
 
 
-def test_numbers_from_another_instance_are_read_strictly() -> None:
+def test_numbers_from_another_instance_are_read_strictly(monkeypatch: pytest.MonkeyPatch) -> None:
     from slowshield.shieldwall import wire
 
     assert wire.loads(b'{"a": 9223372036854775807, "b": -1.5e300}') == {"a": 2**63 - 1, "b": -1.5e300}
-    huge, deep = b"[1" + b"0" * 400 + b"]", b"[" * 100_000 + b"]" * 100_000
-    for bad in (b"[NaN]", b"[Infinity]", b"[-Infinity]", b"[1e999]", b"[9223372036854775808]", huge, deep):
-        with pytest.raises(ValueError, match=r"out of range|is not a number|nested too deeply"):
+    huge = b"[1" + b"0" * 400 + b"]"
+    for bad in (b"[NaN]", b"[Infinity]", b"[-Infinity]", b"[1e999]", b"[9223372036854775808]", huge):
+        with pytest.raises(ValueError, match=r"out of range|is not a number"):
             wire.loads(bad)
+
+    # How deep JSON may nest before the parser gives up depends on the platform's stack; when it does, the message
+    # is malformed like any other, not a RecursionError the caller doesn't expect.
+    def too_deep(*args: object, **kwargs: object) -> None:
+        raise RecursionError
+
+    monkeypatch.setattr(json, "loads", too_deep)
+    with pytest.raises(ValueError, match="nested too deeply"):
+        wire.loads(b"[]")
     assert wire.seq(wire.MAX_SEQ) == wire.MAX_SEQ
     for value in (-1, wire.MAX_SEQ + 1, 1.0, True, "1", None):
         with pytest.raises(ValueError, match="not a sequence number"):

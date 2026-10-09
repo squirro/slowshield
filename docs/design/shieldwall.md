@@ -121,9 +121,9 @@ infinities, which compare false with everything and which SQLite stores as NULL,
 or a SQLite INTEGER, which fail deep inside a transaction. Both sides read each other's JSON with these refused
 (`shieldwall/wire.py`): every number is a finite float or fits in 64 bits, or the whole message is malformed (a 400
 on the leader, a failed sync on the follower). Sequence numbers, cursors and policy versions a follower sends must be
-whole numbers from 0 to 2^53: the leader issues its next policy version past the one a follower says it has (a leader
-restored from a backup must not send versions its followers ignore), so an unbounded one would let one follower make
-the next version too large for every other follower to store.
+whole numbers from 0 to 2^53. The versions the leader issues stay near the current Unix time whatever a follower
+reports, so an honest follower's version is always far below that bound: had a follower's report set the next
+version, one follower could have made it too large for the others to send back or store, and stalled the wall.
 
 ## Down: what a follower takes
 
@@ -143,7 +143,8 @@ whose metadata and bytes agree with each other; then every check passes.
 The leader sends a bundle (`default_delay_days`, `fail_open`, per-ecosystem `fail_open`, `enforce_age_on_download`,
 `exceptions`) with a version that grows whenever its content changes. The follower ignores a bundle no newer than
 the last one it took (rollback protection). A leader restored from a backup sees the higher version its followers
-report and moves past it.
+report and moves past it. A new version is the current Unix time, or one past the last if that is later: what a
+follower reports only makes the leader move on, never sets the number.
 
 The follower's effective policy (`shieldwall/policy.py`):
 

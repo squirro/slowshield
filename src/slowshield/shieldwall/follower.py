@@ -22,7 +22,7 @@ import msgspec
 from slowshield import __version__
 from slowshield.context import AppContext
 from slowshield.recorder import Batch
-from slowshield.shieldwall import signing
+from slowshield.shieldwall import signing, wire
 from slowshield.shieldwall.identity import Identity, key_hash
 from slowshield.shieldwall.join import JoinString, leader_url_problem, proof
 from slowshield.shieldwall.leader import PROTOCOL
@@ -143,7 +143,7 @@ class FollowerService:
         reply = await self.send("GET", url, {"Accept": "application/json"}, b"", 10.0)
         if reply.status != 200:
             raise TransportError(f"{url}: HTTP {reply.status}")
-        doc = json.loads(reply.body)
+        doc = wire.loads(reply.body)
         pubkey = base64.b64decode(doc["pubkey"], validate=True)
         if key_hash(pubkey) != join.key_hash:
             raise TransportError("the leader's key doesn't match the join string: refusing to pair")
@@ -207,7 +207,7 @@ class FollowerService:
             )
             log.error("joining the shield wall failed", extra={"error": detail})
             return
-        doc = json.loads(reply.body)
+        doc = wire.loads(reply.body)
 
         head = int(doc.get("head", 0))
         oci_since = doc.get("oci_since")
@@ -266,7 +266,7 @@ class FollowerService:
             return False
         if reply.status != 200:
             raise TransportError(f"sync: HTTP {reply.status} {_detail(reply)}")
-        doc = json.loads(reply.body)
+        doc = wire.loads(reply.body)
         instruments.shieldwall_syncs.add(1, {"result": "ok"})
         now = ctx.clock.now()
         from slowshield.shieldwall.apply import apply_sync

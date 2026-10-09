@@ -442,6 +442,34 @@ async def test_a_follower_never_talks_to_a_plaintext_leader(pair: Pair, start: A
     assert follower.ctx.cfg.raw.shieldwall.role == "follower" and follower.ctx.artifacts.via is None
 
 
+async def test_numbers_that_break_the_reader_hold_up_nothing(pair: Pair) -> None:
+    p = pair
+    await _join(p)
+    member = p.follower.app._identity.id  # type: ignore[union-attr]
+    # A report with a first-seen time too large for a float, queued ahead of a download: the leader passes it, and
+    # what the follower reports after it still arrives.
+    huge = f'[["pypi","/p/alpha.whl","{"a" * 64}",1{"0" * 400},"alpha","1.0.0"]]'
+    await p.follower.ctx.db.writer.run(
+        lambda c: c.execute(
+            "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'fingerprints', ?)", (NOW, huge)
+        )
+    )
+    assert (await p.follower.client.get(f"/pypi{_wheel(p.follower)}")).status_code == 200
+    await p.sync()
+    assert p.follower.rows("SELECT count(*) FROM shieldwall_outbox") == [(0,)]
+    assert p.leader.rows("SELECT sum(serves) FROM downloads_5min WHERE instance = ?", (member,)) == [(1,)]
+    assert p.leader.rows("SELECT count(*) FROM shieldwall_fingerprints WHERE path = '/p/alpha.whl'") == [(0,)]
+    # A policy version past what the leader accepts is refused: the next version it issues, to every follower, would
+    # be too large to store.
+    policy = p.leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_policy'")
+    await p.follower.ctx.db.writer.run(
+        lambda c: c.execute("UPDATE shieldwall_leader SET policy_version = ?", (2**63 - 1,))
+    )
+    with pytest.raises(TransportError, match="HTTP 400 not a sequence number"):
+        await p.service.step()
+    assert p.leader.rows("SELECT value FROM meta WHERE key = 'shieldwall_policy'") == policy
+
+
 async def test_files_served_before_pairing_are_compared_too(pair: Pair) -> None:
     p = pair
     path = _wheel(p.follower)

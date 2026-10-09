@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import re
+import sqlite3
 import time
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -29,7 +30,7 @@ from slowshield.config import ECOSYSTEMS, LoadedConfig
 from slowshield.context import AppContext
 from slowshield.ecosystems.artifacts import IntegrityAbort, StreamedArtifact
 from slowshield.recorder import Batch, write_batch
-from slowshield.shieldwall import signing
+from slowshield.shieldwall import signing, wire
 from slowshield.shieldwall.identity import Identity, instance_id
 from slowshield.shieldwall.join import proof_ok
 from slowshield.telemetry import instruments
@@ -182,21 +183,44 @@ def _change_row(conn: Any, dataset: str, key: str) -> dict[str, Any] | None:
 # ---- applying what followers report ----------------------------------------------------------------------
 
 
+# What an entry's own data can raise. Anything else (a locked or full database) fails the whole sync, which the
+# follower retries.
+_MALFORMED = (ValueError, TypeError, KeyError, ArithmeticError, msgspec.MsgspecError, sqlite3.IntegrityError)
+
+
 def apply_outbox(conn: Any, member: str, hwm: int, entries: list[dict[str, Any]], now: float) -> int:
     """Apply outbox entries in order, each exactly once: anything at or below the member's high-water mark was
-    applied by an earlier (maybe retried) sync. Returns the new mark."""
+    applied by an earlier (maybe retried) sync. Returns the new mark.
+
+    An entry that can't be applied is undone, logged and passed: retried, it would fail again and hold up everything
+    the follower reports after it."""
     for entry in sorted(entries, key=lambda e: e["seq"]):
         seq = int(entry["seq"])
         if seq <= hwm:
             continue
-        kind = entry.get("kind")
-        if kind == "stats":
-            write_batch(conn, msgspec.json.decode(entry["body"], type=Batch), instance=member)
-        elif kind == "fingerprints":
-            for item in json.loads(entry["body"]):
-                _take_fingerprint(conn, member, item, now)
+        conn.execute("SAVEPOINT outbox_entry")
+        try:
+            _apply_entry(conn, member, entry, now)
+        except _MALFORMED as exc:
+            conn.execute("ROLLBACK TO outbox_entry")
+            log.warning("skipped a report that can't be applied", extra={"member": member, "seq": seq,
+                        "kind": entry.get("kind"), "error": str(exc)[:300]})  # fmt: skip
+        conn.execute("RELEASE outbox_entry")
         hwm = seq
     return hwm
+
+
+def _apply_entry(conn: Any, member: str, entry: dict[str, Any], now: float) -> None:
+    kind = entry.get("kind")
+    if kind == "stats":
+        # Integers past 64 bits get through msgspec and fail when SQLite binds them: the entry is passed then.
+        write_batch(conn, msgspec.json.decode(entry["body"], type=Batch), instance=member)
+    elif kind == "fingerprints":
+        items = wire.loads(entry["body"])
+        if not isinstance(items, list):
+            raise TypeError("fingerprints: expected a list")
+        for item in items:
+            _take_fingerprint(conn, member, item, now)
 
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -217,10 +241,11 @@ def _fingerprint(item: Any, now: float) -> tuple[str, str, str, float, str, str 
     if not isinstance(item, list) or len(item) != 6:
         return None
     eco, path, sha256, first_seen, package, version = item
+    # The range also refuses NaN, the infinities and integers too large for a float, without converting them.
     ok = (
         eco in ECOSYSTEMS and _text_ok(path, _MAX_PATH)
         and isinstance(sha256, str) and _HEX64.fullmatch(sha256) is not None
-        and isinstance(first_seen, (int, float)) and not isinstance(first_seen, bool) and math.isfinite(first_seen)
+        and isinstance(first_seen, (int, float)) and not isinstance(first_seen, bool)
         and 0 <= first_seen <= now + signing.MAX_SKEW and _text_ok(package, _MAX_NAME)
         and (version is None or _text_ok(version, _MAX_NAME))
     )  # fmt: skip
@@ -308,6 +333,26 @@ def _compare_fingerprint(
 # ---- the service --------------------------------------------------------------------------------------------
 
 
+def _entries(value: Any) -> list[dict[str, Any]]:
+    """The outbox entries a sync carries, each with a sequence number, a kind and a body."""
+    if not isinstance(value, list):
+        raise TypeError("outbox: expected a list")
+    for entry in value:
+        if not (isinstance(entry, dict) and isinstance(entry.get("kind"), str) and isinstance(entry.get("body"), str)):
+            raise TypeError("outbox: malformed entry")
+        wire.seq(entry.get("seq"))
+    return value
+
+
+def _wait(text: str) -> float:
+    """How long a sync may be held open: up to MAX_WAIT, and not at all for anything that isn't a number."""
+    try:
+        wait = float(text or 0)
+    except ValueError:
+        return 0.0
+    return min(max(wait, 0.0), MAX_WAIT) if math.isfinite(wait) else 0.0
+
+
 class LeaderService:
     def __init__(self, ctx: AppContext, identity: Identity) -> None:
         self.ctx = ctx
@@ -349,11 +394,12 @@ class LeaderService:
             return JSONResponse({"error": "too_large"}, status_code=413)
         headers = {k.lower(): v for k, v in request.headers.items()}
         try:
-            doc = json.loads(body)
+            doc = wire.loads(body)
             pubkey = base64.b64decode(doc["pubkey"], validate=True)
             signed = signing.verify_request(
                 headers, "POST", request.url.path, request.url.query, body, public_key=pubkey, now=now
             )
+            created = int(doc.get("created", 0))
         except (ValueError, KeyError, TypeError, signing.SignatureError) as exc:
             return JSONResponse({"error": "bad_request", "detail": str(exc)}, status_code=400)
         member = instance_id(pubkey)
@@ -362,7 +408,6 @@ class LeaderService:
         if member == self.identity.id:
             return JSONResponse({"error": "bad_request", "detail": "that is this leader's own key"}, status_code=400)
         token_id = str(doc.get("token", ""))
-        created = int(doc.get("created", 0))
         claimed = str(doc.get("proof", ""))
         name = str(doc.get("name", ""))[:100] or member
         location = str(doc.get("location", ""))[:100]
@@ -441,14 +486,17 @@ class LeaderService:
         row, signed = got
         member = row[0]
         try:
-            doc = json.loads(body)
-            cursor = int(doc.get("cursor", 0))
-            policy_version = int(doc.get("policy_version", 0))
-            entries = list(doc.get("outbox", []))
+            doc = wire.loads(body)
+            if not isinstance(doc, dict):
+                raise TypeError("expected an object")
+            cursor = wire.seq(doc.get("cursor", 0))
+            # Bounded: the version the leader issues next is past it, for every follower.
+            policy_version = wire.seq(doc.get("policy_version", 0))
+            entries = _entries(doc.get("outbox", []))
             status = doc.get("status", {}) if isinstance(doc.get("status"), dict) else {}
         except (ValueError, TypeError) as exc:
             return self._reply(signed.signature, {"error": "bad_request", "detail": str(exc)}, status=400)
-        wait = min(max(float(request.query_params.get("wait", "0") or 0), 0.0), MAX_WAIT)
+        wait = _wait(request.query_params.get("wait", ""))
         cfg = ctx.cfg
 
         def apply(conn: Any) -> int:

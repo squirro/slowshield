@@ -116,6 +116,15 @@ isn't trusted and names the setting.
 Request bodies are capped at 8 MB, read before the sender is known; Caddy allows POST to `/_shieldwall/v1/join` and
 `/sync` with that limit, and to the Join button.
 
+**Numbers are read strictly.** A signed message can still carry numbers that break the code reading it: NaN and the
+infinities, which compare false with everything and which SQLite stores as NULL, and integers too large for a float
+or a SQLite INTEGER, which fail deep inside a transaction. Both sides read each other's JSON with these refused
+(`shieldwall/wire.py`): every number is a finite float or fits in 64 bits, or the whole message is malformed (a 400
+on the leader, a failed sync on the follower). Sequence numbers, cursors and policy versions a follower sends must be
+whole numbers from 0 to 2^53: the leader issues its next policy version past the one a follower says it has (a leader
+restored from a backup must not send versions its followers ignore), so an unbounded one would let one follower make
+the next version too large for every other follower to store.
+
 ## Down: what a follower takes
 
 ### Trust classes
@@ -200,7 +209,9 @@ Transparency's maximum merge delay; it is this project's own construction and de
   over: the follower refuses it, keeps its whole outbox, logs an error and shows it on its Shield wall page. (A
   follower restored from a backup older than what the leader applied sees the same; joining again resets the mark.)
   A retried sync can't count anything twice. A follower that can't reach its leader for days keeps queueing and
-  drains the queue afterwards; entries older than 30 days are dropped.
+  drains the queue afterwards; entries older than 30 days are dropped. An entry the leader can't apply (malformed,
+  or with a value SQLite can't store) is undone on its own, logged and passed, not retried: retried, it would fail
+  every sync and hold up everything the follower reports after it.
 - **History at pairing.** The follower queues its statistics tables as they are, its retained events, the packages
   it served, and the first fingerprint of every file it served, in the transaction that makes it active. Nothing is
   lost or counted twice at the seam, and files served before pairing are compared like any later ones. It goes

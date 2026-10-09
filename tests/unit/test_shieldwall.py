@@ -297,10 +297,52 @@ def test_malformed_fingerprints_are_ignored() -> None:
         {"ecosystem": "pypi"},
         ["pypi", "/packages/a.whl\nsother", *good[2:]],  # a control character would split the change key
         [*good[:3], float("inf"), *good[4:]],
+        [*good[:3], float("nan"), *good[4:]],
+        [*good[:3], 10**400, *good[4:]],  # too large for a float: refused, not an OverflowError
         [*good[:3], NOW + 3600, *good[4:]],  # seen in the future
         [*good[:3], True, *good[4:]],
     ):
         assert _fingerprint(bad, NOW) is None
+
+
+def test_numbers_from_another_instance_are_read_strictly() -> None:
+    from slowshield.shieldwall import wire
+
+    assert wire.loads(b'{"a": 9223372036854775807, "b": -1.5e300}') == {"a": 2**63 - 1, "b": -1.5e300}
+    huge, deep = b"[1" + b"0" * 400 + b"]", b"[" * 100_000 + b"]" * 100_000
+    for bad in (b"[NaN]", b"[Infinity]", b"[-Infinity]", b"[1e999]", b"[9223372036854775808]", huge, deep):
+        with pytest.raises(ValueError, match=r"out of range|is not a number|nested too deeply"):
+            wire.loads(bad)
+    assert wire.seq(wire.MAX_SEQ) == wire.MAX_SEQ
+    for value in (-1, wire.MAX_SEQ + 1, 1.0, True, "1", None):
+        with pytest.raises(ValueError, match="not a sequence number"):
+            wire.seq(value)
+
+
+def test_a_report_that_cant_be_applied_is_passed_not_retried(conn: sqlite3.Connection) -> None:
+    from slowshield.shieldwall.leader import apply_outbox
+
+    entries = [
+        # Its second row is too large for SQLite: the first row is undone with it.
+        {"seq": 1, "kind": "stats", "body": f'{{"lookups":[[0,"npm","registry",1],[0,"npm","proxy",{2**64 - 1}]]}}'},
+        {"seq": 2, "kind": "fingerprints", "body": f'[["pypi","/p/a.whl","{"a" * 64}",NaN,"a","1"]]'},
+        {"seq": 3, "kind": "fingerprints", "body": f'[["pypi","/p/a.whl","{"a" * 64}",1{"0" * 400},"a","1"]]'},
+        {"seq": 4, "kind": "fingerprints", "body": '{"not": "a list"}'},
+        {"seq": 5, "kind": "stats", "body": '{"lookups":[[0,"pypi","registry",2]]}'},
+    ]
+    assert apply_outbox(conn, "sfollower", 0, entries, NOW) == 5
+    assert conn.execute("SELECT ecosystem, source, instance, count FROM lookups_5min").fetchall() == [
+        ("pypi", "registry", "sfollower", 2)
+    ]
+    assert conn.execute("SELECT count(*) FROM shieldwall_fingerprints").fetchone() == (0,)
+
+
+def test_a_sync_is_held_open_only_for_a_number_of_seconds() -> None:
+    from slowshield.shieldwall.leader import MAX_WAIT, _wait
+
+    assert [_wait(t) for t in ("", "10", "-5", "99", "nan", "inf", "1e999", "soon")] == [
+        0.0, 10.0, 0.0, MAX_WAIT, 0.0, 0.0, 0.0, 0.0,
+    ]  # fmt: skip
 
 
 def test_history_at_pairing_comes_in_small_entries_even_for_long_go_paths(conn: sqlite3.Connection) -> None:

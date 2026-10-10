@@ -29,6 +29,9 @@ install fails), the temp file is discarded and an event is recorded:
   A NuGet package that nuget.org signs again counts too: its new bytes match the new `packageHash`, but not the
   first fingerprint. SlowShield never changes a `.nupkg`, so its repository signature stays valid
   ([design/nuget.md](design/nuget.md)).
+* A registry digest that changed since the first download (npm's `dist.integrity`, NuGet's `packageHash`, the
+  sha256 on PyPI and crates.io) is `tampered` too, before anything is fetched, and the cached copy of the first
+  bytes isn't served.
 
 Upstream error responses (non-2xx) are never hashed.
 
@@ -59,4 +62,4 @@ cache is capped (`cache.artifacts_max_gb`) with least-recently-used eviction; ev
 2. Compare with the registry's published digest and the project's release notes / advisories.
 3. If the change is legitimate (extremely rare), clear the flag for that path:
    `UPDATE artifacts SET tampered = 0, sha256 = NULL WHERE path = '<path>';`
-   The next download records a new fingerprint.
+   The next download records a new fingerprint, and the registry digest with it.

@@ -111,7 +111,7 @@ free for later feeds (`v3` is taken).
 |---|---|
 | `v3/index.json` | Generated: `PackageBaseAddress/3.0.0` (`v3/flatcontainer/`), `RegistrationsBaseUrl/3.6.0` (`v3/registration/`, one SemVer 2 hive), `VulnerabilityInfo/6.7.0`, `SearchQueryService` (also `/3.0.0-beta`, `/3.0.0-rc`, `/3.5.0`) |
 | `v3/flatcontainer/<id>/index.json` | The versions of the package snapshot, without the held and blocked ones, lower-case and normalized, in NuGet's version order. `451` when the package is blocked as a whole |
-| `v3/flatcontainer/<id>/<ver>/<id>.<ver>.nupkg` | `451` when blocked or tampered, `425` with `Retry-After` when too new, else verified, streamed and cached. `HEAD` is checked the same way |
+| `v3/flatcontainer/<id>/<ver>/<id>.<ver>.nupkg` | `451` when blocked or tampered, `425` with `Retry-After` when too new, else verified, streamed and cached. `HEAD` gets the same refusals; on a cache miss it doesn't ask nuget.org whether the file exists, as in the other ecosystems |
 | `v3/registration/<id>/index.json` | The registration index of the snapshot. Held and blocked versions are removed, every page's `count`, `lower` and `upper` are recomputed, and empty pages are dropped. Pages nuget.org inlines stay inlined |
 | `v3/registration/<id>/page/<lower>/<upper>.json` | A page that isn't inlined, from the same snapshot |
 | `v3/registration/<id>/<ver>.json` | A registration leaf for a version that is served, else `404` |
@@ -136,10 +136,14 @@ Every response about a package comes from one snapshot of its registration: the 
 inlined. The flat container list is built from the same snapshot, so the two lists always agree, and the flat
 container `index.json` on nuget.org is never fetched.
 
-1. **Fetch** the index. Pages without `items` are fetched too, but only from under `registration_url`.
-2. **Store** the index and pages together in the metadata store, with the index's `ETag`. When the index answers
-   `304`, the stored pages are used again: nuget.org rewrites the index (its `commitId` changes) whenever a page
-   changes.
+1. **Fetch** the index. Pages without `items` are fetched too, but only from under `registration_url`. Together
+   they may be at most 256 MB, or the registration is refused (`503`, or the stored snapshot): Uno.WinUI, among the
+   largest, is 115 MB (5,451 versions in 86 pages).
+2. **Store** the index and pages together in the metadata store, as nuget.org sent them, with the index's `ETag`.
+   When the index answers `304`, the stored pages are used again: nuget.org rewrites the index (its `commitId`
+   changes) whenever a page changes. A snapshot keeps each version's leaf encoded, with only the fields SlowShield
+   judges it by decoded, and decodes a page's leaves when it serves that page: decoded whole, Uno.WinUI's pages
+   would take about 350 MB.
 3. **Judge** every version, then render. A held or blocked version is removed from its page; pages are counted and
    bounded again in NuGet's version order, and an empty page is dropped.
 4. **Upstream down:** the stored snapshot is served (stale), else `503` with `Retry-After`.
@@ -202,7 +206,9 @@ and the catalog's `created` isn't used.
 - **The `.nupkg` is never modified.** The repository signature (`.signature.p7s`) is inside it.
 - **Re-signing is tampering.** When nuget.org re-signs a package, its bytes, its sha256 and the catalog's
   `packageHash` all change. The new bytes match the new `packageHash`, but not the fingerprint recorded on the first
-  download, so SlowShield refuses them (`451`) and records a `tampered` event until an operator clears it.
+  download, so SlowShield refuses them (`451`) and records a `tampered` event until an operator clears it. A
+  verified copy of the old bytes in the cache isn't served either: the `packageHash` no longer matches the one
+  recorded with the first download.
 - **Version spelling upstream.** The download goes to `<flat_container_url>/<id>/<ver>/<id>.<ver>.nupkg` with the
   lower-case normalized version, as the snapshot names it.
 
@@ -218,6 +224,10 @@ results dropped from the page.
 
 `v3/vulnerabilities/index.json` is nuget.org's index with each file's `@id` pointing at SlowShield. A file is served
 only if the current index lists it. The data is advisory information for NuGetAudit and is passed through unchanged.
+
+An index that isn't JSON, or lists no file on its own host, is neither stored nor served: NuGetAudit would read an
+empty index as no advisories. The last usable copy is served instead, or `503`. A vulnerability file that isn't a JSON
+object, and a catalog leaf without a usable `packageHash`, aren't stored either.
 
 ## Malware feeds
 

@@ -18,7 +18,7 @@ import asyncio
 import hashlib
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -59,6 +59,14 @@ JSON = "application/json"
 _NOT_FOUND = object()
 _json = msgspec.json.Encoder()
 _decode = msgspec.json.Decoder()
+
+
+class _StoredRegistration(msgspec.Struct):
+    index: Any
+    pages: dict[str, msgspec.Raw]  # views into the stored document, not copies
+
+
+_decode_stored = msgspec.json.Decoder(_StoredRegistration)
 
 
 @dataclass(slots=True)
@@ -114,6 +122,19 @@ def publish_time(published: float | None, known: Sequence[float | None], now: fl
     time, so the latest is the safest. Without any clock: now."""
     clocks = [c for c in (plausible(published, now), *known) if c is not None]
     return max(clocks) if clocks else now
+
+
+def _decoded(body: bytes) -> Any:
+    """`body` decoded, or None if it isn't JSON."""
+    try:
+        return _decode.decode(body)
+    except msgspec.DecodeError:
+        return None
+
+
+def _is_object(body: bytes) -> bool:
+    """A JSON object, as a vulnerability file is (package ids to their advisories)."""
+    return isinstance(_decoded(body), dict)
 
 
 def _json_response(doc: Any, *, headers: dict[str, str] | None = None) -> Response:
@@ -228,9 +249,18 @@ class NugetService:
 
     # ---- upstream documents -----------------------------------------------------------------------------------
 
-    async def _document(self, url: str, skey: str, *, ttl: float, max_bytes: int = MAX_SMALL_DOCUMENT) -> bytes | None:
+    async def _document(
+        self,
+        url: str,
+        skey: str,
+        *,
+        ttl: float,
+        usable: Callable[[bytes], bool],
+        max_bytes: int = MAX_SMALL_DOCUMENT,
+    ) -> bytes | None:
         """A small upstream document, through the metadata store: fresh -> stored copy; else revalidated with its
-        ETag; upstream down -> the stored copy while there is one. None for a 404."""
+        ETag; upstream down, or a document that isn't `usable` -> the stored copy while there is one. None for a 404.
+        Only a usable document is stored, so a broken answer is never served for a whole TTL."""
         ctx = self.ctx
         now = ctx.clock.now()
         stored = await ctx.metadata_store.aget(skey)
@@ -256,6 +286,11 @@ class NugetService:
             if stored is not None:
                 return stored.value
             raise UpstreamError(res.url, f"upstream returned {res.status}", res.status)
+        if not usable(res.body):
+            log.warning("unusable NuGet document", extra={"url": url, "stale_copy": stored is not None})
+            if stored is not None:
+                return stored.value
+            raise UpstreamError(res.url, "unusable document")
         await ctx.metadata_store.aput(
             skey, res.body, expires=now + ttl, keep_until=now + ttl + KEEP_STALE, meta={"etag": res.etag}
         )
@@ -308,12 +343,16 @@ class NugetService:
             if res.status != 200:
                 raise UpstreamError(res.url, f"upstream returned {res.status}", res.status)
             index = _decode.decode(res.body)
-            pages: dict[str, Any] = {}
+            pages: dict[str, bytes] = {}
+            budget = R.MAX_REGISTRATION_BYTES - len(res.body)
             for page_url in R.page_urls(index, base):
-                page = await ctx.upstream.fetch(page_url, max_bytes=R.MAX_DOCUMENT_BYTES)
+                if budget <= 0:
+                    raise R.RegistrationError(f"registration larger than {R.MAX_REGISTRATION_BYTES >> 20} MB")
+                page = await ctx.upstream.fetch(page_url, max_bytes=min(R.MAX_DOCUMENT_BYTES, budget))
                 if page.status != 200:
                     raise UpstreamError(page.url, f"upstream returned {page.status} for a registration page")
-                pages[page_url] = _decode.decode(page.body)
+                pages[page_url] = page.body
+                budget -= len(page.body)
             snap = R.parse(pid, index, pages)
             if not snap.versions:
                 # A registration without one usable version (an error page, a broken mirror) is an upstream failure:
@@ -329,7 +368,7 @@ class NugetService:
             ctx.metadata_cache.put(key, snap, snap.weight, now + 60)
             instruments.cache_requests.add(1, {"cache": "metadata", "result": "stale"})
             return snap
-        body = _json.encode({"index": index, "pages": pages})
+        body = _json.encode({"index": msgspec.Raw(res.body), "pages": {u: msgspec.Raw(b) for u, b in pages.items()}})
         await ctx.metadata_store.aput(
             skey, body, expires=now + ttl, keep_until=now + ttl + KEEP_STALE, meta={"etag": res.etag}
         )
@@ -339,8 +378,8 @@ class NugetService:
 
     @staticmethod
     def _parse_stored(pid: str, body: bytes) -> R.Snapshot:
-        doc = _decode.decode(body)
-        return R.parse(pid, doc["index"], doc["pages"], len(body))
+        doc = _decode_stored.decode(body)
+        return R.parse(pid, doc.index, doc.pages)
 
     # ---- publish times -----------------------------------------------------------------------------------
 
@@ -587,8 +626,12 @@ class NugetService:
         if not url.startswith(base) or "?" in url or "#" in url or ".." in urlsplit(url).path:
             log.warning("NuGet catalog leaf outside the configured catalog", extra={"package": pid, "url": url})
             return text_error(503, f"slowshield: no usable catalog entry for {pid} {leaf.version}", headers=RETRY_SOON)
+
+        def usable(body: bytes) -> bool:
+            return not isinstance(R.package_hash(_decoded(body), pid, leaf.version), str)
+
         try:
-            body = await self._document(url, f"nuget:catalog:{url.removeprefix(base)}", ttl=CATALOG_TTL)
+            body = await self._document(url, f"nuget:catalog:{url.removeprefix(base)}", ttl=CATALOG_TTL, usable=usable)
             doc = _decode.decode(body) if body is not None else None
         except (UpstreamError, msgspec.DecodeError) as exc:
             detail = exc.detail if isinstance(exc, UpstreamError) else "unreadable catalog entry"
@@ -688,7 +731,8 @@ class NugetService:
 
     def _vulnerability_files(self, doc: Any) -> dict[str, str]:
         """upstream file URL -> its path under /nuget/v3/vulnerabilities/, for the files the index lists on the
-        index's own host."""
+        index's own host. An index without one is unusable: served, it would be an empty feed, and NuGetAudit would
+        find nothing to warn about."""
         origin = urlsplit(self.settings.vulnerability_url)
         out: dict[str, str] = {}
         if not isinstance(doc, list):
@@ -705,7 +749,12 @@ class NugetService:
 
     async def _vulnerability_doc(self) -> Any:
         ttl = self.ctx.cfg.raw.metadata_cache_ttl_hours * 3600
-        body = await self._document(self.settings.vulnerability_url, "nuget:vuln:index", ttl=ttl)
+        body = await self._document(
+            self.settings.vulnerability_url,
+            "nuget:vuln:index",
+            ttl=ttl,
+            usable=lambda b: bool(self._vulnerability_files(_decoded(b))),
+        )
         if body is None:
             raise UpstreamError(self.settings.vulnerability_url, "no vulnerability index")
         return _decode.decode(body)
@@ -716,6 +765,8 @@ class NugetService:
         except UpstreamError, msgspec.DecodeError:
             return text_error(503, "slowshield: nuget.org's vulnerability data is unavailable", headers=RETRY_SOON)
         files = self._vulnerability_files(doc)
+        if not files:  # a copy stored before it was checked
+            return text_error(503, "slowshield: nuget.org's vulnerability data is unavailable", headers=RETRY_SOON)
         base = f"{self._base(request)}vulnerabilities/"
         out = [
             {**entry, "@id": base + files[entry["@id"]]}
@@ -734,7 +785,7 @@ class NugetService:
         if url is None:
             return text_error(404, "not found")
         try:
-            body = await self._document(url, f"nuget:vuln:{path}", ttl=CATALOG_TTL)
+            body = await self._document(url, f"nuget:vuln:{path}", ttl=CATALOG_TTL, usable=_is_object)
         except UpstreamError:
             return text_error(503, "slowshield: nuget.org's vulnerability data is unavailable", headers=RETRY_SOON)
         if body is None:

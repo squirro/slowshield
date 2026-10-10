@@ -328,6 +328,27 @@ def test_integrity_verifier() -> None:
     assert sha512_bad.problems() == ["sha512 does not match the registry digest"]
 
 
+def test_a_registry_digest_that_changed_since_the_first_download() -> None:
+    from slowshield.ecosystems.artifacts import ArtifactRecord, _digest_changed
+    from slowshield.legacy import LEGACY_DIGEST
+
+    old, new = hashlib.sha512(b"first").digest(), hashlib.sha512(b"signed again").digest()
+    rec = ArtifactRecord("ab" * 32, 10, False, upstream_digest=old.hex())
+    assert _digest_changed(Expected(sha512=old), rec) is None
+    assert "the registry's digest is now" in (_digest_changed(Expected(sha512=new), rec) or "")
+    sha256 = hashlib.sha256(b"first").hexdigest()
+    assert (
+        _digest_changed(Expected(sha256=sha256.upper()), ArtifactRecord("ab" * 32, 10, False, upstream_digest=sha256))
+        is None
+    )
+    # Nothing to compare: no digest now, none recorded, another kind of digest, or an imported legacy record.
+    assert _digest_changed(Expected(), rec) is None
+    assert _digest_changed(Expected(sha512=new), ArtifactRecord("ab" * 32, 10, False)) is None
+    assert _digest_changed(Expected(sha256=sha256), rec) is None
+    legacy = ArtifactRecord("ab" * 32, 10, False, legacy=True, upstream_digest=LEGACY_DIGEST)
+    assert _digest_changed(Expected(sha512=new), legacy) is None
+
+
 # ---- filenames ---------------------------------------------------------------------------------------------
 
 

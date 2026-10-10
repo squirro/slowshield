@@ -3,7 +3,9 @@
 A registration index lists pages of versions (https://learn.microsoft.com/nuget/api/registration-base-url-resource).
 nuget.org inlines the pages of a package with at most 128 versions and links the rest, 64 versions each, as separate
 documents. A snapshot is the index plus every linked page, read together, so the registration, its pages and the flat
-container list (built from the snapshot too) always agree.
+container list (built from the snapshot too) always agree. A snapshot keeps every version's leaf as the JSON
+nuget.org sent, and only the few fields SlowShield judges it by decoded: the largest registrations run past 100 MB
+(Uno.WinUI: 5,451 versions in 86 pages, 115 MB), several times that once decoded.
 
 Rendering removes the held and blocked versions, counts and bounds every page again in NuGet's version order, drops
 pages left empty, and points the URLs a client follows (registration, pages, leaves, package downloads) at SlowShield.
@@ -14,7 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -25,6 +27,8 @@ from slowshield.ecosystems.nuget import version as NV
 
 MAX_DOCUMENT_BYTES = 32 << 20
 MAX_PAGES = 2000  # nuget.org's largest packages have a few hundred pages of 64 versions
+# The index and its linked pages together: a registration beyond this is refused, not loaded.
+MAX_REGISTRATION_BYTES = 256 << 20
 _LEAF_CONTEXT = {
     "@vocab": "http://schema.nuget.org/schema#",
     "xsd": "http://www.w3.org/2001/XMLSchema#",
@@ -39,10 +43,35 @@ class RegistrationError(ValueError):
     """A registration document SlowShield can't use."""
 
 
+class _EntryHead(msgspec.Struct):
+    """The fields of a leaf's `catalogEntry` SlowShield reads; the rest stays encoded."""
+
+    id: Any = None
+    version: Any = None
+    listed: Any = True
+    published: Any = None
+    catalog: Any = msgspec.field(name="@id", default=None)
+
+
+class _LeafHead(msgspec.Struct):
+    catalogEntry: _EntryHead | None = None  # noqa: N815 (nuget.org's name)
+
+
+class _PageDoc(msgspec.Struct):
+    items: list[msgspec.Raw] = []
+    context: Any = msgspec.field(name="@context", default=None)
+
+
+_encode = msgspec.json.Encoder()
+_decode = msgspec.json.Decoder()
+_decode_head = msgspec.json.Decoder(_LeafHead)
+_decode_page = msgspec.json.Decoder(_PageDoc)
+
+
 @dataclass(frozen=True, slots=True)
 class Leaf:
     version: str  # canonical: lower-case normalized
-    doc: dict[str, Any]  # the registration leaf as nuget.org wrote it
+    raw: msgspec.Raw  # the registration leaf as nuget.org wrote it, encoded
     listed: bool
     published: float | None  # as stated; None when missing or unreadable
     published_raw: str
@@ -130,35 +159,36 @@ def _items(doc: Any, what: str) -> list[Any]:
     return items
 
 
-def _leaf(pid: str, doc: Any) -> Leaf | None:
+def _leaf(pid: str, raw: msgspec.Raw) -> Leaf | None:
     """A version of package `pid`, or None for an entry SlowShield won't serve (another package, no readable
     version)."""
-    if not isinstance(doc, dict):
+    try:
+        entry = _decode_head.decode(raw).catalogEntry
+    except msgspec.DecodeError:
         return None
-    entry = doc.get("catalogEntry")
-    if not isinstance(entry, dict):
+    if entry is None:
         return None
-    name, raw_version = entry.get("id"), entry.get("version")
+    name, raw_version = entry.id, entry.version
     if not isinstance(name, str) or name.lower() != pid or not isinstance(raw_version, str):
         return None
     parsed = NV.parse(raw_version)
     if parsed is None:
         return None
-    catalog = entry.get("@id")
-    published = entry.get("published")
+    published = entry.published
     return Leaf(
         parsed.canonical,
-        doc,
-        entry.get("listed", True) is not False,
+        raw,
+        entry.listed is not False,
         parse_time(published),
         published if isinstance(published, str) else "",
-        catalog if isinstance(catalog, str) else None,
+        entry.catalog if isinstance(entry.catalog, str) else None,
         parsed.key,
     )
 
 
-def parse(pid: str, index: Any, pages: dict[str, Any], raw_size: int = 0) -> Snapshot:
-    """The snapshot of package `pid` (lower case) from its registration index and the linked pages, by URL."""
+def parse(pid: str, index: Any, pages: Mapping[str, bytes | msgspec.Raw]) -> Snapshot:
+    """The snapshot of package `pid` (lower case) from its decoded registration index and the linked pages, by URL,
+    as nuget.org sent them."""
     items = _items(index, "registration index")
     out_pages: list[Page] = []
     versions: dict[str, Leaf] = {}
@@ -167,16 +197,20 @@ def parse(pid: str, index: Any, pages: dict[str, Any], raw_size: int = 0) -> Sna
             raise RegistrationError("registration page entry is not an object")
         inlined = "items" in entry
         if inlined:
-            source, context = entry, None
+            raws = [msgspec.Raw(_encode.encode(doc)) for doc in _items(entry, "registration page")]
+            context = None
         else:
             url = entry.get("@id")
             if not isinstance(url, str) or url not in pages:
                 raise RegistrationError(f"registration page missing from the snapshot: {url!r}")
-            source = pages[url]
-            context = source.get("@context") if isinstance(source, dict) else None
+            try:
+                page = _decode_page.decode(pages[url])
+            except msgspec.DecodeError as exc:
+                raise RegistrationError(f"registration page unreadable: {exc}") from exc
+            raws, context = page.items, page.context
         leaves: list[Leaf] = []
-        for doc in _items(source, "registration page"):
-            leaf = _leaf(pid, doc)
+        for raw in raws:
+            leaf = _leaf(pid, raw)
             if leaf is None or leaf.version in versions:
                 continue
             versions[leaf.version] = leaf
@@ -184,10 +218,18 @@ def parse(pid: str, index: Any, pages: dict[str, Any], raw_size: int = 0) -> Sna
         meta = {k: v for k, v in entry.items() if k != "items"}
         out_pages.append(Page(meta, inlined, tuple(leaves), context))
     ordered = dict(sorted(versions.items(), key=lambda kv: kv[1].key))
-    body = msgspec.json.encode([index, sorted(pages.items())])
-    content_id = hashlib.blake2b(body, digest_size=12).hexdigest()
+    index_body = _encode.encode(index)
+    digest = hashlib.blake2b(index_body, digest_size=12)
+    page_bytes = 0
+    for url in sorted(pages):
+        body = pages[url]
+        digest.update(url.encode())
+        digest.update(body)
+        page_bytes += len(body)
     meta_index = {k: v for k, v in index.items() if k != "items"}
-    return Snapshot(pid, meta_index, tuple(out_pages), ordered, content_id, 1024 + 3 * (raw_size or len(body)))
+    # The pages' bytes, the index decoded (a few times its size), and a few hundred bytes per version.
+    weight = 1024 + page_bytes + 4 * len(index_body) + 512 * len(ordered)
+    return Snapshot(pid, meta_index, tuple(out_pages), ordered, digest.hexdigest(), weight)
 
 
 def package_hash(doc: Any, pid: str, version: str) -> tuple[bytes, int | None] | str:
@@ -213,7 +255,7 @@ def package_hash(doc: Any, pid: str, version: str) -> tuple[bytes, int | None] |
 
 
 def _rewrite_leaf(pid: str, leaf: Leaf, urls: Urls) -> dict[str, Any]:
-    doc = dict(leaf.doc)
+    doc = _decode.decode(leaf.raw)
     doc["@id"] = urls.leaf(pid, leaf.version)
     doc["registration"] = urls.index(pid)
     doc["packageContent"] = urls.nupkg(pid, leaf.version)

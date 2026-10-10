@@ -8,6 +8,7 @@ import base64
 import hashlib
 from typing import Any
 
+from slowshield.ecosystems.nuget import registration as R
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
 from slowshield.feeds.osv import OsvFeed
@@ -229,20 +230,35 @@ async def test_bytes_that_do_not_match_the_package_hash_are_refused(running: Run
     assert "sha512 does not match the registry digest" in events[0][3]
 
 
-async def test_a_resigned_package_is_tampering_even_when_the_catalog_hash_matches(running: Running) -> None:
+async def test_a_resigned_package_is_tampering_even_from_the_cache(running: Running) -> None:
     first = await running.client.get(_nupkg("fake.hello", "1.0.0"))
     assert first.status_code == 200
     await running.drain()
-    running.ctx.artifact_cache.enabled = False  # force the next request upstream
+    assert (await running.client.get(_nupkg("fake.hello", "1.0.0"))).headers["x-slowshield-cache"] == "hit"
     running.fake.control("nuget-resign", id="Fake.Hello", version="1.0.0")
     running.clock.advance(7 * 3600)  # past the metadata TTL: the registration names the new catalog leaf
+    # The new packageHash matches nuget.org's new bytes, and the verified old bytes are still cached: the file
+    # changed upstream all the same, so neither is served.
     res = await asgi_get(running.app, _nupkg("fake.hello", "1.0.0"))
     assert res.status == 451 and b"changed upstream" in res.body
     assert (await running.client.get(_nupkg("fake.hello", "1.0.0"))).status_code == 451
+    assert running.fake.hits("/nuget-flat/fake.hello/1.0.0/") == {
+        "/nuget-flat/fake.hello/1.0.0/fake.hello.1.0.0.nupkg": 1
+    }
     await running.drain()
     rows = running.rows("SELECT type, details FROM events WHERE ecosystem = 'nuget' AND type = 'tampered'")
-    assert len(rows) == 1 and '"problems":[]' in rows[0][1].replace(" ", "")  # the new hash matched the new bytes
+    assert len(rows) == 1 and "the registry's digest is now" in rows[0][1]
     assert running.rows("SELECT tampered FROM artifacts WHERE package = 'fake.hello'") == [(1,)]
+    # An operator who finds the change legitimate clears the flag as docs/integrity.md says: the next download
+    # records the new bytes and the new packageHash together, and both are served from then on.
+    await running.ctx.db.writer.run(
+        lambda c: c.execute("UPDATE artifacts SET tampered = 0, sha256 = NULL WHERE package = 'fake.hello'")
+    )
+    again = await running.client.get(_nupkg("fake.hello", "1.0.0"))
+    assert again.status_code == 200 and again.content != first.content
+    await running.drain()
+    hit = await running.client.get(_nupkg("fake.hello", "1.0.0"))
+    assert hit.status_code == 200 and hit.headers["x-slowshield-cache"] == "hit"
 
 
 # ---- spellings -------------------------------------------------------------------------------------------------
@@ -305,6 +321,55 @@ async def test_a_registration_without_a_usable_version_is_an_upstream_failure(ru
     assert r.status_code == 503 and "unusable registration" in r.text
     running.fake.control("fail", prefix="/nuget-reg/fake.deps/", status="0")
     assert await _versions(running, "fake.deps") == ["1.0.0"]
+
+
+async def test_a_registration_too_large_to_load_is_refused(running: Running, monkeypatch: Any) -> None:
+    # Fake.Paged's index and three linked pages are a few KB: room for the index and part of the pages only.
+    monkeypatch.setattr(R, "MAX_REGISTRATION_BYTES", 2500)
+    r = await running.client.get(f"{FLAT}fake.paged/index.json")
+    assert r.status_code == 503 and r.headers["retry-after"] == "10"
+    monkeypatch.undo()
+    assert await _versions(running, "fake.paged") == ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"]
+
+
+async def test_a_stored_snapshot_reads_as_the_one_fetched(running: Running) -> None:
+    fetched = await running.client.get(f"{REG}fake.paged/index.json")
+    page = fetched.json()["items"][1]["@id"].removeprefix("https://slowshield.test")
+    fetched_page = await running.client.get(page)
+    running.ctx.metadata_cache.clear()  # as another worker, or this one after a restart: from the metadata store
+    stored = await running.client.get(f"{REG}fake.paged/index.json")
+    assert stored.content == fetched.content and stored.headers["etag"] == fetched.headers["etag"]
+    assert (await running.client.get(page)).content == fetched_page.content
+    assert len(running.fake.hits("/nuget-reg/fake.paged/index.json")) == 1
+
+
+async def test_unusable_vulnerability_data_is_never_an_empty_feed(running: Running) -> None:
+    # nuget.org answers 200 with something that isn't a vulnerability index: NuGetAudit would read an empty one as
+    # "no advisories".
+    running.fake.control("fail", prefix="/nuget-vuln/", status="200")
+    r = await running.client.get("/nuget/v3/vulnerabilities/index.json")
+    assert r.status_code == 503 and r.headers["retry-after"] == "10"
+    running.fake.control("fail", prefix="/nuget-vuln/", status="0")
+    good = await running.client.get("/nuget/v3/vulnerabilities/index.json")
+    assert good.status_code == 200 and len(good.json()) == 2  # nothing unusable was stored
+    running.clock.advance(7 * 3600)  # past the metadata TTL
+    running.fake.control("fail", prefix="/nuget-vuln/", status="200")
+    stale = await running.client.get("/nuget/v3/vulnerabilities/index.json")
+    assert stale.status_code == 200 and stale.json() == good.json()  # the last usable copy
+    # A file that isn't a map of package ids to advisories is refused, and not stored either.
+    file = good.json()[0]["@id"].removeprefix("https://slowshield.test")
+    running.fake.control("fail", prefix="/nuget-vuln-data/", status="200")
+    assert (await running.client.get(file)).status_code == 503
+    running.fake.control("fail", prefix="/nuget-vuln-data/", status="0")
+    assert (await running.client.get(file)).status_code == 200
+
+
+async def test_an_unusable_catalog_entry_is_not_kept(running: Running) -> None:
+    running.fake.control("fail", prefix="/nuget-catalog/", status="200")
+    r = await running.client.get(_nupkg("fake.paged", "1.0.0"))
+    assert r.status_code == 503 and r.headers["retry-after"] == "10"
+    running.fake.control("fail", prefix="/nuget-catalog/", status="0")
+    assert (await running.client.get(_nupkg("fake.paged", "1.0.0"))).status_code == 200  # not kept for 30 days
 
 
 # ---- publish time ----------------------------------------------------------------------------------------------

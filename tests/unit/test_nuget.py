@@ -372,7 +372,7 @@ def _snapshot() -> R.Snapshot:
         for p in pages[1:]
     }
     assert R.page_urls(index, UP) == list(linked)
-    return R.parse("x.y", index, linked)
+    return R.parse("x.y", index, {url: msgspec.json.encode(page) for url, page in linked.items()})
 
 
 def test_a_snapshot_reads_inlined_and_linked_pages_in_version_order() -> None:
@@ -433,6 +433,9 @@ def test_registration_documents_slowshield_refuses() -> None:
         R.page_urls({"items": [{"@id": f"{UP}../../v3-flatcontainer/x.json"}]}, UP)  # out of the hive
     with pytest.raises(R.RegistrationError):
         R.parse("x.y", {"items": [{"@id": f"{UP}x.y/page/1/2.json"}]}, {})  # a page missing from the snapshot
+    for unreadable in (b"<html>", b'{"items": 3}', b"[]"):
+        with pytest.raises(R.RegistrationError):
+            R.parse("x.y", {"items": [{"@id": f"{UP}x.y/page/1/2.json"}]}, {f"{UP}x.y/page/1/2.json": unreadable})
     with pytest.raises(R.RegistrationError):
         R.page_urls([], UP)
     # Entries for another package, or without a readable version, are left out; a second spelling too.

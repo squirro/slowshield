@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route, Router
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from slowshield import __version__, telemetry
+from slowshield import __version__, telemetry, versions
 from slowshield.blocklist import Blocklist, sync_config_blocks
 from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
@@ -37,6 +37,7 @@ from slowshield.ecosystems.cargo.service import CargoService
 from slowshield.ecosystems.go.service import GoService
 from slowshield.ecosystems.maven.service import MavenService
 from slowshield.ecosystems.npm.service import NpmService
+from slowshield.ecosystems.nuget.service import NugetService
 from slowshield.ecosystems.oci.service import OciService
 from slowshield.ecosystems.pypi.service import PypiService
 from slowshield.feeds import FeedScheduler
@@ -77,6 +78,7 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
     allowed |= {h.lower() for h in raw.upstreams.go.download_hosts}
     cargo = raw.upstreams.cargo
     allowed |= _hosts([cargo.index_url, cargo.download_url]) | {h.lower() for h in cargo.download_hosts}
+    allowed |= _hosts(list(raw.upstreams.nuget.urls().values()))
     if raw.upstreams.oci.enabled:
         for reg in raw.upstreams.oci.all_registries().values():
             allowed |= _hosts([reg.url, reg.times_url or ""]) | {h.lower() for h in reg.download_hosts}
@@ -184,6 +186,7 @@ class SlowShield:
         go = GoService(ctx) if self.cfg.raw.upstreams.go.enabled else None
         maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         cargo = CargoService(ctx) if self.cfg.raw.upstreams.cargo.enabled else None
+        nuget = NugetService(ctx) if self.cfg.raw.upstreams.nuget.enabled else None
         oci = OciService(ctx) if self.cfg.raw.upstreams.oci.enabled else None
         from slowshield.ui import UI
 
@@ -191,7 +194,7 @@ class SlowShield:
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
-            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, oci=oci, ui=ui)
+            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, nuget=nuget, oci=oci, ui=ui)
         )
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
@@ -210,6 +213,7 @@ class SlowShield:
                 "go": bool(go),
                 "maven": bool(maven),
                 "cargo": bool(cargo),
+                "nuget": bool(nuget),
                 "oci": bool(oci),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
@@ -412,6 +416,7 @@ class SlowShield:
         go: GoService | None,
         maven: MavenService | None,
         cargo: CargoService | None,
+        nuget: NugetService | None,
         oci: OciService | None,
         ui: Any,
     ) -> ASGIApp:
@@ -432,6 +437,8 @@ class SlowShield:
             main.append(Mount("/maven", app=maven))
         if cargo is not None:
             main.append(Mount("/cargo", app=cargo))
+        if nuget is not None:
+            main.append(Mount("/nuget", app=nuget))
         if oci is not None:
             main.append(Mount("/v2", app=oci))  # the OCI distribution API is mandated at the root
         if raw.shieldwall.role == "leader" and self._identity is not None:
@@ -623,6 +630,8 @@ def _route_label(path: str) -> str:
         if path.startswith("/cargo/crates/"):
             return "/cargo/crates/{crate}/{version}/download"
         return "/cargo/config.json" if path == "/cargo/config.json" else "/cargo/{index_file}"
+    if path.startswith("/nuget/"):
+        return _nuget_label(path)
     if path.startswith("/go/"):
         if path.endswith("/@v/list"):
             return "/go/{module}/@v/list"
@@ -637,6 +646,27 @@ def _route_label(path: str) -> str:
     return "/{package}"
 
 
+def _nuget_label(path: str) -> str:
+    rest = path.removeprefix("/nuget/v3/")
+    if rest == path:
+        return "/nuget/{path}"
+    if rest in ("index.json", "query", "vulnerabilities/index.json"):
+        return f"/nuget/v3/{rest}"
+    if rest.startswith("flatcontainer/"):
+        if rest.endswith("/index.json"):
+            return "/nuget/v3/flatcontainer/{id}/index.json"
+        return "/nuget/v3/flatcontainer/{id}/{version}/{file}"
+    if rest.startswith("registration/"):
+        if rest.endswith("/index.json"):
+            return "/nuget/v3/registration/{id}/index.json"
+        if "/page/" in rest:
+            return "/nuget/v3/registration/{id}/page/{lower}/{upper}.json"
+        return "/nuget/v3/registration/{id}/{version}.json"
+    if rest.startswith("vulnerabilities/"):
+        return "/nuget/v3/vulnerabilities/{file}"
+    return "/nuget/v3/{path}"
+
+
 async def sync_blocks(ctx: AppContext) -> None:
     """Write config.toml's [[blocks]] to the blocklist (rows with `source = 'config'`)."""
     now = ctx.clock.now()
@@ -646,9 +676,13 @@ async def sync_blocks(ctx: AppContext) -> None:
         n = normalize(b.ecosystem, b.package)
         return oci.canonical(n) if b.ecosystem == "oci" else n
 
-    rules = [
-        (b.ecosystem, name(b), b.version.strip() if b.version else None, b.reason, b.url) for b in ctx.cfg.raw.blocks
-    ]
+    def version(b: BlockRule) -> str | None:
+        if not b.version:
+            return None
+        # NuGet keys are normalized versions (1.0 is 1.0.0); the others are kept as written.
+        return versions.canonical("nuget", b.version) if b.ecosystem == "nuget" else b.version.strip()
+
+    rules = [(b.ecosystem, name(b), version(b), b.reason, b.url) for b in ctx.cfg.raw.blocks]
     changed = await ctx.db.writer.run(lambda c: sync_config_blocks(c, rules, now))
     if changed:
         ctx.blocklist.refresh_generation(force=True)

@@ -82,7 +82,7 @@ def policy_body(cfg: LoadedConfig) -> dict[str, Any]:
         "enforce_age_on_download": raw.enforce_age_on_download,
         "fail_open_by_ecosystem": {
             eco: getattr(raw.upstreams, eco).fail_open
-            for eco in ("pypi", "npm", "go", "maven", "cargo", "oci")
+            for eco in ECOSYSTEMS
             if getattr(raw.upstreams, eco).fail_open is not None
         },
         "exceptions": [

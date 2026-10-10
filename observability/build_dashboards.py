@@ -36,6 +36,7 @@ C = {
     "go": "#00add8",
     "maven": "#ed8b00",
     "cargo": "#dea584",
+    "nuget": "#178600",
     "oci": "#1d63ed",
 }
 DECISION_COLORS = {
@@ -472,7 +473,7 @@ def dashboard(
 
 
 INSTANCE_VAR = query_var("instance", "Instance", "label_values(slowshield_build_info, instance)")
-ECOSYSTEMS = ("pypi", "npm", "go", "maven", "cargo", "oci")
+ECOSYSTEMS = ("pypi", "npm", "go", "maven", "cargo", "nuget", "oci")
 ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", list(ECOSYSTEMS))
 
 

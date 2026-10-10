@@ -1,14 +1,14 @@
 # Integrity & tamper detection
 
-Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`, container
-image manifest and blob) is checked on the way through:
+Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`, `.nupkg`,
+container image manifest and blob) is checked on the way through:
 
-| Check | PyPI | npm | Go | Maven | Cargo |
-|---|---|---|---|---|---|
-| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) | Central's `x-checksum-sha1` header; the `.sha1` file (Google, operator repositories); the sha256 in the Plugin Portal's redirect path | the index line's `cksum` (sha256) |
-| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — | — | — |
-| Size | `size` from the index | `Content-Length` | `Content-Length` | `Content-Length` | `Content-Length` |
-| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same | same | same |
+| Check | PyPI | npm | Go | Maven | Cargo | NuGet |
+|---|---|---|---|---|---|---|
+| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) | Central's `x-checksum-sha1` header; the `.sha1` file (Google, operator repositories); the sha256 in the Plugin Portal's redirect path | the index line's `cksum` (sha256) | the catalog leaf's `packageHash` (base64 sha512), the leaf the registration names |
+| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — | — | — | — |
+| Size | `size` from the index | `Content-Length` | `Content-Length` | `Content-Length` | `Content-Length` | the catalog's `packageSize` |
+| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same | same | same | same |
 
 The Go checksum lookup is cached and answers the go command's own lookup of the same version, so it costs no
 extra request. It also protects clients that set `GOSUMDB=off`.
@@ -26,6 +26,12 @@ install fails), the temp file is discarded and an event is recorded:
   Filenames on PyPI, `name@version` on npm and crates.io, and module versions in Go are immutable, so this is
   definitive: the
   artifact is marked and every later request gets `451 tamper_detected` until an operator investigates.
+  A NuGet package that nuget.org signs again counts too: its new bytes match the new `packageHash`, but not the
+  first fingerprint. SlowShield never changes a `.nupkg`, so its repository signature stays valid
+  ([design/nuget.md](design/nuget.md)).
+* A registry digest that changed since the first download (npm's `dist.integrity`, NuGet's `packageHash`, the
+  sha256 on PyPI and crates.io) is `tampered` too, before anything is fetched, and the cached copy of the first
+  bytes isn't served.
 
 Upstream error responses (non-2xx) are never hashed.
 
@@ -56,4 +62,4 @@ cache is capped (`cache.artifacts_max_gb`) with least-recently-used eviction; ev
 2. Compare with the registry's published digest and the project's release notes / advisories.
 3. If the change is legitimate (extremely rare), clear the flag for that path:
    `UPDATE artifacts SET tampered = 0, sha256 = NULL WHERE path = '<path>';`
-   The next download records a new fingerprint.
+   The next download records a new fingerprint, and the registry digest with it.

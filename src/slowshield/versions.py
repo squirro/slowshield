@@ -1,5 +1,5 @@
-"""Version parsing/ordering for PyPI (PEP 440), npm, Go and Cargo (SemVer 2.0), Maven (ComparableVersion), plus
-advisory range matching.
+"""Version parsing/ordering for PyPI (PEP 440), npm, Go and Cargo (SemVer 2.0), Maven (ComparableVersion), NuGet
+(NuGet.Versioning), plus advisory range matching.
 
 Ranges use the comma-separated comparator form shared by GitHub advisories and our blocklist table,
 e.g. ``">= 1.0.0, < 1.4.2"`` or ``"= 0.30.4"``. Each comma part must hold (logical AND).
@@ -15,6 +15,7 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from slowshield.ecosystems.maven import version as maven
+from slowshield.ecosystems.nuget import version as nuget
 
 _SEMVER = re.compile(
     r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -85,6 +86,9 @@ def canonical(ecosystem: str, version: str) -> str:
     if ecosystem == "maven":
         # Maven treats 1.0, 1.0.0 and 1-ga as the same version, so an advisory for one names all of them.
         return maven.canonical(version)
+    if ecosystem == "nuget":
+        # NuGet's normalized form, lower case: 1.0, 1.0.0.0 and 1.0.0+abc are 1.0.0, and 1.0.0-BETA is 1.0.0-beta.
+        return nuget.canonical(version) or version.strip().lower()
     if not parse_semver(version):
         return version.strip()
     out = version.strip().removeprefix("v")
@@ -101,6 +105,9 @@ def sort_key(ecosystem: str, version: str) -> tuple[int, Any]:
         return (1, v) if v is not None else (0, version)
     if ecosystem == "maven":
         return (1, maven.parse(version))  # every string is a Maven version
+    if ecosystem == "nuget":
+        n = nuget.parse(version)
+        return (1, n.key) if n is not None else (0, version)
     s = parse_semver(version)
     return (1, s.key) if s is not None else (0, version)
 
@@ -111,6 +118,9 @@ def is_prerelease(ecosystem: str, version: str) -> bool:
         return bool(v and (v.is_prerelease or v.is_devrelease))
     if ecosystem == "maven":
         return maven.is_snapshot(version)  # Maven's "release" is anything but a snapshot
+    if ecosystem == "nuget":
+        n = nuget.parse(version)
+        return bool(n and n.is_prerelease)
     s = parse_semver(version)
     return bool(s and s.is_prerelease)
 
@@ -123,6 +133,8 @@ def _cmp(ecosystem: str, a: str, b: str) -> int | None:
         return (pa > pb) - (pa < pb)
     if ecosystem == "maven":
         return maven.compare(a, b)
+    if ecosystem == "nuget":
+        return nuget.compare(a, b)
     sa, sb = parse_semver(a), parse_semver(b)
     if sa is None or sb is None:
         return None

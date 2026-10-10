@@ -162,6 +162,12 @@ The follower's effective policy (`shieldwall/policy.py`):
 The result replaces the config like a reload, so cached evaluations are dropped. The Shield wall page lists each
 policy key three times: as this instance sets it, as the leader sets it, and what applies.
 
+A leader can be newer than its followers and support an ecosystem they don't, as NuGet was at first. A follower
+skips the bundle's settings for an ecosystem it doesn't know (its per-ecosystem `fail_open` and its exceptions),
+logs a warning that names it, and applies the rest. The follower doesn't serve that ecosystem, so its own policy
+for it stays as it was. Changes for such an ecosystem (blocks, tamper flags, listing times) are skipped the same
+way, one by one, with a warning.
+
 ### Data
 
 The leader logs a change (a row in `shieldwall_changes`, moved to a new sequence number on every change) whenever
@@ -177,7 +183,7 @@ everything that exists. A follower asks for changes after its cursor, up to 500 
 | Takedowns (`oci_digests.gone`) | the earliest wins | tightens |
 | Tamper flags (`artifacts.tampered`) | set on the follower, with a `tampered` event; never cleared by the leader | tightens |
 | OCI tag history (`oci_tags`) | `first_seen` = the earlier of the follower's and the credited time | loosens |
-| Maven and Cargo `first_listed` | the earlier of the follower's and the credited time | loosens |
+| Maven, Cargo and NuGet `first_listed` | the earlier of the follower's and the credited time | loosens |
 | `oci_since` | at pairing only: the earlier of both, so a new follower skips the fail-open window the leader is past | loosens (bootstrap) |
 | Registry times (PyPI, npm, Go, Maven files, OCI `registry_time`) | not sent: the follower reads them from the registry itself | |
 

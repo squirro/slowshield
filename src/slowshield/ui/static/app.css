@@ -24,6 +24,7 @@
   --go: #00add8;
   --maven: #ed8b00; /* Java orange: Maven's own red is almost npm's */
   --cargo: #dea584; /* GitHub's Rust colour: Rust's own logo is black */
+  --nuget: #178600; /* GitHub's C# colour: NuGet's own blue is almost Docker's */
   --oci: #1d63ed; /* Docker blue: OCI has no colour of its own */
   --grid: #eaedf6;
   --radius: 10px;
@@ -153,6 +154,7 @@ tr.withdrawn { opacity: 0.55; }
 .eco-go { background: var(--go); color: #000; } /* white on Gopher Blue is unreadable; Go's brand pairs it with black */
 .eco-maven { background: var(--maven); color: #000; }
 .eco-cargo { background: var(--cargo); color: #000; }
+.eco-nuget { background: var(--nuget); }
 .eco-oci { background: var(--oci); }
 .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ev-blocked, .st-blocked, .st-taken_down, .feed-badge-error { background: var(--danger-soft); color: var(--danger); }
@@ -246,6 +248,7 @@ code.ver[title] { white-space: nowrap; cursor: help; }
 .s-go { fill: var(--go); background: var(--go); }
 .s-maven { fill: var(--maven); background: var(--maven); }
 .s-cargo { fill: var(--cargo); background: var(--cargo); }
+.s-nuget { fill: var(--nuget); background: var(--nuget); }
 .s-oci { fill: var(--oci); background: var(--oci); }
 .s-pkg { fill: var(--primary); background: var(--primary); }
 .s-served { fill: var(--primary); background: var(--primary); } .s-fail_open { fill: var(--hold-bright); background: var(--hold-bright); }

@@ -162,7 +162,8 @@ def test_bundle_rejects_nonsense() -> None:
     for bad in (
         {"default_delay_days": float("nan")},
         {"default_delay_days": -1},
-        {"fail_open_by_ecosystem": {"cobol": True}},
+        {"fail_open_by_ecosystem": {"npm": "yes"}},
+        {"exceptions": [{"ecosystem": 7, "package": "x", "delay_days": 1}]},
         {"exceptions": [{"ecosystem": "npm", "package": "x", "delay_days": 1e9}]},
         {"version": 0},
         {"fail_open": "yes"},
@@ -281,6 +282,35 @@ def test_acknowledgements_never_reach_past_what_was_sent(
     # A proper acknowledgement deletes what it names.
     apply_sync(conn, _cfg(), {"ack": 2, "head": 0}, NOW, sent=3, me="sme")
     assert outbox() == [3] and last_error() is None
+
+
+def test_a_policy_for_an_unknown_ecosystem_applies_the_rest(
+    conn: sqlite3.Connection, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A newer leader sends settings for an ecosystem this follower doesn't know: those are skipped with a warning,
+    the follower keeps its own policy for it, and everything else applies."""
+    from slowshield.shieldwall.apply import apply_sync
+
+    conn.execute(
+        "INSERT INTO shieldwall_leader (id, leader_id, url, pubkey, join_token, state, discovered) "
+        "VALUES (1, 'sl', 'https://hq.test', x'00', 't', 'active', 0)"
+    )
+    policy = {
+        "version": 3, "default_delay_days": 9, "fail_open": True, "enforce_age_on_download": True,
+        "fail_open_by_ecosystem": {"cobol": True, "maven": False},
+        "exceptions": [{"ecosystem": "cobol", "package": "ledger", "delay_days": 0},
+                       {"ecosystem": "npm", "package": "risky", "delay_days": 30}],
+    }  # fmt: skip
+    with caplog.at_level("WARNING", logger="slowshield.shieldwall.policy"):
+        apply_sync(conn, _cfg(), {"ack": 0, "head": 0, "policy": policy}, NOW, sent=0, me="sme")
+    [warning] = [r for r in caplog.records if "doesn't know" in r.getMessage()]
+    assert warning.levelname == "WARNING" and warning.__dict__["ecosystems"] == ["cobol"]
+    version, stored, error = conn.execute("SELECT policy_version, policy, last_error FROM shieldwall_leader").fetchone()
+    assert (version, error) == (3, None)
+    eff = effective(_cfg(), Bundle.from_json(stored))
+    assert eff.raw.default_delay_days == 9 and eff.raw.enforce_age_on_download is True
+    assert eff.delay_days_for("npm", "risky") == 30
+    assert eff.fail_open_for("maven") is False and eff.fail_open_for("npm") is True
 
 
 def test_malformed_fingerprints_are_ignored() -> None:

@@ -15,6 +15,7 @@ A bundle that loosens what applies now (`loosens`) waits out a hold-down; meanwh
 from __future__ import annotations
 
 import dataclasses
+import logging
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,8 @@ from typing import Any
 import msgspec
 
 from slowshield.config import ECOSYSTEMS, ExceptionRule, LoadedConfig, OciUpstream, rule_tables
+
+log = logging.getLogger(__name__)
 
 POLICY_HOLD = 3600.0  # seconds a loosening policy waits before it applies
 MAX_DELAY_DAYS = 3650.0
@@ -42,7 +45,9 @@ class Bundle(msgspec.Struct, forbid_unknown_fields=False):
 
     @classmethod
     def parse(cls, doc: Any) -> Bundle:
-        """A bundle from the leader, checked: a signed bundle can still carry nonsense."""
+        """A bundle from the leader, checked: a signed bundle can still carry nonsense. Settings for an ecosystem
+        this instance doesn't know (a newer leader's) are skipped with a warning; the rest applies."""
+        doc, unknown = _known_ecosystems_only(doc)
         try:
             b = msgspec.convert(doc, cls, strict=True)
         except msgspec.ValidationError as exc:
@@ -50,10 +55,14 @@ class Bundle(msgspec.Struct, forbid_unknown_fields=False):
         delays = [b.default_delay_days, *(e.delay_days for e in b.exceptions)]
         if not all(math.isfinite(d) and 0 <= d <= MAX_DELAY_DAYS for d in delays):
             raise BundleError("policy delay out of range")
-        if not set(b.fail_open_by_ecosystem) <= set(ECOSYSTEMS):
-            raise BundleError("policy names an unknown ecosystem")
         if len(b.exceptions) > 10_000 or b.version < 1:
             raise BundleError("policy out of bounds")
+        if unknown:
+            log.warning(
+                "the leader's policy has settings for an ecosystem this instance doesn't know: skipped, the rest "
+                "applies",
+                extra={"ecosystems": unknown},
+            )
         return b
 
     def to_json(self) -> str:
@@ -65,6 +74,28 @@ class Bundle(msgspec.Struct, forbid_unknown_fields=False):
 
     def fail_open_for(self, eco: str) -> bool:
         return self.fail_open_by_ecosystem.get(eco, self.fail_open)
+
+
+def _known_ecosystems_only(doc: Any) -> tuple[Any, list[str]]:
+    """The bundle without the per-ecosystem `fail_open` and the exceptions of ecosystems this instance doesn't know,
+    and those ecosystems' names (shortened, at most 20). Anything else is left for `Bundle.parse` to check."""
+    if not isinstance(doc, dict):
+        return doc, []
+    doc, unknown = dict(doc), set()
+    per_eco = doc.get("fail_open_by_ecosystem")
+    if isinstance(per_eco, dict):
+        unknown |= {k for k in per_eco if k not in ECOSYSTEMS}
+        doc["fail_open_by_ecosystem"] = {k: v for k, v in per_eco.items() if k in ECOSYSTEMS}
+    rules = doc.get("exceptions")
+    if isinstance(rules, list):
+
+        def foreign(rule: Any) -> bool:
+            eco = rule.get("ecosystem") if isinstance(rule, dict) else None
+            return isinstance(eco, str) and eco not in ECOSYSTEMS
+
+        unknown |= {r["ecosystem"] for r in rules if foreign(r)}
+        doc["exceptions"] = [r for r in rules if not foreign(r)]
+    return doc, sorted(str(e)[:40] for e in unknown)[:20]
 
 
 @dataclass(slots=True)

@@ -14,6 +14,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ Go service    (ecosystems/go)    ─┤                      └─ config exceptions
    │               ├─ Maven service (ecosystems/maven) ─┤
    │               ├─ Cargo service (ecosystems/cargo) ─┤
+   │               ├─ NuGet service (ecosystems/nuget) ─┤
    │               ├─ OCI service   (ecosystems/oci)   ─┤   container images at /v2/
    │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)
@@ -88,6 +89,22 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
    the artifact server fetches `<download_url>/<exact name>/<version>/download`, checked against the line's `cksum`
    and the first-seen fingerprint.
 
+## Request flow: NuGet
+
+`/nuget/v3/index.json` is a service index SlowShield writes itself, listing only what it serves
+([design/nuget.md](design/nuget.md)).
+
+1. Blocklist hit for the whole package → `451`.
+2. The package's snapshot: from memory, the shared metadata cache, or `GET <registration_url><id>/index.json`
+   (`If-None-Match` once known) plus every page that isn't inlined. Each version's `published` is its publish
+   time; the first plausible one is kept, and a version that never had one (unlisted: 1900-01-01) is timed from
+   when SlowShield first listed it.
+3. The flat container list, the registration index and pages, and search results come from that snapshot without
+   the too-new and blocked versions; pages are counted and bounded again, empty ones dropped.
+4. `flatcontainer/<id>/<version>/<id>.<version>.nupkg`: version block → `451`, too new → `425` with
+   `Retry-After`, else the catalog leaf gives the `packageHash`, and the artifact server fetches the file from
+   `<flat_container_url>`, checked against it and the first-seen fingerprint.
+
 ## Request flow: container images
 
 `/v2/` serves the OCI distribution API for pulls ([design/oci.md](design/oci.md)).
@@ -108,7 +125,7 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 ## Integrity
 
 Artifacts are streamed to the client while sha256 (always), blake2b-256 (PyPI path), sha512 / sha1
-(npm `dist.integrity` / `shasum`) are computed and the bytes are teed to `/data/cache/tmp`. A Go zip's `h1:` covers
+(npm `dist.integrity` / `shasum`, NuGet `packageHash`) are computed and the bytes are teed to `/data/cache/tmp`. A Go zip's `h1:` covers
 the files inside it, so it is computed from the temp file once the body is complete. The last
 chunk is withheld until all digests match the registry's published values and the first-seen
 fingerprint; on a mismatch the response is aborted and the event recorded. Verified bodies are

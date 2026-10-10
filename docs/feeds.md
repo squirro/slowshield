@@ -5,8 +5,8 @@ your SCA tool's job). They run on the leader worker every `feeds.poll_interval_m
 
 | Feed | Source | Token | Sync |
 |---|---|---|---|
-| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go, Maven and crates.io, plus RustSec's malware advisories | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` (and `RUSTSEC-*`) documents |
-| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven|rust>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
+| `osv` | OSV.dev bucket, OpenSSF `MAL-*` advisories for PyPI, npm, Go, Maven, crates.io and NuGet, plus RustSec's malware advisories | none | first run downloads `<eco>/all.zip`; afterwards reads the head of `<eco>/modified_id.csv` until the stored watermark and fetches only changed `MAL-*` (and `RUSTSEC-*`) documents |
+| `github` | GitHub Advisory Database REST API, `type=malware` | `GITHUB_TOKEN` | `GET /advisories?type=malware&ecosystem=<pip|npm|go|maven|rust|nuget>&sort=updated&direction=asc&updated=>=<watermark>` with cursor pagination; withdrawn advisories fetched separately |
 
 No feed covers container images: OSV and GitHub have no container ecosystem. Operator blocks (`[[blocks]]` in
 config.toml, [configuration.md](configuration.md#operator-blocks)) fill that gap, and for any ecosystem the time
@@ -25,6 +25,8 @@ when they leave the file.
   `introduced: 0.0.0-0` without an end blocks the whole crate; an open range from a later version is skipped,
   because the versions published after crates.io removed the bad ones are not malware
   ([design/cargo.md](design/cargo.md)).
+* NuGet versions are matched in NuGet's normalized form: an advisory for `1.0` also blocks `1.0.0` and `1.0.0.0`, and
+  exact versions are stored that way ([design/nuget.md](design/nuget.md)).
 * Withdrawn advisories lift their blocks (rows are kept, marked withdrawn, for the audit trail).
 
 ## Missing token → feed off, loudly

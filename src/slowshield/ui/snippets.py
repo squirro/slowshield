@@ -76,8 +76,12 @@ def slug(name: str) -> str:
 
 
 def docs_url(ecosystem: str, tool: str = "") -> str:
-    """The guide page for `ecosystem` on slowshield.org, at `tool`'s section if given."""
-    url = f"{DOCS}{DOCS_PAGES[ecosystem]}/"
+    """The guide page for `ecosystem` on slowshield.org, at `tool`'s section if given; the guide's start page for an
+    ecosystem it has no page for yet (NuGet)."""
+    page = DOCS_PAGES.get(ecosystem)
+    if page is None:
+        return DOCS
+    url = f"{DOCS}{page}/"
     return f"{url}#{slug(tool)}" if tool else url
 
 
@@ -138,21 +142,23 @@ NO_AGE = {
 NO_AGE_DEFAULT = "No release-age setting of its own: SlowShield is the only layer."
 
 
-def tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int = CLIENT_AGE_DAYS) -> tuple[Tool, ...]:
+def tools(
+    pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int = CLIENT_AGE_DAYS
+) -> tuple[Tool, ...]:
     """Per-tool setup (Setup page only), with this instance's URLs and, unless `age_days` is 0, each tool's own
     release age. `maven` is the base of the Maven repositories (`<public_url>/maven`), `cargo` the sparse index
-    (`<public_url>/cargo/`)."""
+    (`<public_url>/cargo/`), `nuget` the service index (`<public_url>/nuget/v3/index.json`)."""
     urls = (safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo))
     if age_days <= 0:
-        return _tools(*urls, age_days=0)
-    aged = _tools(*urls, age_days=age_days)
+        return _tools(*urls, nuget=safe(nuget), age_days=0)
+    aged = _tools(*urls, nuget=safe(nuget), age_days=age_days)
     return tuple(
         Tool(t.name, t.ecosystem, t.keywords, t.snippets, AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT))
         for t in aged
     )
 
 
-def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: int) -> tuple[Tool, ...]:
+def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int) -> tuple[Tool, ...]:
     # Units differ per tool: npm's min-release-age and Poetry's solver.min-release-age count days (npm 11.10 to 12.1:
     # `before = now - 86400000 * min-release-age`), pnpm's minimumReleaseAge minutes, Bun's seconds; pip, uv, Yarn and
     # PDM take a duration (P3D, 3d).
@@ -301,7 +307,19 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, age_days: in
                 ("CI and Dockerfiles (appends to $CARGO_HOME/config.toml)", cargo_command(cargo)),
             ),
         ),
-    )
+        Tool(
+            "NuGet",
+            "nuget",
+            "nuget dotnet .net c# csharp nuget.config msbuild packagereference visual studio rider paket",
+            (
+                ("~/.nuget/NuGet/NuGet.Config (Windows: %AppData%\\NuGet\\NuGet.Config), or next to a solution",
+                 nuget_config(nuget)),
+                ("CI and Dockerfiles (replaces ~/.nuget/NuGet/NuGet.Config)", nuget_command(nuget)),
+                ("Directory.Build.props next to the solution: fail the build when a held version is skipped (NU1603)",
+                 NUGET_FAIL_ON_SKIPPED),
+            ),
+        ),
+    )  # fmt: skip
 
 
 def oci_tools(base: str, registries: tuple[str, ...], *, age_days: int = CLIENT_AGE_DAYS) -> tuple[Tool, ...]:
@@ -403,6 +421,47 @@ def cargo_command(cargo: str) -> str:
         + " ".join(f"'{line}'" for line in lines)
         + ' >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"'
     )
+
+
+def _nuget_lines(nuget: str) -> tuple[str, ...]:
+    insecure = ' allowInsecureConnections="true"' if nuget.startswith("http://") else ""
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>',
+        "<configuration>",
+        "  <packageSources>",
+        "    <clear />",
+        f'    <add key="nuget.org" value="{nuget}" protocolVersion="3"{insecure} />',
+        "  </packageSources>",
+        "</configuration>",
+    )
+
+
+def nuget_config(nuget: str) -> str:
+    """NuGet.Config with SlowShield as the only source. `<clear/>` is required: NuGet asks every enabled source, so an
+    enabled nuget.org would bypass SlowShield. The source keeps the name nuget.org, so packageSourceMapping entries
+    that name it still match. Plain HTTP needs allowInsecureConnections (NU1302 otherwise)."""
+    lines = list(_nuget_lines(nuget))
+    lines.insert(3, "    <!-- required: NuGet asks every enabled source, so nuget.org would go around SlowShield -->")
+    return "\n".join(lines)
+
+
+def nuget_command(nuget: str) -> str:
+    """`nuget_config` as one shell command for CI and images: dotnet can't set `<clear/>` from the command line."""
+    return (
+        "mkdir -p \"$HOME/.nuget/NuGet\" && printf '%s\\n' "
+        + " ".join(f"'{line}'" for line in _nuget_lines(nuget))
+        + ' > "$HOME/.nuget/NuGet/NuGet.Config"'
+    )
+
+
+# A PackageReference to a held version restores the next version up, with only warning NU1603. Failing the build on it
+# keeps a held version from being replaced silently. TreatWarningsAsErrors does the same for every warning.
+NUGET_FAIL_ON_SKIPPED = """<Project>
+  <PropertyGroup>
+    <!-- NU1603: a held version was skipped and a higher one restored. TreatWarningsAsErrors works too. -->
+    <WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>
+  </PropertyGroup>
+</Project>"""
 
 
 def gradle_init(maven: str) -> str:

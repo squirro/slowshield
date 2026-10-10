@@ -143,6 +143,17 @@ def _tamper_response(req: ArtifactRequest) -> Response:
     )
 
 
+def _digest_changed(expected: Expected, rec: ArtifactRecord) -> str | None:
+    """How the registry's digest for a file differs from the one it stated when this instance first served it, or
+    None. A file's path names one file for good, so a new digest means it changed upstream: tampering, whether a
+    verified copy is cached or not."""
+    now = expected.sha256 or (expected.sha512.hex() if expected.sha512 else None)
+    before = rec.upstream_digest
+    if not now or not before or rec.legacy or len(now) != len(before) or now.lower() == before.lower():
+        return None
+    return f"the registry's digest is now {now[:16]}…, not {before[:16]}… as when first served"
+
+
 class ArtifactServer:
     def __init__(
         self,
@@ -204,6 +215,10 @@ class ArtifactServer:
             )
         if rec is not None and rec.sha256:
             req.expected.tofu_sha256 = rec.sha256
+            changed = _digest_changed(req.expected, rec)
+            if changed is not None:
+                await self._tamper(req, None, client_ip, [changed])
+                return _tamper_response(req)
 
         cached = None
         for store in self.stores.values():
@@ -328,7 +343,7 @@ class ArtifactServer:
                     # Imported fingerprint from the Rust version may be an error page's hash.
                     await self._correct_legacy(req, verifier)
                 else:
-                    await self._tamper(req, verifier, client_ip, problems)
+                    await self._tamper(req, verifier.sha256, client_ip, problems)
                     raise IntegrityAbort(req.key, _tamper_response(req))
             if problems:
                 if via is not None:
@@ -342,7 +357,7 @@ class ArtifactServer:
             if stored is not None and stored != verifier.sha256:
                 # Someone else stored different bytes for the same artifact a moment ago.
                 req.expected.tofu_sha256 = stored
-                await self._tamper(req, verifier, client_ip, ["concurrent first fetch saw different bytes"])
+                await self._tamper(req, verifier.sha256, client_ip, ["concurrent first fetch saw different bytes"])
                 raise IntegrityAbort(req.key, _tamper_response(req))
             state["verified"] = True
             if pending is not None:
@@ -396,7 +411,8 @@ class ArtifactServer:
             await (target or self.cache).commit(tee, verifier.sha256, content_type)
 
     async def _remember(self, req: ArtifactRequest, verifier: StreamVerifier) -> str | None:
-        """Insert-or-keep the TOFU digest; returns the digest now on record."""
+        """Insert-or-keep the TOFU digest, and with a new one the registry digest it was checked against (an operator
+        clears a tamper flag by clearing `sha256`); returns the TOFU digest now on record."""
         now = self.clock.now()
         sha = verifier.sha256
         e = req.expected
@@ -411,7 +427,9 @@ class ArtifactServer:
                 "first_seen, last_seen, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (ecosystem, path) DO UPDATE SET last_seen = excluded.last_seen, "
                 "sha256 = coalesce(artifacts.sha256, excluded.sha256), size = coalesce(artifacts.size, excluded.size), "
-                "upstream_digest = coalesce(artifacts.upstream_digest, excluded.upstream_digest), "
+                "upstream_digest = CASE WHEN artifacts.sha256 IS NULL "
+                "THEN coalesce(excluded.upstream_digest, artifacts.upstream_digest) "
+                "ELSE coalesce(artifacts.upstream_digest, excluded.upstream_digest) END, "
                 "published = coalesce(artifacts.published, excluded.published)",
                 (
                     req.ecosystem,
@@ -461,7 +479,7 @@ class ArtifactServer:
         req.expected.tofu_sha256 = sha
 
     async def _tamper(
-        self, req: ArtifactRequest, verifier: StreamVerifier, client_ip: str | None, problems: list[str]
+        self, req: ArtifactRequest, observed_sha256: str | None, client_ip: str | None, problems: list[str]
     ) -> None:
         stored = req.expected.tofu_sha256
 
@@ -482,7 +500,7 @@ class ArtifactServer:
             details={
                 "artifact": req.key,
                 "stored_sha256": stored,
-                "observed_sha256": verifier.sha256,
+                "observed_sha256": observed_sha256,
                 "problems": problems,
             },
         )

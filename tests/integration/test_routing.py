@@ -144,6 +144,7 @@ async def test_setup_page_shows_path_urls_and_the_deprecation(start_app) -> None
 async def test_crafted_host_never_reaches_snippets_or_tarballs(start_app, host: str) -> None:
     run = await start_app('local_http = true\npublic_url = "https://localhost"\n', host="localhost:8080")
     page = (await run.client.get("/ui/setup", headers={"Host": host})).text
+    page = page.replace("$(WarningsAsErrors)", "")  # the MSBuild property in the NuGet Directory.Build.props
     assert "$(" not in page and "80;id" not in page  # (the settings.xml snippet's escaped <id> contains ";id")
     assert "export PIP_INDEX_URL=http://localhost/pypi/simple/" in page  # from public_url, never the Host header
     doc = (await run.client.get("/npm/left-pad-ng", headers={"Host": host})).json()
@@ -169,6 +170,7 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "sbt",
         "Coursier",
         "Cargo",
+        "NuGet",
         "containerd",
         "Docker",
         "Podman",
@@ -189,6 +191,8 @@ async def test_setup_page_tool_finder(start_app) -> None:
         in page
     )
     assert "allowInsecureProtocol" not in page and "maven-default-http-blocker" not in page  # HTTPS instance
+    assert "value=&#34;https://slowshield.example.com/nuget/v3/index.json&#34;" in page
+    assert "allowInsecureConnections" not in page
     # Containers: containerd and Docker's containerd store get SlowShield as the `server`, so they never fall back.
     assert page.count("server = &#34;https://slowshield.example.com&#34;\ncapabilities = [&#34;pull&#34;") == 2
     assert "prefix = &#34;quay.io&#34;\nlocation = &#34;slowshield.example.com/quay.io&#34;" in page

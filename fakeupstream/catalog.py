@@ -214,6 +214,45 @@ def make_crate(name: str, version: str, deps: tuple[tuple[str, str], ...] = ()) 
     return _targz({f"{stem}/Cargo.toml": manifest.encode(), f"{stem}/src/lib.rs": lib.encode()})
 
 
+def make_nupkg(pid: str, version: str, deps: tuple[tuple[str, str], ...] = (), *, note: str = "") -> bytes:
+    """A .nupkg `dotnet restore` accepts: a zip with `<id>.nuspec` at the root, the OPC parts NuGet writes, and an empty
+    `lib/netstandard2.0/_._`, so any target framework can use it. `note` changes the bytes (a re-signed package)."""
+    deps_xml = ""
+    if deps:
+        items = "".join(f'<dependency id="{d}" version="{r}" exclude="Build,Analyzers" />' for d, r in deps)
+        deps_xml = f'<dependencies><group targetFramework=".NETStandard2.0">{items}</group></dependencies>'
+    nuspec = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">\n'
+        f"  <metadata>\n    <id>{pid}</id>\n    <version>{version}</version>\n    <authors>SlowShield tests</authors>\n"
+        f"    <description>Fake package for SlowShield's tests.{note}</description>\n    {deps_xml}\n"
+        "  </metadata>\n</package>\n"
+    )
+    types = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />'
+        '<Default Extension="nuspec" ContentType="application/octet" />'
+        '<Default Extension="_" ContentType="application/octet" />'
+        "</Types>"
+    )
+    rels = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Type="http://schemas.microsoft.com/packaging/2010/07/manifest" '
+        f'Target="/{pid}.nuspec" Id="R1" />'
+        "</Relationships>"
+    )
+    return _zip(
+        {
+            f"{pid}.nuspec": nuspec.encode(),
+            "[Content_Types].xml": types.encode(),
+            "_rels/.rels": rels.encode(),
+            "lib/netstandard2.0/_._": b"",
+        }
+    )
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -312,6 +351,27 @@ class CrateVersion:
     deps: tuple[tuple[str, str], ...] = ()  # (name, requirement)
 
 
+@dataclass(slots=True)
+class NugetVersion:
+    pid: str  # the id as published (Fake.Hello); paths use it in lower case
+    version: str  # normalized, as published (2.0.0-Beta.1); paths use it in lower case
+    published: float  # the real publish time: the registration says 1900-01-01 while the version is unlisted
+    blob: Blob
+    listed: bool = True
+    commit: float = 0.0  # the catalog commit with this version's current leaf
+    deps: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def lower(self) -> str:
+        return self.version.lower()
+
+
+NUGET_UNLISTED = "1900-01-01T00:00:00+00:00"
+# nuget.org: 64 versions per registration page, pages inlined up to 128 versions. Small here, so a few versions page.
+NUGET_PAGE_SIZE = 3
+NUGET_INLINE_MAX = 6
+
+
 OCI_INDEX = "application/vnd.oci.image.index.v1+json"
 OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 
@@ -406,6 +466,9 @@ class Catalog:
         self.maven: dict[tuple[str, str], MavenArtifact] = {}  # (repo, "group/path/artifact") -> artifact
         self.crates: dict[str, dict[str, CrateVersion]] = {}  # lower-case name -> version -> line
         self.oci: dict[tuple[str, str], OciRepo] = {}  # (registry, path) -> repository
+        self.nuget: dict[str, dict[str, NugetVersion]] = {}  # lower-case id -> lower-case version, in version order
+        self.nuget_catalog: dict[str, bytes] = {}  # catalog leaf path -> document (leaves never change)
+        self._nuget_commits = 0
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -581,6 +644,66 @@ class Catalog:
             line["pubtime"] = iso_s(cv.pubtime)
         return json.dumps(line, separators=(",", ":")).encode()
 
+    def add_nuget(
+        self,
+        pid: str,
+        version: str,
+        age_days: float,
+        *,
+        listed: bool = True,
+        deps: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        """Publish `version` of `pid`, `age_days` ago (negative: a date in the future). Versions are kept in the
+        order they are added, which must be NuGet's version order."""
+        pkg = self.nuget.setdefault(pid.lower(), {})
+        blob = Blob(key=f"{pid}@{version}.nupkg", data=make_nupkg(pid, version, deps))
+        nv = NugetVersion(pid, version, self.now - age_days * DAY, blob, listed=listed, deps=deps)
+        pkg[version.lower()] = nv
+        self.nuget_commit(nv, nv.published + 60)
+
+    def nuget_commit(self, nv: NugetVersion, when: float | None = None) -> None:
+        """A catalog commit for `nv`: a new catalog leaf, at a new URL, with its current hash and listing."""
+        self._nuget_commits += 1
+        nv.commit = when if when is not None else self.now + self._nuget_commits
+        self.nuget_catalog[self.nuget_catalog_path(nv)] = _json(self.nuget_catalog_leaf(nv))
+
+    @staticmethod
+    def nuget_catalog_path(nv: NugetVersion) -> str:
+        stamp = datetime.fromtimestamp(nv.commit, UTC).strftime("%Y.%m.%d.%H.%M.%S")
+        return f"/nuget-catalog/data/{stamp}/{nv.pid.lower()}.{nv.lower}.json"
+
+    def nuget_catalog_leaf(self, nv: NugetVersion) -> dict[str, object]:
+        """The catalog leaf, with `@id` relative to the registry (the app adds its base URL)."""
+        published = iso(nv.published) if nv.listed else NUGET_UNLISTED
+        return {
+            "@id": self.nuget_catalog_path(nv),
+            "@type": ["PackageDetails", "catalog:Permalink"],
+            "catalog:commitTimeStamp": iso(nv.commit),
+            "created": iso(nv.published),
+            "id": nv.pid,
+            "isPrerelease": "-" in nv.version,
+            "lastEdited": iso(nv.commit),
+            "listed": nv.listed,
+            "packageHash": nv.blob.digests()["sha512_b64"],
+            "packageHashAlgorithm": "SHA512",
+            "packageSize": nv.blob.size,
+            "published": published,
+            "verbatimVersion": nv.version,
+            "version": nv.version,
+        }
+
+    def nuget_set_listed(self, pid: str, version: str, listed: bool) -> None:
+        nv = self.nuget[pid.lower()][version.lower()]
+        nv.listed = listed
+        self.nuget_commit(nv)
+
+    def nuget_resign(self, pid: str, version: str) -> None:
+        """nuget.org signs the package again: new bytes, and a catalog commit with their new packageHash."""
+        nv = self.nuget[pid.lower()][version.lower()]
+        nv.blob = Blob(key=f"{nv.pid}@{nv.version}.nupkg#resigned", data=make_nupkg(nv.pid, nv.version, nv.deps,
+                                                                                     note=" Re-signed."))  # fmt: skip
+        self.nuget_commit(nv)
+
     def add_oci(self, image: str, tag: str, version: str, age_days: float) -> str:
         """Push `version` of `image` (registry/path) and point `tag` at it, `age_days` ago. Returns the index digest."""
         registry, _, path = image.partition("/")
@@ -685,6 +808,21 @@ class Catalog:
         self.add_crate("hijacked", "1.0.0", 300)
         self.add_crate("hijacked", "2.0.0", 200)
         self.add_crate("untimed", "1.0.0", 0, pubtime=False)
+        # nuget.org: ids and versions are case-insensitive, paths lower case. Registration pages hold 3 versions here,
+        # inlined up to 6 versions. An unlisted version says it was published on 1900-01-01.
+        self.add_nuget("Fake.Hello", "1.0.0", 100)
+        self.add_nuget("Fake.Hello", "1.0.1", 90, listed=False)
+        self.add_nuget("Fake.Hello", "1.1.0", 30)
+        self.add_nuget("Fake.Hello", "1.2.0", 2)
+        self.add_nuget("Fake.Hello", "2.0.0-Beta.1", 20)
+        for i, age in enumerate((300, 250, 200, 150, 100, 4, 3, 1)):  # linked pages: [1.0-1.2] [1.3-1.5] [1.6-1.7]
+            self.add_nuget("Fake.Paged", f"1.{i}.0", age)
+        self.add_nuget("Fake.Deps", "1.0.0", 50, deps=(("Fake.Hello", "1.0.0"),))
+        self.add_nuget("Fake.New", "0.1.0", 1 / 24)
+        self.add_nuget("Fake.Evil", "1.0.0", 40)
+        self.add_nuget("Fake.Partly", "1.0.0", 90)
+        self.add_nuget("Fake.Partly", "1.1.0", 60)
+        self.add_nuget("Fake.Future", "1.0.0", -30)  # a `published` in the future isn't a publish time
         # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
         # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
         for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):
@@ -897,6 +1035,24 @@ class Catalog:
                 summary="partly-crate 1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "NuGet",
+                "MAL-2026-5001",
+                "Fake.Evil",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in Fake.Evil (NuGet)",
+            ),
+            Advisory(  # "1.1" names 1.1.0: NuGet versions match in their normalized form
+                "github",
+                "nuget",
+                "GHSA-aaaa-0008-0008",
+                "Fake.Partly",
+                n - 3 * DAY,
+                gh_range="= 1.1",
+                summary="Fake.Partly 1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -918,6 +1074,8 @@ class Catalog:
             self.add_maven("central", name, version, age_days)
         elif ecosystem == "cargo":
             self.add_crate(name, version, age_days or 0.0)
+        elif ecosystem == "nuget":
+            self.add_nuget(name, version, age_days or 0.0)
         elif ecosystem == "oci":  # name: registry/path:tag
             image, _, tag = name.rpartition(":")
             self.add_oci(image, tag, version, age_days or 0.0)

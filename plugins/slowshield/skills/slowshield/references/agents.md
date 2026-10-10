@@ -26,8 +26,9 @@ For `AGENTS.md`, `CLAUDE.md` or your agent's system prompt, with your instance's
 Packages and container images come through SlowShield (https://slowshield.example.com), which holds new
 releases back for 7 days and refuses known malware.
 - Never point installs at the public registries, or add them as extra indexes, to go around SlowShield.
-- "Too new" (403, Maven 425): the version is younger than 7 days. Use the newest version that installs;
-  don't pin the new one. If the user needs it now, say so: an administrator can make an exception.
+- "Too new" (403, or 425 Too Early from Maven, Gradle and NuGet): the version is younger than 7 days.
+  Use the newest version that installs; don't pin the new one. If the user needs it now, say so: an
+  administrator can make an exception.
 - 451, or "blocked": known malware. Don't install it or a look-alike package. Tell the user.
 - X-SlowShield-Fail-Open: 1 means a brand-new package. Check the name is exactly the one intended.
 ```

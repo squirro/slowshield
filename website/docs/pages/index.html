@@ -11,6 +11,7 @@
   <li><a href="/docs/go/">Go<span>Go modules, as your <code>GOPROXY</code></span></a></li>
   <li><a href="/docs/java/">Java<span>Maven Central, Google Maven, Gradle plugins: Maven, Gradle, sbt, Coursier</span></a></li>
   <li><a href="/docs/rust/">Rust<span>crates.io: Cargo</span></a></li>
+  <li><a href="/docs/csharp/">C#<span>nuget.org: dotnet, for C#, F# and Visual Basic</span></a></li>
   <li><a href="/docs/containers/">Container images<span>Docker Hub, GHCR, Quay, registry.k8s.io and more: containerd, Kubernetes, Docker, Podman</span></a></li>
   <li><a href="/docs/container-builds/">Building images<span>Base images and every dependency of a Docker or Podman build through SlowShield</span></a></li>
 </ul>
@@ -53,10 +54,10 @@
   <li><strong>Normal installs</strong> just get an older version. Indexes carry
     <code>X-SlowShield-Held-Versions</code>, the number of versions left out.</li>
   <li><strong>A pin that is too new</strong> (lockfile, <code>==</code> pin, image digest) gets <code>403</code> with
-    <code>Retry-After</code> and a message saying when it becomes available (Maven and Gradle: <code>425 Too
-    Early</code>, the only status they report clearly).</li>
+    <code>Retry-After</code> and a message saying when it becomes available (Maven, Gradle and NuGet: <code>425
+    Too Early</code>, the only status they report clearly).</li>
   <li><strong>A brand-new package</strong> none of whose versions is old enough is served and recorded as
-    <em>fail-open</em> on PyPI, npm and Go, and refused on Maven and Cargo, where brand-new packages are the usual attack
+    <em>fail-open</em> on PyPI, npm and Go, and refused on Maven, Cargo and NuGet, where brand-new packages are the usual attack
     (typosquats, impersonations). Container images only fail open during an instance's first week.</li>
   <li><strong>Exceptions.</strong> An administrator can release one version early, or hold a package longer, in
     <code>config.toml</code> (<a href="https://github.com/squirro/slowshield/blob/main/docs/configuration.md">configuration</a>).</li>

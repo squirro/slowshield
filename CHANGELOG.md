@@ -31,9 +31,9 @@ All notable changes to this project are documented here. The format is based on
     applies the rest of the policy.
 - NuGet (C#) at `/nuget/`: nuget.org through SlowShield ([docs/design/nuget.md](docs/design/nuget.md),
   https://github.com/squirro/slowshield/issues/38). Clients use a `NuGet.Config` with `<clear/>` and one source
-  named `nuget.org` at `/nuget/v3/index.json`; the Setup page has the file and a command for CI and images. It
-  also recommends failing the build on `NU1603` (a held version skipped for a higher one), with a
-  `Directory.Build.props` for it.
+  named `nuget.org` at `/nuget/v3/index.json`. The Setup page has the file, a command for CI and images, and a
+  `Directory.Build.props` that fails the build on `NU1603` (a held version skipped for a higher one). The guide has
+  a page for C#: https://slowshield.org/docs/csharp/.
   - SlowShield writes the service index itself: the flat container, one SemVer 2 registration hive, vulnerability
     data (NuGetAudit keeps working) and search. The upstream URLs come from `[upstreams.nuget]`, so the hosts it may
     reach stay fixed.

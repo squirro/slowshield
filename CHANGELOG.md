@@ -17,8 +17,8 @@ All notable changes to this project are documented here. The format is based on
     queued while the leader was away.
   - Followers take the leader's policy and blocks: stricter settings at once, looser ones after an hour and never
     below `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` (1 day); a block the leader lifts stays a day. Their own stricter
-    settings and their own exceptions stay in force. Takedowns, tamper flags, tag history and Maven and Cargo listing
-    times come down too, with the leader's observation times bounded by how recently the follower synced.
+    settings and their own exceptions stay in force. Takedowns, tamper flags, tag history and Maven, Cargo and NuGet
+    listing times come down too, with the leader's observation times bounded by how recently the follower synced.
   - A follower must trust its leader's certificate, and the shipped stacks default to Caddy's private CA: Helm
     `shieldwall.leaderCaSecret` (the chart refuses a follower without it, unless `shieldwall.leaderPubliclyTrusted`),
     Compose `LEADER_CA_SECRET_FILE`. A follower that lacks it says so on its Shield wall page.
@@ -27,13 +27,25 @@ All notable changes to this project are documented here. The format is based on
   - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
     bytes refuses the file, and the leader records it. A follower's fingerprint only ever refuses a file on that
     follower, and one that names another package or version than the leader's record of the file is refused.
-  - A follower skips the leader's settings for an ecosystem it doesn't know, with a warning that names it, and
-    applies the rest of the policy.
+  - The leader sends `fail_open` for every ecosystem it has. A follower skips the settings for an ecosystem it
+    doesn't know, with a warning that names it, and applies the rest of the policy.
+  - Settings in a follower's own config count against its leader's policy (stricter wins), so the shipped configs
+    leave `default_delay_days`, `enforce_age_on_download` and `fail_open` commented out.
+
+### Changed
+- Shield wall: a leader or follower restarted without `SLOWSHIELD_SHIELDWALL_ROLE` or a join string keeps the role
+  it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
+  `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
+  stored and no longer needs the join string; one that hasn't joined yet still does.
+
+## [0.0.9] - 2026-10-10
+
+### Added
 - NuGet (C#) at `/nuget/`: nuget.org through SlowShield ([docs/design/nuget.md](docs/design/nuget.md),
   https://github.com/squirro/slowshield/issues/38). Clients use a `NuGet.Config` with `<clear/>` and one source
-  named `nuget.org` at `/nuget/v3/index.json`; the Setup page has the file and a command for CI and images. It
-  also recommends failing the build on `NU1603` (a held version skipped for a higher one), with a
-  `Directory.Build.props` for it.
+  named `nuget.org` at `/nuget/v3/index.json`. The Setup page has the file, a command for CI and images, and a
+  `Directory.Build.props` that fails the build on `NU1603` (a held version skipped for a higher one). The guide has
+  a page for C#: https://slowshield.org/docs/csharp/.
   - SlowShield writes the service index itself: the flat container, one SemVer 2 registration hive, vulnerability
     data (NuGetAudit keeps working) and search. The upstream URLs come from `[upstreams.nuget]`, so the hosts it may
     reach stay fixed.
@@ -50,21 +62,20 @@ All notable changes to this project are documented here. The format is based on
     key, exceptions and blocks included; other spellings in a path are a `404`. Malware from OSV `NuGet` and
     GitHub `nuget`. `fail_open` is off, as for Maven and Cargo. `SLOWSHIELD_NUGET_ENABLED`, Helm
     `ecosystems.nuget.enabled`.
-  - Shield wall followers learn when the leader first listed a NuGet version, and the leader now sends
-    `fail_open` for every ecosystem it has.
 
 ### Changed
 - The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
-  their defaults, commented out: set, they also count against a shield wall leader's policy.
-- Caddy no longer applies the 16 KB request body limit on top of the 10 MB one for `npm audit`.
-- Shield wall: a leader or follower restarted without `SLOWSHIELD_SHIELDWALL_ROLE` or a join string keeps the role
-  it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
-  `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
-  stored and no longer needs the join string; one that hasn't joined yet still does.
+  their defaults, commented out.
 - A sha512 mismatch is reported as "sha512 does not match the registry digest" (npm and NuGet), not as npm's
   `dist.integrity`.
+
+### Security
 - A file whose registry digest changed since it was first served (npm's `dist.integrity`, the sha256 on PyPI and
   crates.io) is refused as tampering even when a verified copy is cached; before, the cached copy was served.
+
+### Fixed
+- Caddy capped `npm audit` requests at 16 KB instead of 10 MB: every matching `request_body` limit applied, the
+  catch-all's too.
 
 ## [0.0.8] - 2026-10-07
 

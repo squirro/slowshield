@@ -156,7 +156,9 @@ def docs_parts() -> dict[str, str]:
         "pypi": f"{EXAMPLE}/pypi/simple/", "npm": f"{EXAMPLE}/npm/", "go": f"{EXAMPLE}/go",
         "maven": f"{EXAMPLE}/maven", "cargo": f"{EXAMPLE}/cargo/",
     }  # fmt: skip
-    tools = snip.tools(*urls.values()) + snip.oci_tools(EXAMPLE, EXAMPLE_REGISTRIES)
+    tools = snip.tools(*urls.values(), nuget=f"{EXAMPLE}/nuget/v3/index.json") + snip.oci_tools(
+        EXAMPLE, EXAMPLE_REGISTRIES
+    )
     parts: dict[str, list[str]] = {}
 
     def code_block(code: str) -> str:
@@ -166,13 +168,16 @@ def docs_parts() -> dict[str, str]:
         )
 
     for t in tools:
+        page = snip.DOCS_PAGES.get(t.ecosystem)
+        if page is None:  # no guide page for it yet (NuGet)
+            continue
         out = [f'<section class="doc-tool" id="{snip.slug(t.name)}">', f"<h3>{html.escape(t.name)}</h3>"]
         if t.age and t.age != snip.NO_AGE_DEFAULT:  # pages say once that a tool without one has only SlowShield
             out.append(f'<p class="doc-age">Release age: {html.escape(t.age)}</p>')
         for label, code in t.snippets:
             out.append(f'<p class="doc-label">{html.escape(label)}</p>{code_block(code)}')
         out.append("</section>")
-        parts.setdefault(f"tools.{snip.DOCS_PAGES[t.ecosystem]}", []).extend(out)
+        parts.setdefault(f"tools.{page}", []).extend(out)
     flat = {k: "\n".join(v) for k, v in parts.items()}
     shells = snip.for_instance(urls["pypi"], urls["npm"], urls["go"])
     for sh in shells.shells:

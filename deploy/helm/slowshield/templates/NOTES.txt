@@ -16,6 +16,11 @@ TLS mode: {{ .Values.tls.mode }}
     kubectl -n {{ .Release.Namespace }} debug -q -i $POD --target=caddy --profile=restricted \
       --image=public.ecr.aws/amazonlinux/amazonlinux:2023-minimal -- \
       cat /proc/1/root/data/caddy/pki/authorities/local/root.crt > slowshield-root.crt
+{{- if eq .Values.shieldwall.role "leader" }}
+  Shield wall followers need it too: on each follower,
+    kubectl create secret generic slowshield-leader-ca --from-file=ca.crt=slowshield-root.crt
+  and install the follower with shieldwall.leaderCaSecret=slowshield-leader-ca.
+{{- end }}
 {{- end }}
 {{- if eq .Values.service.type "ClusterIP" }}
   The Service is ClusterIP. Expose it with service.type=LoadBalancer (TCP 80/443 + UDP 443) or port-forward:

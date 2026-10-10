@@ -29,6 +29,7 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-http>=1.40",
   "python-dotenv>=1.1.0",
   "defusedxml>=0.7.1",
+  "cryptography>=46",
 ]
 
 [project.scripts]

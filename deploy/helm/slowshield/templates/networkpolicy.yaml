@@ -48,6 +48,10 @@ spec:
         - ipBlock:
             cidr: ::/0
             except: ["fc00::/7", "fe80::/10"]
+    {{- with .Values.shieldwall.leaderEgress }}
+    # A shield wall leader on a private network.
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
     {{- if .Values.telemetry.otlpEndpoint }}
     # OTLP collector inside the cluster.
     - ports:

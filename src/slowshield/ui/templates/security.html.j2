@@ -4,13 +4,13 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Security timeline</h1><p class="muted">Blocked malware, tamper detections, fail-open serves and downloads refused for being too new.</p></div>
-  <div class="controls">{{ m.range_picker(range, "/ui/security", {"type": type, "eco": eco, "q": q, "ip": ip}) }}
-    <a class="button" href="/ui/security.csv?range={{ range }}">Export CSV</a></div>
+  <div class="controls">{{ m.range_picker(range, "/ui/security", {"type": type, "eco": eco, "q": q, "ip": ip, "in": scope}) }}
+    <a class="button" href="/ui/security.csv{{ qs({'range': range, 'in': scope}) }}">Export CSV</a></div>
 </div>
 <div class="chips" role="group" aria-label="Event type">
-  <a href="/ui/security{{ qs({'range': range, 'eco': eco, 'q': q, 'ip': ip}) }}"{% if not type %} aria-current="true"{% endif %}>All <b>{{ counts.values()|sum }}</b></a>
+  <a href="/ui/security{{ qs({'range': range, 'eco': eco, 'q': q, 'ip': ip, 'in': scope}) }}"{% if not type %} aria-current="true"{% endif %}>All <b>{{ counts.values()|sum }}</b></a>
   {% for t, label in event_label.items() %}
-  <a class="chip-{{ t }}" href="/ui/security{{ qs({'range': range, 'eco': eco, 'q': q, 'ip': ip, 'type': t}) }}"{% if type == t %} aria-current="true"{% endif %}>{{ label }} <b>{{ counts.get(t, 0) }}</b></a>
+  <a class="chip-{{ t }}" href="/ui/security{{ qs({'range': range, 'eco': eco, 'q': q, 'ip': ip, 'type': t, 'in': scope}) }}"{% if type == t %} aria-current="true"{% endif %}>{{ label }} <b>{{ counts.get(t, 0) }}</b></a>
   {% endfor %}
 </div>
 <form class="filters" action="/ui/security" method="get" role="search"
@@ -21,6 +21,7 @@
   <label class="search"><span class="sr-only">Client IP</span><input type="search" name="ip" value="{{ ip }}" placeholder="Client IP…" autocomplete="off"></label>
   <label><span class="sr-only">Ecosystem</span><select name="eco"><option value="">All ecosystems</option>
     {{ m.eco_options(eco) }}</select></label>
+  {% if choices %}{{ m.scope_select(scope, choices) }}{% endif %}
   <noscript><button type="submit">Apply</button></noscript>
 </form>
 {% include "partials/security_table.html.j2" %}

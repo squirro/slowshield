@@ -32,9 +32,10 @@ RESERVED_ECOSYSTEMS = frozenset(
     }
 )
 
-# Not ecosystems: the UI (everything, including its assets), health probes, and the two root paths that
-# protocols mandate (the OCI distribution API and RFC 8615 well-known URIs). `favicon.ico` only redirects.
-SYSTEM = frozenset({"", "ui", "healthz", "readyz", "favicon.ico", "v2", ".well-known"})
+# Not ecosystems: the UI (everything, including its assets), health probes, the two root paths that protocols
+# mandate (the OCI distribution API and RFC 8615 well-known URIs), and a shield wall leader's API for its
+# followers (`_shieldwall`, docs/design/shieldwall.md). `favicon.ico` only redirects.
+SYSTEM = frozenset({"", "ui", "healthz", "readyz", "favicon.ico", "v2", ".well-known", "_shieldwall"})
 
 # Deprecated, removed in 0.1: the root PyPI alias from the Rust version and the old UI asset path.
 LEGACY = frozenset({"simple", "packages", "static"})

@@ -50,9 +50,11 @@ workers: 2
 
 # config.toml for SlowShield (hot-reloaded; environment variables set by this chart take precedence).
 config: |
-  default_delay_days = 7
-  enforce_age_on_download = true
-  fail_open = true
+  # Release-age policy: the defaults, commented out. A key set here also counts against a shield wall leader's
+  # policy (the stricter wins), so a follower that leaves them out simply takes its leader's.
+  # default_delay_days = 7
+  # enforce_age_on_download = true
+  # fail_open = true
   metadata_cache_ttl_hours = 6
   record_client_ip = true
   client_ip_retention_days = 30
@@ -120,6 +122,34 @@ caddy:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
+
+# Shield wall (docs/design/shieldwall.md): one leader, many followers. A leader sets role: leader and prints join
+# strings with `kubectl exec deploy/<release> -c slowshield -- slowshield wall invite`; a follower gets one.
+shieldwall:
+  # "" keeps the role the instance already has (a restart keeps its stored role); standalone is explicit and leaves
+  # the wall; leader makes this instance the leader. A join string makes it a follower.
+  role: ""
+  # A follower's join string, from a Secret: kubectl create secret generic slowshield-join --from-literal=join='ssj1:…'
+  joinSecret: ""
+  joinSecretKey: join
+  confirm: ui  # ui: the operator clicks Join on the Shield wall page; auto: join without the click
+  name: ""  # default: the pod's host name
+  location: ""
+  labels: {}  # e.g. {env: prod, team: ml}
+  # A follower must trust its leader's certificate, and this chart's default (tls.mode: internal) is Caddy's own
+  # private CA, which nothing trusts. So a follower (joinSecret set) needs one of these two, or the chart refuses:
+  #   leaderCaSecret: a Secret with the CA certificate that signed the leader's (for a leader on this chart with
+  #     tls.mode internal, its Caddy root CA; NOTES on the leader show how to read it), mounted for
+  #     SLOWSHIELD_LEADER_CA_FILE: kubectl create secret generic slowshield-leader-ca --from-file=ca.crt=leader-ca.crt
+  #   leaderPubliclyTrusted: true, when the leader's certificate is publicly trusted (tls.mode acme, or an ingress
+  #     with a public certificate).
+  leaderCaSecret: ""
+  leaderCaSecretKey: ca.crt
+  leaderPubliclyTrusted: false
+  # With networkPolicy enabled, egress rules to a leader that isn't on the public internet, e.g.
+  #   - ports: [{port: 443, protocol: TCP}]
+  #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]
+  leaderEgress: []
 
 # OpenTelemetry (traces, metrics, logs via OTLP/HTTP), e.g. an in-cluster Alloy:
 #   otlpEndpoint: http://alloy.observability.svc.cluster.local:4318

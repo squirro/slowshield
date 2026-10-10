@@ -284,6 +284,9 @@ class Readers:
     async def aquery(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
         return await asyncio.to_thread(self.query, sql, params)
 
+    async def aone(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Row | None:
+        return await asyncio.to_thread(self.one, sql, params)
+
     def close(self) -> None:
         with self._lock:
             for conn in self._all:

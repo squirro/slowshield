@@ -15,6 +15,17 @@
 </div>
 {%- endmacro %}
 
+{#- A shield wall leader's pages narrow to one follower, a location or a label (`?in=`). -#}
+{% macro scope_select(current, choices) -%}
+<label class="scope"><span class="sr-only">Instances</span><select name="in" data-autosubmit>
+  <option value="">Whole shield wall</option>
+  <option value="self"{% if current == "self" %} selected{% endif %}>This instance</option>
+  {% for group, label in (("members", "Followers"), ("locations", "Locations"), ("labels", "Labels")) %}
+  {% if choices[group] %}<optgroup label="{{ label }}">{% for value, text in choices[group] %}<option value="{{ value }}"{% if current == value %} selected{% endif %}>{{ text }}</option>{% endfor %}</optgroup>{% endif %}
+  {% endfor %}
+</select></label>
+{%- endmacro %}
+
 {% macro eco_options(current) -%}
 {%- for e in ecosystems.values() %}<option value="{{ e.id }}"{% if current == e.id %} selected{% endif %}>{{ e.label }}</option>{% endfor -%}
 {%- endmacro %}
@@ -53,7 +64,7 @@
 {%- endmacro %}
 
 {% macro advisory(entry) -%}
-{% if entry.url %}<a href="{{ entry.url|href }}" rel="noopener noreferrer" target="_blank">{{ entry.advisory_id or "advisory" }}</a>{% else %}{{ entry.advisory_id or ("administrator" if entry.source == "config" else "—") }}{% endif %}
+{% if entry.url %}<a href="{{ entry.url|href }}" rel="noopener noreferrer" target="_blank">{{ entry.advisory_id or "advisory" }}</a>{% else %}{{ entry.advisory_id or ("administrator" if entry.source in ("config", "leader") else "—") }}{% endif %}
 {%- endmacro %}
 
 {% macro pager(page, has_next, base_path, extra={}, target=None) -%}

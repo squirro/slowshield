@@ -9,12 +9,14 @@ against the announced Content-Length), the event is recorded and the temp file d
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from starlette.responses import FileResponse, Response
 from starlette.types import Receive, Scope, Send
@@ -27,6 +29,9 @@ from slowshield.legacy import LEGACY_DIGEST
 from slowshield.recorder import Recorder
 from slowshield.upstream import StreamResponse, Upstream, UpstreamError
 from slowshield.web import error
+
+if TYPE_CHECKING:
+    from slowshield.shieldwall.via import LeaderStream, ViaLeader
 
 log = logging.getLogger(__name__)
 
@@ -155,6 +160,17 @@ class ArtifactServer:
         self.upstream = upstream
         self.recorder = recorder
         self.clock = clock
+        self.via: ViaLeader | None = None  # a shield wall follower's leader (slowshield.shieldwall.via)
+
+    def _via(self, req: ArtifactRequest) -> ViaLeader | None:
+        """The leader, if this file can come from it: content-addressed, and nothing the registry must see or say
+        (credentials, headers read from its response, a separate store)."""
+        via = self.via
+        if via is None or not via.usable() or req.upstream_headers or req.on_upstream is not None:
+            return None
+        if req.store is not None or not (req.expected.sha256 or req.expected.tofu_sha256 or req.expected.sha512):
+            return None
+        return via
 
     def record_for(self, ecosystem: str, key: str) -> ArtifactRecord | None:
         row = self.db.readers.one(
@@ -224,10 +240,28 @@ class ArtifactServer:
             return Response(status_code=200, headers=h)
 
         stack = AsyncExitStack()
+        up: StreamResponse | LeaderStream | None = None
+        via = self._via(req)
+        if via is not None:
+            from slowshield.shieldwall.transport import TransportError
+
+            e = req.expected
+            try:
+                up = await stack.enter_async_context(
+                    via.stream(
+                        req.upstream_url,
+                        sha256=(e.sha256 or e.tofu_sha256 or "").lower() or None,
+                        sha512=e.sha512.hex() if e.sha512 else None,
+                    )
+                )
+            except TransportError as exc:
+                via.pause(str(exc))
+                via = None
         try:
-            up: StreamResponse = await stack.enter_async_context(
-                self.upstream.stream(req.upstream_url, headers=req.upstream_headers)
-            )
+            if up is None:
+                up = await stack.enter_async_context(
+                    self.upstream.stream(req.upstream_url, headers=req.upstream_headers)
+                )
         except UpstreamError as exc:
             await stack.aclose()
             self.recorder.decision(req.ecosystem, "artifact", "upstream_error")
@@ -242,7 +276,7 @@ class ArtifactServer:
             return req.error(502, "upstream_error", detail=f"upstream returned {up.status}")
 
         extra: dict[str, str] = {}
-        if req.on_upstream is not None:
+        if req.on_upstream is not None and isinstance(up, StreamResponse):
             try:
                 verdict = await req.on_upstream(up)
             except BaseException:
@@ -284,7 +318,9 @@ class ArtifactServer:
                 problem = await asyncio.to_thread(req.check_file, tee.path)
                 if problem:
                     problems.append(problem)
-            if verifier.tofu_mismatch():
+            if via is not None and verifier.tofu_mismatch():
+                problems.append("the leader served different bytes than this instance saw first")
+            elif verifier.tofu_mismatch():
                 independently_verified = not problems and bool(
                     req.expected.sha256 or req.expected.sha512 or req.expected.blake2b_256
                 )
@@ -295,6 +331,8 @@ class ArtifactServer:
                     await self._tamper(req, verifier, client_ip, problems)
                     raise IntegrityAbort(req.key, _tamper_response(req))
             if problems:
+                if via is not None:
+                    via.pause("served bytes that don't match")
                 await self._integrity_mismatch(req, verifier, client_ip, problems)
                 raise IntegrityAbort(
                     req.key,
@@ -323,6 +361,7 @@ class ArtifactServer:
                 verified=state["verified"],
                 delivered=state["delivered"],
                 target=target,
+                via_leader=via is not None,
             )
             log.debug(
                 "artifact streamed",
@@ -341,6 +380,7 @@ class ArtifactServer:
         verified: bool,
         delivered: bool,
         target: ArtifactCache | None = None,
+        via_leader: bool = False,
     ) -> None:
         """Verified bytes are cached even if the client went away; only delivered ones count as served."""
         if not verified:
@@ -349,7 +389,9 @@ class ArtifactServer:
             return
         if delivered:
             self.recorder.decision(req.ecosystem, "artifact", "served")
-            self.recorder.download(req.ecosystem, req.package, req.version, verifier.size, cache_hit=False)
+            self.recorder.download(
+                req.ecosystem, req.package, req.version, verifier.size, cache_hit=False, via_leader=via_leader
+            )
         if tee is not None:
             await (target or self.cache).commit(tee, verifier.sha256, content_type)
 
@@ -361,6 +403,9 @@ class ArtifactServer:
         digest = e.sha256 or (e.sha512.hex() if e.sha512 else None) or req.upstream_digest
 
         def op(conn):  # type: ignore[no-untyped-def]
+            before = conn.execute(
+                "SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (req.ecosystem, req.key)
+            ).fetchone()
             conn.execute(
                 "INSERT INTO artifacts (ecosystem, path, package, version, filename, sha256, upstream_digest, size, "
                 "first_seen, last_seen, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -385,6 +430,14 @@ class ArtifactServer:
             row = conn.execute(
                 "SELECT sha256 FROM artifacts WHERE ecosystem = ? AND path = ?", (req.ecosystem, req.key)
             ).fetchone()
+            first = (before is None or before[0] is None) and row is not None and row[0] == sha
+            if first and conn.execute("SELECT 1 FROM shieldwall_leader WHERE state = 'active'").fetchone():
+                # A shield wall's leader compares every instance's first fingerprint: different bytes for the
+                # same file somewhere means one of them was served something else.
+                conn.execute(
+                    "INSERT INTO shieldwall_outbox (created, kind, body) VALUES (?, 'fingerprints', ?)",
+                    (now, json.dumps([[req.ecosystem, req.key, sha, now, req.package, req.version]])),
+                )
             return row[0] if row else None
 
         return await self.db.writer.run(op)

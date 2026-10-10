@@ -68,6 +68,14 @@ eventloop_lag = meter.create_histogram(
 db_flush_duration = meter.create_histogram(
     "slowshield.db.writer.flush.duration", unit="s", description="Duration of batched database writes."
 )
+shieldwall_blobs = meter.create_counter(
+    "slowshield.shieldwall.blobs",
+    unit="{file}",
+    description="Package files a shield wall leader served its followers: hit, miss.",
+)
+shieldwall_syncs = meter.create_counter(
+    "slowshield.shieldwall.syncs", unit="{sync}", description="A follower's syncs with its leader: ok, error."
+)
 
 
 GaugeCallback = Callable[[], Iterable[tuple[float, dict[str, str | int | float | bool]]]]

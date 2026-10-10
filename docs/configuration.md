@@ -30,6 +30,12 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_ARTIFACT_CACHE`, `SLOWSHIELD_ARTIFACT_CACHE_MAX_GB` | `cache.artifacts_*` | |
 | `SLOWSHIELD_FEED_OSV`, `SLOWSHIELD_FEED_GITHUB` | `feeds.*.enabled` | |
 | `GITHUB_TOKEN` / `GITHUB_TOKEN_FILE` | `feeds.github_advisory.api_key` | the file variant wins; prefer it |
+| `SLOWSHIELD_SHIELDWALL_ROLE` | `shieldwall.role` | `leader` makes this instance a shield wall leader ([docs/design/shieldwall.md](design/shieldwall.md)). Unset (or empty), a leader or follower keeps the role it had at its last start; `standalone` takes an instance out of the shield wall |
+| `SLOWSHIELD_JOIN`, `SLOWSHIELD_JOIN_FILE` | `shieldwall.join` | a follower's join string; `SLOWSHIELD_JOIN_CONFIRM=auto` joins without the click on the Shield wall page. Needed until the follower has joined; after that it syncs with the leader it stored |
+| `SLOWSHIELD_INSTANCE_NAME`, `SLOWSHIELD_INSTANCE_LOCATION`, `SLOWSHIELD_INSTANCE_LABELS` | `shieldwall.name`, `.location`, `.labels` | how a leader shows and filters this instance; labels as `env=prod,team=ml` |
+| `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` | `shieldwall.min_delay_days` | no delay from the leader goes lower (default 1) |
+| `SLOWSHIELD_SHIELDWALL_VIA_LEADER` | `shieldwall.via_leader` | fetch package files through the leader (default on) |
+| `SLOWSHIELD_LEADER_CA_FILE` | `shieldwall.leader_ca_file` | a leader whose certificate a private CA signed |
 | `SLOWSHIELD_LOG_LEVEL`, `SLOWSHIELD_LOG_FORMAT` | — | `info`…; `json` (default in containers) or `text` |
 | `SLOWSHIELD_ACCESS_LOG` | — | `1` enables Granian access logs (Caddy already logs requests) |
 | `SLOWSHIELD_TRACE_SAMPLE_RATIO` | — | head sampling ratio (default 0.1) unless `OTEL_TRACES_SAMPLER` is set |

@@ -40,6 +40,18 @@ services:
       SLOWSHIELD_LOG_LEVEL: ${SLOWSHIELD_LOG_LEVEL:-info}
       # Same switch as Caddy's: the Setup page and npm tarball URLs then offer http://localhost.
       SLOWSHIELD_LOCAL_HTTP: ${SLOWSHIELD_LOCAL_HTTP:-on}
+      # Shield wall (docs/design/shieldwall.md): SLOWSHIELD_SHIELDWALL_ROLE=leader on the leader; SLOWSHIELD_JOIN on a
+      # follower (from `docker compose exec slowshield slowshield wall invite` on the leader).
+      SLOWSHIELD_SHIELDWALL_ROLE: ${SLOWSHIELD_SHIELDWALL_ROLE:-}
+      SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
+      SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}
+      SLOWSHIELD_INSTANCE_LOCATION: ${SLOWSHIELD_INSTANCE_LOCATION:-}
+      # A follower must trust its leader's certificate. This stack's default (SLOWSHIELD_TLS_MODE=internal) is
+      # Caddy's own private CA, which nothing trusts, so a follower of such a leader needs that CA certificate:
+      # LEADER_CA_SECRET_FILE points at it (secrets/README.md). Only a leader with a publicly trusted certificate
+      # (SLOWSHIELD_TLS_MODE=acme) needs nothing. Empty placeholder otherwise; a follower that lacks the CA says so on
+      # its Shield wall page.
+      SLOWSHIELD_LEADER_CA_FILE: /run/secrets/leader_ca
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token
     configs:
@@ -49,6 +61,8 @@ services:
     secrets:
       - source: github_token
         target: github_token
+      - source: leader_ca
+        target: leader_ca
         mode: 0400
         uid: "65532"
         gid: "65532"
@@ -129,3 +143,5 @@ configs:
 secrets:
   github_token:
     file: ${GITHUB_TOKEN_SECRET_FILE:-./secrets/github_token.empty}
+  leader_ca:
+    file: ${LEADER_CA_SECRET_FILE:-./secrets/leader-ca.empty}

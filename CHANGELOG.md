@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Shield wall: several instances standing together, one leader and many followers
+  ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
+  - Pairing: `slowshield wall invite` on the leader prints a join string (single use, 10 minutes); a follower
+    started with it (`SLOWSHIELD_JOIN`) checks the leader's key and asks for a click on Join on its new Shield wall
+    page (`SLOWSHIELD_JOIN_CONFIRM=auto` skips it). Every message is signed with the instances' Ed25519 keys.
+  - The leader's overview, security timeline and CSV cover every instance, and narrow to one, a location or a label.
+    Followers report their statistics and events exactly once, including their history at pairing and what they
+    queued while the leader was away.
+  - Followers take the leader's policy and blocks: stricter settings at once, looser ones after an hour and never
+    below `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` (1 day); a block the leader lifts stays a day. Their own stricter
+    settings and their own exceptions stay in force. Takedowns, tamper flags, tag history and Maven and Cargo listing
+    times come down too, with the leader's observation times bounded by how recently the follower synced.
+  - A follower must trust its leader's certificate, and the shipped stacks default to Caddy's private CA: Helm
+    `shieldwall.leaderCaSecret` (the chart refuses a follower without it, unless `shieldwall.leaderPubliclyTrusted`),
+    Compose `LEADER_CA_SECRET_FILE`. A follower that lacks it says so on its Shield wall page.
+  - Package files come through the leader's cache when it is up (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`), checked by the
+    follower as always; a follower that can't reach its leader works on its own.
+  - The leader compares every follower's first fingerprint of a file with its own; a follower that saw different
+    bytes refuses the file, and the leader records it. A follower's fingerprint only ever refuses a file on that
+    follower, and one that names another package or version than the leader's record of the file is refused.
+
+### Changed
+- The shipped configs (Compose, Podman, Helm) leave `default_delay_days`, `enforce_age_on_download` and `fail_open` at
+  their defaults, commented out: set, they also count against a shield wall leader's policy.
+- Caddy no longer applies the 16 KB request body limit on top of the 10 MB one for `npm audit`.
+- Shield wall: a leader or follower restarted without `SLOWSHIELD_SHIELDWALL_ROLE` or a join string keeps the role
+  it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
+  `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
+  stored and no longer needs the join string; one that hasn't joined yet still does.
+
 ## [0.0.8] - 2026-10-07
 
 ### Added

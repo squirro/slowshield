@@ -9,11 +9,13 @@ Precedence (highest first): environment variables (incl. ``*_FILE`` secrets), co
 
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import logging
 import os
 import re
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +37,12 @@ DEFAULT_TRUSTED_PROXIES = [
     "192.168.0.0/16",
     "fc00::/7",
 ]
+
+# Policy keys a shield wall's leader also sets: on a follower, only the ones set here (file or environment) count
+# against the leader's (stricter wins); the defaults don't.
+POLICY_KEYS = frozenset({"default_delay_days", "fail_open", "enforce_age_on_download"})
+# In `LoadedConfig.explicit` when the file or the environment sets the shield wall role (see `keep_role`).
+ROLE_KEY = "shieldwall.role"
 
 # Keys from the Rust config that are recognised but intentionally unsupported in this version.
 _LEGACY_TOP_LEVEL = {"mode", "mirror_probe_interval_minutes"}
@@ -253,6 +261,27 @@ class CacheConfig(msgspec.Struct, forbid_unknown_fields=True):
     scrub_interval_hours: float = 24
 
 
+ShieldwallRole = Literal["standalone", "leader", "follower"]
+
+
+class ShieldwallConfig(msgspec.Struct, forbid_unknown_fields=True):
+    """A shield wall: one leader, many followers (docs/design/shieldwall.md). Usually set through the environment."""
+
+    # SLOWSHIELD_SHIELDWALL_ROLE; a join string makes it `follower`. Unset, an instance keeps the role it had
+    # (`keep_role`).
+    role: ShieldwallRole = "standalone"
+    # The join string from the leader's `slowshield wall invite` (SLOWSHIELD_JOIN or SLOWSHIELD_JOIN_FILE).
+    join: str | None = None
+    join_confirm: Literal["ui", "auto"] = "ui"  # SLOWSHIELD_JOIN_CONFIRM: `auto` joins without the UI click
+    name: str | None = None  # SLOWSHIELD_INSTANCE_NAME (default: the host name)
+    location: str = ""  # SLOWSHIELD_INSTANCE_LOCATION
+    labels: dict[str, str] = {}  # SLOWSHIELD_INSTANCE_LABELS=env=prod,team=ml
+    # A follower never takes a delay below this from its leader, exceptions for single versions included.
+    min_delay_days: float = 1.0  # SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS
+    via_leader: bool = True  # SLOWSHIELD_SHIELDWALL_VIA_LEADER: fetch package files through the leader when it's up
+    leader_ca_file: str | None = None  # SLOWSHIELD_LEADER_CA_FILE: for a leader behind Caddy's internal CA
+
+
 class Config(msgspec.Struct, forbid_unknown_fields=True):
     bind_address: str = "0.0.0.0:8080"
     # Externally visible base URL of the UI host (e.g. https://slowshield.example.com).
@@ -280,6 +309,7 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     cache: CacheConfig = msgspec.field(default_factory=CacheConfig)
     exceptions: list[ExceptionRule] = []
     blocks: list[BlockRule] = []
+    shieldwall: ShieldwallConfig = msgspec.field(default_factory=ShieldwallConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +326,7 @@ class LoadedConfig:
     path: Path | None
     generation: int = 0
     warnings: list[str] = field(default_factory=list)
+    explicit: frozenset[str] = frozenset()  # the POLICY_KEYS (and ROLE_KEY) set in the file or the environment
     github_token: str | None = None
     github_token_status: FeedTokenStatus = FeedTokenStatus(False, "missing")
     _pkg_rules: dict[tuple[str, str], float] = field(default_factory=dict)
@@ -407,8 +438,10 @@ def _strip_legacy(data: dict[str, Any], warnings: list[str]) -> None:
             feeds.pop(key)
 
 
-def _apply_env(cfg: Config) -> None:
+def _apply_env(cfg: Config) -> set[str]:
+    """Apply the environment; returns the POLICY_KEYS (and ROLE_KEY) it set."""
     env = os.environ
+    explicit: set[str] = set()
     if v := env.get("DATABASE_URL", "").strip():
         if not v.startswith("sqlite:"):
             raise ConfigError("DATABASE_URL must be of the form sqlite:/path/to.db")
@@ -433,6 +466,7 @@ def _apply_env(cfg: Config) -> None:
             cfg.default_delay_days = float(v)
         except ValueError as exc:
             raise ConfigError(f"SLOWSHIELD_DEFAULT_DELAY_DAYS must be a number, got {v!r}") from exc
+        explicit.add("default_delay_days")
     if v := env.get("SLOWSHIELD_PYPI_HOSTNAMES", "").strip():
         cfg.upstreams.pypi.hostnames = _split_list(v)
     if v := env.get("SLOWSHIELD_NPM_HOSTNAMES", "").strip():
@@ -457,11 +491,100 @@ def _apply_env(cfg: Config) -> None:
         b = _env_bool(name)
         if b is not None:
             setter(b)
+            if name in ("SLOWSHIELD_FAIL_OPEN", "SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD"):
+                explicit.add(name.removeprefix("SLOWSHIELD_").lower())
+    if _apply_shieldwall_env(cfg.shieldwall):
+        explicit.add(ROLE_KEY)
     if v := env.get("SLOWSHIELD_ARTIFACT_CACHE_MAX_GB", "").strip():
         try:
             cfg.cache.artifacts_max_gb = float(v)
         except ValueError as exc:
             raise ConfigError(f"SLOWSHIELD_ARTIFACT_CACHE_MAX_GB must be a number, got {v!r}") from exc
+    return explicit
+
+
+def _apply_shieldwall_env(sw: ShieldwallConfig) -> bool:
+    """Apply the shield wall environment; returns whether it set the role. An empty value doesn't: Compose passes
+    empty placeholders."""
+    env = os.environ
+    role_set = False
+    if v := env.get("SLOWSHIELD_SHIELDWALL_ROLE", "").strip().lower():
+        if v not in ("standalone", "leader", "follower"):
+            raise ConfigError(f"SLOWSHIELD_SHIELDWALL_ROLE must be standalone, leader or follower, got {v!r}")
+        sw.role = v
+        role_set = True
+    if v := env.get("SLOWSHIELD_JOIN_FILE", "").strip():
+        try:
+            sw.join = Path(v).read_text(encoding="utf-8").strip() or None
+        except OSError as exc:
+            raise ConfigError(f"SLOWSHIELD_JOIN_FILE: cannot read {v}: {exc}") from exc
+    if v := env.get("SLOWSHIELD_JOIN", "").strip():
+        sw.join = v
+    if sw.join and sw.role == "standalone":
+        sw.role = "follower"
+    if v := env.get("SLOWSHIELD_JOIN_CONFIRM", "").strip().lower():
+        if v not in ("ui", "auto"):
+            raise ConfigError(f"SLOWSHIELD_JOIN_CONFIRM must be ui or auto, got {v!r}")
+        sw.join_confirm = v
+    if v := env.get("SLOWSHIELD_INSTANCE_NAME", "").strip():
+        sw.name = v
+    if v := env.get("SLOWSHIELD_INSTANCE_LOCATION", "").strip():
+        sw.location = v
+    if v := env.get("SLOWSHIELD_INSTANCE_LABELS", "").strip():
+        labels: dict[str, str] = {}
+        for item in _split_list(v):
+            key, sep, value = item.partition("=")
+            if not sep or not key.strip():
+                raise ConfigError(f"SLOWSHIELD_INSTANCE_LABELS: expected key=value, got {item!r}")
+            labels[key.strip()] = value.strip()
+        sw.labels = labels
+    if v := env.get("SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS", "").strip():
+        try:
+            sw.min_delay_days = float(v)
+        except ValueError as exc:
+            raise ConfigError(f"SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS must be a number, got {v!r}") from exc
+    b = _env_bool("SLOWSHIELD_SHIELDWALL_VIA_LEADER")
+    if b is not None:
+        sw.via_leader = b
+    if v := env.get("SLOWSHIELD_LEADER_CA_FILE", "").strip():
+        sw.leader_ca_file = v
+    return role_set
+
+
+def keep_role(cfg: LoadedConfig, stored: str | None) -> bool:
+    """An instance that nothing gives a shield wall role (no SLOWSHIELD_SHIELDWALL_ROLE, no `shieldwall.role` in the
+    file, no join string) keeps the role it had: `stored`, as the database recorded it at the last start. Only an
+    explicit `standalone` leaves the wall. Returns whether the stored role was kept."""
+    sw = cfg.raw.shieldwall
+    if sw.role != "standalone" or sw.join or ROLE_KEY in cfg.explicit or stored not in ("leader", "follower"):
+        return False
+    sw.role = stored
+    return True
+
+
+_LABEL = re.compile(r"[A-Za-z0-9._-]{1,63}")
+
+
+def _validate_shieldwall(sw: ShieldwallConfig) -> None:
+    if sw.role == "leader" and sw.join:
+        raise ConfigError("shieldwall: a leader can't also join another leader (remove the join string)")
+    # A follower without a join string is checked at startup, against the database: a paired follower syncs with
+    # the leader it stored, and only an unpaired one needs the join string.
+    if sw.join:
+        from slowshield.shieldwall.join import JoinString, JoinStringError
+
+        try:
+            JoinString.parse(sw.join)
+        except JoinStringError as exc:
+            raise ConfigError(f"shieldwall.join: {exc}") from exc
+    if not 0 <= sw.min_delay_days <= 365:
+        raise ConfigError("shieldwall.min_delay_days must be between 0 and 365")
+    for text, what in ((sw.name or "", "name"), (sw.location, "location")):
+        if len(text) > 100 or any(ord(c) < 32 for c in text):
+            raise ConfigError(f"shieldwall.{what}: at most 100 printable characters")
+    for key, value in sw.labels.items():
+        if not _LABEL.fullmatch(key) or len(value) > 100 or any(ord(c) < 32 for c in value):
+            raise ConfigError(f"shieldwall.labels: invalid label {key!r}")
 
 
 # Public URLs end up unquoted in the Setup page's shell snippets and in npm tarball links: scheme, host, optional
@@ -477,6 +600,7 @@ _OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localho
 
 
 def _validate(cfg: Config) -> None:
+    _validate_shieldwall(cfg.shieldwall)
     if cfg.default_delay_days < 0:
         raise ConfigError("default_delay_days must be >= 0")
     if cfg.metadata_cache_ttl_hours <= 0:
@@ -576,8 +700,36 @@ def _validate(cfg: Config) -> None:
             raise ConfigError(f"exception for {rule.ecosystem}/{rule.package}: delay_days must be >= 0")
 
 
-def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: int = 0) -> LoadedConfig:
-    _apply_env(cfg)
+def rule_tables(
+    exceptions: list[ExceptionRule], oci: OciUpstream
+) -> tuple[dict[tuple[str, str], float], dict[tuple[str, str, str], float]]:
+    """Exceptions as lookup tables, by package and by version, with names normalised. The first rule for a key
+    wins."""
+    pkg_rules: dict[tuple[str, str], float] = {}
+    ver_rules: dict[tuple[str, str, str], float] = {}
+    for rule in exceptions:
+        name = normalize(rule.ecosystem, rule.package)
+        if rule.ecosystem == "oci":
+            name = oci.canonical(name)
+        if rule.version:
+            version = rule.version.strip()
+            if rule.ecosystem == "go" and not version.startswith("v"):
+                version = "v" + version  # Go versions always carry the `v`; accept "1.2.3" as well
+            ver_rules.setdefault((rule.ecosystem, name, version), rule.delay_days)
+        else:
+            pkg_rules.setdefault((rule.ecosystem, name), rule.delay_days)
+    return pkg_rules, ver_rules
+
+
+def build(
+    cfg: Config,
+    *,
+    path: Path | None,
+    warnings: list[str],
+    generation: int = 0,
+    explicit: frozenset[str] = frozenset(),
+) -> LoadedConfig:
+    explicit = explicit | _apply_env(cfg)
     _validate(cfg)
     base = (cfg.public_url or "http://localhost:8080").rstrip("/")
     for eco, env, path_url in (
@@ -589,20 +741,7 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
                 f"upstreams.{eco}.hostnames ({env}) is deprecated and will be removed in 0.1: "
                 f"point clients at {path_url} instead (docs/design/routing.md)"
             )
-    pkg_rules: dict[tuple[str, str], float] = {}
-    ver_rules: dict[tuple[str, str, str], float] = {}
-    for rule in cfg.exceptions:
-        name = normalize(rule.ecosystem, rule.package)
-        if rule.ecosystem == "oci":
-            name = cfg.upstreams.oci.canonical(name)
-        if rule.version:
-            version = rule.version.strip()
-            if rule.ecosystem == "go" and not version.startswith("v"):
-                version = "v" + version  # Go versions always carry the `v`; accept "1.2.3" as well
-            key = (rule.ecosystem, name, version)
-            ver_rules.setdefault(key, rule.delay_days)
-        else:
-            pkg_rules.setdefault((rule.ecosystem, name), rule.delay_days)
+    pkg_rules, ver_rules = rule_tables(cfg.exceptions, cfg.upstreams.oci)
     networks = []
     for cidr in cfg.trusted_proxies:
         try:
@@ -620,6 +759,7 @@ def build(cfg: Config, *, path: Path | None, warnings: list[str], generation: in
         path=path,
         generation=generation,
         warnings=warnings,
+        explicit=explicit,
         github_token=token,
         github_token_status=status,
         _pkg_rules=pkg_rules,
@@ -653,7 +793,10 @@ def parse(text: str, *, path: Path | None = None, generation: int = 0) -> Loaded
         cfg = msgspec.convert(data, Config, strict=False)
     except msgspec.ValidationError as exc:
         raise ConfigError(f"{path or 'config'}: {exc}") from exc
-    return build(cfg, path=path, warnings=warnings, generation=generation)
+    explicit = frozenset(POLICY_KEYS & data.keys())
+    if isinstance(data.get("shieldwall"), dict) and "role" in data["shieldwall"]:
+        explicit |= {ROLE_KEY}
+    return build(cfg, path=path, warnings=warnings, generation=generation, explicit=explicit)
 
 
 def config_path_from_env() -> Path | None:
@@ -687,6 +830,7 @@ RESTART_ONLY = (
     "database_path",
     "workers",
     "public_url",
+    "shieldwall",
 )
 
 
@@ -726,11 +870,34 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
 
 
 class ConfigHolder:
-    """Holds the active config; `maybe_reload()` swaps it in when the file changed (mtime + size)."""
+    """Holds the active config; `maybe_reload()` swaps it in when the file changed (mtime + size).
+
+    On a shield wall follower, `current` is this instance's own config (`local`) with the leader's policy merged in
+    (`set_overlay`); every swap gets a new generation, so cached evaluations are dropped.
+    """
 
     def __init__(self, cfg: LoadedConfig) -> None:
+        self.local = cfg
         self.current = cfg
         self._stamp = self._file_stamp(cfg.path)
+        self._generation = cfg.generation
+        self._overlay: Callable[[LoadedConfig], LoadedConfig] | None = None
+        self._overlay_key: object = None
+
+    def set_overlay(self, key: object, overlay: Callable[[LoadedConfig], LoadedConfig] | None) -> bool:
+        """Merge something into the local config (the shield wall leader's policy); `key` identifies it, so setting the
+        same overlay again is a no-op. Returns whether the active config changed."""
+        if key == self._overlay_key:
+            return False
+        self._overlay_key = key
+        self._overlay = overlay
+        self._swap()
+        return True
+
+    def _swap(self) -> None:
+        self._generation += 1
+        merged = self.local if self._overlay is None else self._overlay(self.local)
+        self.current = dataclasses.replace(merged, generation=self._generation)
 
     @staticmethod
     def _file_stamp(path: Path | None) -> tuple[float, int] | None:
@@ -751,18 +918,20 @@ class ConfigHolder:
             return False
         self._stamp = stamp
         try:
-            new = load(path, generation=self.current.generation + 1)
+            new = load(path, generation=self._generation + 1)
         except ConfigError as exc:
             log.error("config reload failed, keeping previous config", extra={"error": str(exc)})
             return False
+        keep_role(new, self.local.raw.shieldwall.role)  # as a restart would: the role the database recorded
         ignored = restart_only_changes(self.current.raw, new.raw)
         if ignored:
             log.warning("config changes require a restart and were not applied", extra={"fields": ignored})
             for name in ignored:
-                _restore_field(new.raw, self.current.raw, name)
-            new = build(new.raw, path=path, warnings=new.warnings, generation=new.generation)
-        self.current = new
-        log.info("config reloaded", extra={"generation": new.generation})
+                _restore_field(new.raw, self.local.raw, name)
+            new = build(new.raw, path=path, warnings=new.warnings, generation=new.generation, explicit=new.explicit)
+        self.local = new
+        self._swap()
+        log.info("config reloaded", extra={"generation": self._generation})
         return True
 
 

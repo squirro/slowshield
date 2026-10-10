@@ -118,4 +118,9 @@
       });
     }
   });
+  // A select that narrows a page (a shield wall leader's instances) applies at once; in an htmx form, htmx does that.
+  document.addEventListener("change", (event) => {
+    const select = event.target.closest("select[data-autosubmit]");
+    if (select && select.form && !select.form.hasAttribute("hx-get")) select.form.requestSubmit();
+  });
 })();

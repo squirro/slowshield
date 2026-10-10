@@ -1,9 +1,11 @@
 """Blocklist lookups backed by SQLite with a small per-process cache.
 
-Rows come from threat feeds, and from config.toml's [[blocks]] (`source = 'config'`). A row with neither `version`
-nor `version_range` blocks the whole package; otherwise it blocks one exact version or a comparator range. The
-in-process cache is keyed by (ecosystem, name) and dropped whenever `meta.blocklist_generation` changes (feeds bump it
-on commit), which `refresh_generation()` checks at most once per second.
+Rows come from threat feeds, from config.toml's [[blocks]] (`source = 'config'`), and on a shield wall follower
+from its leader (`source = 'leader'`: the leader's own blocks and, when this instance has no GitHub token, the
+leader's GitHub advisories). A row with neither `version` nor `version_range` blocks the whole package; otherwise it
+blocks one exact version or a comparator range. The in-process cache is keyed by (ecosystem, name) and dropped
+whenever `meta.blocklist_generation` changes (feeds bump it on commit), which `refresh_generation()` checks at most
+once per second.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ class BlockEntry:
 
     def explain(self, what: str) -> list[str]:
         """Lines a client prints: what is blocked, by which advisory (or by the operator), and why."""
-        if self.source == "config":
+        if self.source == "config" or (self.source == "leader" and not self.advisory_id):
             lines = [f"slowshield: {what} is blocked by the administrator of this proxy."]
             if self.url:
                 lines.append(f"See {self.url}")

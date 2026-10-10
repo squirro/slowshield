@@ -9,6 +9,11 @@
 {{- if not .Values.hostnames }}
 {{- fail "hostnames must contain at least one entry" }}
 {{- end }}
+{{- with .Values.shieldwall }}
+{{- if and .joinSecret (not .leaderCaSecret) (not .leaderPubliclyTrusted) }}
+{{- fail "shieldwall.joinSecret makes this release a follower, and a follower must trust its leader's certificate: set shieldwall.leaderCaSecret to a Secret with the CA that signed it (a leader on this chart's default tls.mode internal uses Caddy's private CA), or shieldwall.leaderPubliclyTrusted=true if the leader's certificate is publicly trusted (tls.mode acme)" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -79,6 +84,37 @@ spec:
             - name: SLOWSHIELD_NPM_HOSTNAMES
               value: {{ join " " . | quote }}
             {{- end }}
+            {{- with .Values.shieldwall }}
+            {{- if or (eq .role "leader") (eq .role "standalone") }}
+            - name: SLOWSHIELD_SHIELDWALL_ROLE
+              value: {{ .role | quote }}
+            {{- end }}
+            {{- if .joinSecret }}
+            - name: SLOWSHIELD_JOIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .joinSecret }}
+                  key: {{ .joinSecretKey }}
+            - name: SLOWSHIELD_JOIN_CONFIRM
+              value: {{ .confirm | quote }}
+            {{- end }}
+            {{- if .name }}
+            - name: SLOWSHIELD_INSTANCE_NAME
+              value: {{ .name | quote }}
+            {{- end }}
+            {{- if .location }}
+            - name: SLOWSHIELD_INSTANCE_LOCATION
+              value: {{ .location | quote }}
+            {{- end }}
+            {{- if .leaderCaSecret }}
+            - name: SLOWSHIELD_LEADER_CA_FILE
+              value: /run/secrets/leader-ca/{{ .leaderCaSecretKey }}
+            {{- end }}
+            {{- with .labels }}
+            - name: SLOWSHIELD_INSTANCE_LABELS
+              value: {{ $pairs := list }}{{ range $k, $v := . }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}{{ join "," $pairs | quote }}
+            {{- end }}
+            {{- end }}
             {{- if $github }}
             - name: GITHUB_TOKEN_FILE
               value: /run/secrets/github/{{ .Values.feeds.github.existingSecretKey }}
@@ -137,6 +173,11 @@ spec:
             {{- if $github }}
             - name: github-token
               mountPath: /run/secrets/github
+              readOnly: true
+            {{- end }}
+            {{- if .Values.shieldwall.leaderCaSecret }}
+            - name: leader-ca
+              mountPath: /run/secrets/leader-ca
               readOnly: true
             {{- end }}
         {{- if .Values.caddy.enabled }}
@@ -258,6 +299,12 @@ spec:
           secret:
             secretName: {{ $github }}
             defaultMode: 0400
+        {{- end }}
+        {{- if .Values.shieldwall.leaderCaSecret }}
+        - name: leader-ca
+          secret:
+            secretName: {{ .Values.shieldwall.leaderCaSecret }}
+            defaultMode: 0444
         {{- end }}
         {{- if .Values.caddy.enabled }}
         - name: caddy-data

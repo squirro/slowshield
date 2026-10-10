@@ -1,0 +1,130 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block title %}Shield wall{% endblock %}
+{% macro days(v) -%}{{ v|round(2)|string|replace(".0", "") }} day{{ "s" if v != 1 }}{%- endmacro %}
+{% macro value(key, v) -%}
+  {%- if v is none %}<span class="muted">not set</span>
+  {%- elif key == "default_delay_days" %}{{ days(v) }}
+  {%- else %}{{ "on" if v else "off" }}{% endif -%}
+{%- endmacro %}
+{% block content %}
+{% if shieldwall_role == "leader" %}
+<div class="page-head">
+  <div><h1>Shield wall</h1>
+    <p class="muted">This instance leads {{ members|length }} follower{{ "s" if members|length != 1 }}. They take its policy and blocks, send their statistics and events here, and fetch package files through it. Each keeps working on its own when this instance is down.</p></div>
+</div>
+<section class="card">
+  <header class="card-head"><h2>Followers</h2><a href="/ui/{{ qs({}) }}">Whole shield wall on the overview →</a></header>
+  {% if members %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Name</th><th>Location</th><th>Labels</th><th>Version</th><th>Last seen</th><th class="num">Served (24h)</th><th class="num">Queued</th></tr></thead>
+    <tbody>
+    {% for f in members %}
+      {% set stale = not f.last_seen or now - f.last_seen > 300 %}
+      <tr>
+        <td><a href="/ui/{{ qs({'in': f.id}) }}">{{ f.name }}</a>{% if f.state != "active" %} <span class="badge">{{ f.state }}</span>{% endif %}
+          <div class="muted small mono">{{ f.id }}</div></td>
+        <td>{% if f.location %}<a href="/ui/{{ qs({'in': 'loc:' ~ f.location}) }}">{{ f.location }}</a>{% else %}—{% endif %}</td>
+        <td>{% for k, v in f.labels.items() %}<a class="badge" href="/ui/{{ qs({'in': 'label:' ~ k ~ '=' ~ v}) }}">{{ k }}={{ v }}</a> {% else %}—{% endfor %}</td>
+        <td><code>{{ f.version or "—" }}</code></td>
+        <td{% if stale and f.state == "active" %} class="warn-text"{% endif %}>{{ ago(f.last_seen) }}</td>
+        <td class="num">{{ f.serves|num }}</td>
+        <td class="num">{{ f.status.get("outbox_lag", 0)|num }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">No followers yet.</p>{% endif %}
+</section>
+<section class="card">
+  <header class="card-head"><h2>Add a follower</h2>{% if invitations %}<span class="badge">{{ invitations }} open invitation{{ "s" if invitations != 1 }}</span>{% endif %}</header>
+  <ol class="steps">
+    <li>On this instance, print a join string. It works once, for 10 minutes:
+      <pre><code>docker exec slowshield slowshield wall invite --name zurich-1 --location zurich</code></pre></li>
+    <li>Start the new instance with it: <code>SLOWSHIELD_JOIN='ssj1:…'</code>. Nothing else to configure.</li>
+    <li>Open the new instance's Shield wall page and click <strong>Join</strong> once its fingerprint matches this one:
+      <pre><code>{{ fingerprint }}</code></pre></li>
+  </ol>
+  <p class="muted small">Remove a follower with <code>slowshield wall remove &lt;name&gt;</code>: it keeps running, on its own.</p>
+</section>
+
+{% elif shieldwall_role == "follower" %}
+<div class="page-head">
+  <div><h1>Shield wall</h1><p class="muted">This instance follows a leader: it takes the leader's policy and blocks, and reports its statistics and events to it. When the leader can't be reached, it keeps working on its own and catches up later.</p></div>
+</div>
+{% if not leader and not cfg.shieldwall.join %}
+<section class="card"><p>This instance has no join string. Start it with the one <code>slowshield wall invite</code> prints on the leader (<code>SLOWSHIELD_JOIN</code>).</p>
+  <p class="muted small">It works on its own meanwhile.</p></section>
+{% elif not leader %}
+<section class="card"><p>Looking for the leader at <code>{{ cfg.shieldwall.join.split("#")[0][5:] }}</code>…</p>
+  {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+  <p class="muted small">This instance keeps trying, and works on its own meanwhile. Check that it can reach that URL.</p></section>
+{% else %}
+  {% if leader.state == "pending" and not leader.confirmed_by and cfg.shieldwall.join %}
+  <section class="card">
+    <header class="card-head"><h2>Join {{ leader.name or "the leader" }}?</h2></header>
+    <p>The join string this instance was started with points to this leader. Compare the fingerprint with the one <code>slowshield wall invite</code> printed on the leader, then join.</p>
+    <dl class="facts">
+      <dt>Leader</dt><dd>{{ leader.name or "—" }} <span class="muted mono small">{{ leader.leader_id }}</span></dd>
+      <dt>URL</dt><dd><code>{{ leader.url }}</code></dd>
+      <dt>Fingerprint</dt><dd><code>{{ leader.fingerprint }}</code></dd>
+    </dl>
+    <form method="post" action="/ui/shieldwall/join" class="actions">
+      <input type="hidden" name="leader" value="{{ leader.leader_id }}">
+      <button type="submit" class="button primary">Join</button>
+    </form>
+    <p class="muted small">Joining sends this instance's statistics and events (with client IPs, unless it doesn't record them) to the leader, and applies the leader's policy: stricter settings at once, looser ones after an hour, never below {{ days(cfg.shieldwall.min_delay_days) }}.</p>
+  </section>
+  {% else %}
+  <section class="card">
+    <header class="card-head"><h2>{{ leader.name or "Leader" }}</h2>
+      <span class="badge">{{ {"active": "Joined", "pending": "Joining…", "join_failed": "Join failed", "removed": "Removed by the leader", "key_changed": "Leader key changed", "detached": "Not following"}.get(leader.state, leader.state) }}</span></header>
+    <dl class="facts">
+      <dt>URL</dt><dd><code>{{ leader.url }}</code></dd>
+      <dt>Fingerprint</dt><dd><code>{{ leader.fingerprint }}</code></dd>
+      {% if leader.paired %}<dt>Joined</dt><dd>{{ ago(leader.paired) }}</dd>{% endif %}
+      <dt>Last sync</dt><dd{% if sync_age and sync_age > 300 %} class="warn-text"{% endif %}>{{ ago(leader.last_sync) }}</dd>
+      <dt>Reports queued</dt><dd>{{ outbox[0]|num }}{% if outbox[1] %} <span class="muted small">(oldest {{ ago(outbox[1]) }})</span>{% endif %}</dd>
+      <dt>Blocks from the leader</dt><dd>{{ leader_blocks|num }}</dd>
+      {% if leader.last_error %}<dt>Last error</dt><dd class="error-text">{{ leader.last_error }}</dd>{% endif %}
+    </dl>
+    {% if leader.state == "join_failed" %}<p>Ask for a new join string (<code>slowshield wall invite</code> on the leader) and restart this instance with it.</p>{% endif %}
+    {% if leader.state == "removed" %}<p>This instance runs on its own with its own settings. To join again, start it with a new join string.</p>{% endif %}
+  </section>
+  {% if policy %}
+  <section class="card">
+    <header class="card-head"><h2>Policy</h2></header>
+    <table class="table compact">
+      <thead><tr><th>Setting</th><th>This instance</th><th>Leader</th><th>Applies</th></tr></thead>
+      <tbody>{% for p in policy %}<tr><td><code>{{ p.key }}</code></td><td>{{ value(p.key, p.local) }}</td><td>{{ value(p.key, p.leader) }}</td><td><strong>{{ value(p.key, p.applied) }}</strong></td></tr>{% endfor %}</tbody>
+    </table>
+    <p class="muted small">The stricter value wins. Delays from the leader are never shorter than {{ days(cfg.shieldwall.min_delay_days) }} (<code>SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS</code>). This instance's own exceptions stay in force.</p>
+  </section>
+  {% endif %}
+  {% if pending %}
+  <section class="card">
+    <header class="card-head"><h2>Waiting to apply</h2></header>
+    <p class="muted">The leader loosened these. They apply when the wait is over, unless the leader changes its mind first.</p>
+    <table class="table compact">
+      <thead><tr><th>Change</th><th>Applies</th></tr></thead>
+      <tbody>{% for p in pending %}<tr><td>{{ "Looser policy" if p.kind == "policy" else "Lift block #" ~ p.key }}</td><td title="{{ p.due|ts }}">{{ ago(p.due) }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </section>
+  {% endif %}
+  {% endif %}
+{% endif %}
+
+{% else %}
+<div class="page-head"><div><h1>Shield wall</h1><p class="muted">This instance runs on its own.</p></div></div>
+<section class="card">
+  <p>Several SlowShield instances can work as one: a leader holds the policy and shows every instance's traffic, followers take its policy and fetch package files through it, and each keeps working when the others are down.</p>
+  <ol class="steps">
+    <li>On the instance that leads, set <code>SLOWSHIELD_SHIELDWALL_ROLE=leader</code> and restart it.</li>
+    <li>On it, run <code>slowshield wall invite</code> and start each follower with the join string it prints (<code>SLOWSHIELD_JOIN</code>).</li>
+    <li>Confirm the leader on each follower's Shield wall page.</li>
+  </ol>
+</section>
+{% endif %}
+{% endblock %}

@@ -19,7 +19,10 @@ _SAFE = re.compile(r"[A-Za-z0-9._~:/%\[\]-]+")
 CLIENT_AGE_DAYS = 3
 # slowshield.org's guide has a page per ecosystem with a section per tool; the Setup page links to them.
 DOCS = "https://slowshield.org/docs/"
-DOCS_PAGES = {"pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "oci": "containers"}
+DOCS_PAGES = {
+    "pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "nuget": "csharp",
+    "oci": "containers",
+}  # fmt: skip
 _AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
 
@@ -77,7 +80,7 @@ def slug(name: str) -> str:
 
 def docs_url(ecosystem: str, tool: str = "") -> str:
     """The guide page for `ecosystem` on slowshield.org, at `tool`'s section if given; the guide's start page for an
-    ecosystem it has no page for yet (NuGet)."""
+    ecosystem it has no page for yet."""
     page = DOCS_PAGES.get(ecosystem)
     if page is None:
         return DOCS

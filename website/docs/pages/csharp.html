@@ -1,0 +1,75 @@
+<!-- title: C# | description: Use SlowShield as the NuGet source for dotnet: setup, held versions left out, NU1603, 425 Too Early, and Docker builds. -->
+<h1>C#</h1>
+<p class="lead">SlowShield serves nuget.org at <code>https://slowshield.example.com/nuget/v3/index.json</code>, for the
+  .NET SDK (<code>dotnet</code>), and so for C#, F# and Visual Basic projects. Projects keep their
+  <code>PackageReference</code>s as they are; only where packages come from changes.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>NuGet takes its sources from a <code>NuGet.Config</code>, not from environment variables. The one in your home
+  directory covers every project on the machine:</p>
+<!-- @tools csharp -->
+<ul>
+  <li><strong><code>&lt;clear /&gt;</code> is required.</strong> NuGet asks every enabled source and takes the first
+    good answer, so a nuget.org source left enabled goes around SlowShield.</li>
+  <li><strong>The source is named <code>nuget.org</code></strong>, so <code>packageSourceMapping</code> entries that name
+    nuget.org keep working.</li>
+  <li><strong>A solution's own <code>NuGet.Config</code></strong> can add nuget.org back. <code>dotnet nuget list
+    source</code> in the project's folder shows the sources it actually uses.</li>
+</ul>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is each version's <code>published</code> in nuget.org's registration, which
+    nuget.org sets. The first one SlowShield sees is kept, so it can't move earlier. An unlisted version, which nuget.org
+    dates 1900-01-01, is timed from when SlowShield first listed it.</li>
+  <li><strong>Held versions are left out</strong> of the version list <code>dotnet restore</code> reads, of the
+    registration and of search, so <code>dotnet add package</code> without a version picks the newest version that is
+    old enough.</li>
+  <li><strong>A reference to a held version</strong> (<code>Version="6.0.30"</code>, a minimum) restores the next
+    version up that is old enough, with only a warning. Usually the next version up is newer still, so held too, and
+    restore fails (<code>NU1102</code>, or <code>NU1103</code> when only prereleases are left). But on a package with
+    several maintained lines, 6.0.30 released yesterday and 7.0.0 a year ago, it moves to the other line:
+    <div class="code"><pre><code>warning NU1603: App depends on Contoso.Data (&gt;= 6.0.30) but Contoso.Data 6.0.30 was not found. Contoso.Data 7.0.0 was resolved instead.</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    So fail the build on <code>NU1603</code>, with the <code>Directory.Build.props</code> above.</li>
+  <li><strong>An exact pin</strong> (<code>[6.0.30]</code>) fails with <code>NU1102: Unable to find package
+    Contoso.Data with version (= 6.0.30)</code>. Asking for the package file itself gets <code>425 Too Early</code>
+    with <code>Retry-After</code>; <code>dotnet</code> shows only the status line, never the message.</li>
+  <li><strong>Brand-new packages</strong> none of whose versions is old enough are held too: NuGet doesn't fail open,
+    because brand-new packages are the realistic attack (typosquats, impersonations).</li>
+  <li><strong>Malware</strong> from OSV and GitHub is refused with <code>451</code> (<code>NU1301</code> in
+    <code>dotnet</code>). Every <code>.nupkg</code> is checked against nuget.org's SHA512 and the fingerprint SlowShield
+    recorded the first time, and never changed, so its repository signature stays valid.</li>
+  <li><strong>NuGetAudit keeps working:</strong> nuget.org's vulnerability data comes through SlowShield.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>NuGet has no release-age setting, so SlowShield is the only layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>Write the <code>NuGet.Config</code> in the build stage. With a build argument, the same Dockerfile still builds
+  without SlowShield when the argument is empty:</p>
+<div class="code"><pre><code>FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG NUGET_SOURCE=https://slowshield.example.com/nuget/v3/index.json
+RUN if [ -n "$NUGET_SOURCE" ]; then mkdir -p "$HOME/.nuget/NuGet" &amp;&amp; printf '%s\n' \
+      '&lt;?xml version="1.0" encoding="utf-8"?&gt;' '&lt;configuration&gt;' '  &lt;packageSources&gt;' '    &lt;clear /&gt;' \
+      "    &lt;add key=\"nuget.org\" value=\"$NUGET_SOURCE\" protocolVersion=\"3\" /&gt;" \
+      '  &lt;/packageSources&gt;' '&lt;/configuration&gt;' &gt; "$HOME/.nuget/NuGet/NuGet.Config"; fi
+WORKDIR /src
+COPY *.csproj ./
+RUN dotnet restore
+COPY . .
+RUN dotnet publish -c Release -o /app --no-restore</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>In CI, run the Setup page's one-line command before <code>dotnet restore</code>. <a href="/docs/container-builds/">Building
+  images</a> covers the base image too, and how to check that nothing in a build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Checked with the .NET SDK 10. Visual Studio, Rider and <code>nuget.exe</code> read the same
+    <code>NuGet.Config</code>, but haven't been tried.</li>
+  <li>Not served: publishing (<code>dotnet nuget push</code> goes to nuget.org), symbol packages, and clients older than
+    NuGet 4.3.</li>
+  <li>Private feeds stay sources of their own, mapped with <code>packageSourceMapping</code>.</li>
+  <li>Packages already in the global packages folder (<code>~/.nuget/packages</code>) are used without asking any
+    source. <code>dotnet nuget locals global-packages --clear</code> empties it.</li>
+  <li>Block api.nuget.org at the firewall for machines that should only use SlowShield.</li>
+</ul>

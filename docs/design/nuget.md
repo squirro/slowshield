@@ -14,7 +14,7 @@ service was checked twice:
   left out held and blocked versions; a blocked package failed with `451` (`NU1301`).
 
 The e2e test (`tests/e2e/test_stack.py::test_nuget_restores_through_the_proxy`) runs the same client through the
-Compose stack. It hasn't run yet.
+Compose stack, on amd64 and arm64, in CI.
 
 SlowShield serves nuget.org at `/nuget/`. NuGet has no release-age setting of its own, so SlowShield's delay is the
 only one. Versions younger than the delay are left out of the version lists and refused on download, known malware is

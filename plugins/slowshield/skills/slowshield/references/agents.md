@@ -6,16 +6,16 @@ Coding agents install packages on their own: `pip install`, `npm install`, `npx`
 
 ## If you are an agent
 
-SlowShield may be in front of you. Look for its URL in `PIP_INDEX_URL`, `UV_DEFAULT_INDEX`, `npm_config_registry`, `GOPROXY`, `~/.m2/settings.xml`, `$CARGO_HOME/config.toml` or the container runtime's configuration. `GET /readyz` on it answers `ready`. What its answers mean:
+SlowShield may be in front of you. Look for its URL in `PIP_INDEX_URL`, `UV_DEFAULT_INDEX`, `npm_config_registry`, `GOPROXY`, `~/.m2/settings.xml`, `$CARGO_HOME/config.toml`, `~/.nuget/NuGet/NuGet.Config` or the container runtime's configuration. `GET /readyz` on it answers `ready`. What its answers mean:
 
 | You see | It means | Do |
 |---|---|---|
 | An older version than you expected, or "no matching version" for an exact new one | Newer versions are held: they are younger than the delay (7 days by default) | Use the newest version that installs. Don't pin the new one. |
-| `403` with `{"error":"age_too_new", …, "retry_after_secs": …}` (PyPI, npm), "is too new" (Go, Cargo, container images), `425 Too Early` (Maven, Gradle) | A pinned version (lockfile, digest) is held. `Retry-After` and the message say when it becomes available | Use an older version, or tell the user when this one becomes available. |
+| `403` with `{"error":"age_too_new", …, "retry_after_secs": …}` (PyPI, npm), "is too new" (Go, Cargo, container images), `425 Too Early` (Maven, Gradle, NuGet) | A pinned version (lockfile, digest) is held. `Retry-After` and the message say when it becomes available | Use an older version, or tell the user when this one becomes available. |
 | `451` with the advisory, such as `{"error":"blocked", "advisory_id":"MAL-…", …}` (container images: `403`, "is blocked") | Known malware, or blocked by the administrator | Don't install it, and don't look for a similarly named package. Tell the user. |
 | The header `X-SlowShield-Fail-Open: 1` | A brand-new package none of whose versions is old enough, served anyway | Check that the name is exactly the one you meant: typosquats and hallucinated names are brand new too. |
 
-**Don't go around it.** Never point an install at pypi.org, registry.npmjs.org, proxy.golang.org (or add `,direct` to `GOPROXY`), Maven Central, crates.io or a container registry directly, and don't add them with `--index-url`, `--extra-index-url` or `--registry`. If a version is needed early, ask the user: an administrator can make an exception for it.
+**Don't go around it.** Never point an install at pypi.org, registry.npmjs.org, proxy.golang.org (or add `,direct` to `GOPROXY`), Maven Central, crates.io, nuget.org or a container registry directly, and don't add them with `--index-url`, `--extra-index-url`, `--registry` or `--source`. If a version is needed early, ask the user: an administrator can make an exception for it.
 
 ## Instructions for your agent
 
@@ -26,8 +26,9 @@ For `AGENTS.md`, `CLAUDE.md` or your agent's system prompt, with your instance's
 Packages and container images come through SlowShield (https://slowshield.example.com), which holds new
 releases back for 7 days and refuses known malware.
 - Never point installs at the public registries, or add them as extra indexes, to go around SlowShield.
-- "Too new" (403, Maven 425): the version is younger than 7 days. Use the newest version that installs;
-  don't pin the new one. If the user needs it now, say so: an administrator can make an exception.
+- "Too new" (403, or 425 Too Early from Maven, Gradle and NuGet): the version is younger than 7 days.
+  Use the newest version that installs; don't pin the new one. If the user needs it now, say so: an
+  administrator can make an exception.
 - 451, or "blocked": known malware. Don't install it or a look-alike package. Tell the user.
 - X-SlowShield-Fail-Open: 1 means a brand-new package. Check the name is exactly the one intended.
 ```
@@ -51,7 +52,7 @@ An [Agent Skill](https://agentskills.io) that teaches an agent to set up every p
        npm_config_registry=https://slowshield.example.com/npm/ \
        GOPROXY=https://slowshield.example.com/go
    ```
-   Maven, Gradle and Cargo need a file each ([Java](https://slowshield.org/docs/java/), [Rust](https://slowshield.org/docs/rust/)); images the sandbox pulls need the runtime's setting ([Container images](https://slowshield.org/docs/containers/)).
+   Maven, Gradle, Cargo and NuGet need a file each ([Java](https://slowshield.org/docs/java/), [Rust](https://slowshield.org/docs/rust/), [C#](https://slowshield.org/docs/csharp/)); images the sandbox pulls need the runtime's setting ([Container images](https://slowshield.org/docs/containers/)).
 
 2. **Let only SlowShield out.** With the registries off the sandbox's network allowlist, an agent can't install around SlowShield, even when it passes its own `--index-url`.
 

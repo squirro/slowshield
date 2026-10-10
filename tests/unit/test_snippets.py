@@ -98,8 +98,12 @@ def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() ->
     assert 'protocolVersion="3" allowInsecureConnections="true" />' in local.snippets[0][1]
     with pytest.raises(ValueError, match="refusing"):
         S.tools(*urls, nuget="https://h/nuget/'$(id)'")
-    # The guide has no C# page yet: the link goes to its start page.
-    assert S.docs_url("nuget", "NuGet") == S.DOCS and S.docs_url("cargo", "Cargo") == f"{S.DOCS}rust/#cargo"
+    assert (
+        S.docs_url("nuget", "NuGet") == f"{S.DOCS}csharp/#nuget"
+        and S.docs_url("cargo", "Cargo") == f"{S.DOCS}rust/#cargo"
+    )
+    # An ecosystem the guide has no page for: its start page.
+    assert S.docs_url("unknown", "Tool") == S.DOCS
 
 
 def test_tools_name_the_version_their_release_age_needs() -> None:

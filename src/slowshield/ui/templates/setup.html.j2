@@ -14,6 +14,13 @@
 <div class="page-head">
   <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm, go, Maven, Gradle, Cargo, NuGet and container runtimes at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
 </div>
+{% if also_at %}
+<section class="card" role="note">
+  <p><strong>New clients use <code>{{ setup_url }}</code>.</strong> Clients set up with
+    <code>{{ also_at }}</code> keep working: this instance still answers there, and the package URLs it hands out
+    stay there too.</p>
+</section>
+{% endif %}
 {% if legacy_hosts %}
 <section class="card" role="note">
   <p><strong>Per-ecosystem hostnames are deprecated</strong> and stop working in SlowShield 0.1:

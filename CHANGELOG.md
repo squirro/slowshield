@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `setup_url` (`SLOWSHIELD_SETUP_URL`): the URL the Setup page gives clients, when it isn't `public_url`. Moving
+  clients to a new name (a Tailscale Service, say), an instance keeps answering under `public_url` and keeps its
+  npm, Cargo and NuGet URLs there, so existing clients go on working, while new ones are set up with the new name.
 - Helm: `hostAliases` for the pod. A shield wall follower whose leader only resolves on a tailnet maps the leader's
   name to an in-cluster egress proxy (a Tailscale egress Service, say), so it keeps the leader's URL and certificate.
 - Shield wall: several instances standing together, one leader and many followers

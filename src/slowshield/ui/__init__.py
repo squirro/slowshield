@@ -626,10 +626,12 @@ class UI:
     async def setup(self, request: Request) -> Response:
         cfg = self.ctx.cfg
         raw = cfg.raw
-        base = cfg.public_base()
+        # Instructions use setup_url (the name new clients should use); responses keep public_url.
+        base = cfg.setup_base()
         # Path URLs only: per-ecosystem hostnames are deprecated (removed in 0.1) and only get a notice.
         pypi_index = f"{base}/pypi/simple/"
-        npm_registry = cfg.npm_public_base() + "/"
+        npm_public = raw.upstreams.npm.public_url
+        npm_registry = (npm_public.rstrip("/") if npm_public else f"{base}/npm") + "/"
         go_proxy = f"{base}/go"
         maven_base = f"{base}/maven"
         cargo_index = f"{base}/cargo/"
@@ -673,6 +675,8 @@ class UI:
             cargo_index=cargo_index,
             nuget_source=nuget_source,
             legacy_hosts=legacy_hosts,
+            setup_url=cfg.setup_base(),
+            also_at=cfg.public_base() if raw.setup_url and cfg.setup_base() != cfg.public_base() else None,
             secure=secure,
             snippets=snippets,
             docs=S.docs_url,

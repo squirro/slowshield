@@ -196,3 +196,21 @@ async def test_setup_without_local_http(start_app) -> None:
     run = await start_app('local_http = true\npublic_url = "https://slowshield.example.com"\n', host="evil.test")
     r = await run.client.get("/ui/setup", headers={"X-Forwarded-Proto": "http"})
     assert "http://evil.test" not in r.text and "https://slowshield.example.com/pypi/simple/" in r.text
+
+
+async def test_setup_teaches_setup_url_while_responses_keep_public_url(start_app) -> None:
+    run = await start_app(
+        'public_url = "https://slowshield.example.com"\nsetup_url = "https://slowshield.tailnet.ts.net"\n'
+    )
+    page = (await run.client.get("/ui/setup")).text
+    assert "https://slowshield.tailnet.ts.net/pypi/simple/" in page and "https://slowshield.tailnet.ts.net/npm/" in page
+    assert "https://slowshield.example.com/pypi/simple/" not in page
+    assert "New clients use <code>https://slowshield.tailnet.ts.net</code>" in page
+    # Package URLs in responses stay under public_url, so clients set up before keep working.
+    doc = (await run.client.get("/npm/left-pad-ng")).json()
+    tarballs = [v["dist"]["tarball"] for v in doc["versions"].values()]
+    assert tarballs and all(t.startswith("https://slowshield.example.com/npm/") for t in tarballs)
+    # Without setup_url, nothing changes and no notice shows.
+    run = await start_app('public_url = "https://slowshield.example.com"\n')
+    page = (await run.client.get("/ui/setup")).text
+    assert "https://slowshield.example.com/pypi/simple/" in page and "New clients use" not in page

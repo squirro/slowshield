@@ -27,8 +27,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "nuget", "oci"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "nuget", "oci")
+Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "nuget", "rubygems", "oci"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "nuget", "rubygems", "oci")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -183,6 +183,22 @@ class NugetUpstream(msgspec.Struct, forbid_unknown_fields=True):
         }
 
 
+class RubygemsUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # A gem none of whose versions is old enough is held too, as on Cargo and NuGet: brand-new gems are the realistic
+    # attack (typosquats), and lockfiles pin versions (docs/design/rubygems.md).
+    fail_open: bool | None = False
+    # The compact index: /versions, /names and /info/<gem>. Each info line carries the push time (`created_at`), set
+    # by rubygems.org.
+    index_url: str = "https://index.rubygems.org"
+    # Where .gem files (<download_url>/gems/<file>.gem) and gem specifications
+    # (<download_url>/quick/Marshal.4.8/<file>.gemspec.rz) come from.
+    download_url: str = "https://rubygems.org"
+    # Hosts the download URL may redirect to (rubygems.org does not redirect). Every .gem is checked against the
+    # index's `checksum` wherever it comes from.
+    download_hosts: list[str] = []
+
+
 OciTimes = Literal["hub", "quay", "gcr", "mcr", "none"]
 
 
@@ -263,6 +279,7 @@ class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
     cargo: CargoUpstream = msgspec.field(default_factory=CargoUpstream)
     nuget: NugetUpstream = msgspec.field(default_factory=NugetUpstream)
+    rubygems: RubygemsUpstream = msgspec.field(default_factory=RubygemsUpstream)
     oci: OciUpstream = msgspec.field(default_factory=OciUpstream)
 
 
@@ -517,6 +534,7 @@ def _apply_env(cfg: Config) -> set[str]:
         ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
         ("SLOWSHIELD_CARGO_ENABLED", lambda b: setattr(cfg.upstreams.cargo, "enabled", b)),
         ("SLOWSHIELD_NUGET_ENABLED", lambda b: setattr(cfg.upstreams.nuget, "enabled", b)),
+        ("SLOWSHIELD_RUBYGEMS_ENABLED", lambda b: setattr(cfg.upstreams.rubygems, "enabled", b)),
         ("SLOWSHIELD_OCI_ENABLED", lambda b: setattr(cfg.upstreams.oci, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
@@ -699,6 +717,13 @@ def _validate(cfg: Config) -> None:
         # The three bases are prefixes (<base><id>/...), and only documents under them are followed.
         if name in ("flat_container_url", "registration_url", "catalog_url") and not url.endswith("/"):
             raise ConfigError(f"upstreams.nuget.{name} must end with /, got {url!r}")
+    rubygems = cfg.upstreams.rubygems
+    for name, url in (("index_url", rubygems.index_url), ("download_url", rubygems.download_url)):
+        if not url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.rubygems.{name} must be an http(s) URL, got {url!r}")
+    for host in rubygems.download_hosts:
+        if not _HOSTNAME.fullmatch(host):
+            raise ConfigError(f"upstreams.rubygems.download_hosts entries must be host names, got {host!r}")
     oci = cfg.upstreams.oci
     if oci.layer_cache_gb < 0:
         raise ConfigError("upstreams.oci.layer_cache_gb must be >= 0")
@@ -908,6 +933,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
         f"upstreams.cargo.{name}"
         for name in ("index_url", "download_url", "download_hosts")
         if getattr(old.upstreams.cargo, name) != getattr(new.upstreams.cargo, name)
+    )
+    changed.extend(  # these decide which upstream hosts the client may reach
+        f"upstreams.rubygems.{name}"
+        for name in ("index_url", "download_url", "download_hosts")
+        if getattr(old.upstreams.rubygems, name) != getattr(new.upstreams.rubygems, name)
     )
     old_nuget, new_nuget = old.upstreams.nuget.urls(), new.upstreams.nuget.urls()
     changed.extend(  # these decide which upstream hosts the client may reach

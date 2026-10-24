@@ -70,6 +70,10 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
             "nuget", "C#", names.normalize_nuget, names.is_valid_nuget, "NuGet", "nuget",
             "https://www.nuget.org/packages/{name}", "NuGet Gallery",
         ),
+        EcosystemInfo(
+            "rubygems", "Ruby", names.normalize_rubygems, names.is_valid_rubygems, "RubyGems", "rubygems",
+            "https://rubygems.org/gems/{name}", "RubyGems.org",
+        ),
         # No advisory database covers container images: OCI has no OSV or GitHub ecosystem name.
         EcosystemInfo(
             "oci", "Containers", names.normalize_oci, names.is_valid_oci, "", "", "https://{name}",

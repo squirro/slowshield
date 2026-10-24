@@ -423,7 +423,7 @@ def test_github_advisory_mapping() -> None:
         b'{"package": {"ecosystem": "pip", "name": "Foo_Bar"}, "vulnerable_version_range": "= 1.2.3"},'
         b'{"package": {"ecosystem": "npm", "name": "n"}, "vulnerable_version_range": ">= 0"},'
         b'{"package": {"ecosystem": "npm", "name": "m"}, "vulnerable_version_range": "< 2.0.0"},'
-        b'{"package": {"ecosystem": "rubygems", "name": "r"}},'
+        b'{"package": {"ecosystem": "erlang", "name": "r"}},'
         b'{"package": null}]}',
         type=GhAdvisory,
     )

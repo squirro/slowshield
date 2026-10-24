@@ -40,6 +40,7 @@ from slowshield.ecosystems.npm.service import NpmService
 from slowshield.ecosystems.nuget.service import NugetService
 from slowshield.ecosystems.oci.service import OciService
 from slowshield.ecosystems.pypi.service import PypiService
+from slowshield.ecosystems.rubygems.service import RubygemsService
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
 from slowshield.feeds.osv import OsvFeed
@@ -79,6 +80,8 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
     cargo = raw.upstreams.cargo
     allowed |= _hosts([cargo.index_url, cargo.download_url]) | {h.lower() for h in cargo.download_hosts}
     allowed |= _hosts(list(raw.upstreams.nuget.urls().values()))
+    rubygems = raw.upstreams.rubygems
+    allowed |= _hosts([rubygems.index_url, rubygems.download_url]) | {h.lower() for h in rubygems.download_hosts}
     if raw.upstreams.oci.enabled:
         for reg in raw.upstreams.oci.all_registries().values():
             allowed |= _hosts([reg.url, reg.times_url or ""]) | {h.lower() for h in reg.download_hosts}
@@ -187,6 +190,7 @@ class SlowShield:
         maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         cargo = CargoService(ctx) if self.cfg.raw.upstreams.cargo.enabled else None
         nuget = NugetService(ctx) if self.cfg.raw.upstreams.nuget.enabled else None
+        rubygems = RubygemsService(ctx) if self.cfg.raw.upstreams.rubygems.enabled else None
         oci = OciService(ctx) if self.cfg.raw.upstreams.oci.enabled else None
         from slowshield.ui import UI
 
@@ -194,7 +198,9 @@ class SlowShield:
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
-            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, nuget=nuget, oci=oci, ui=ui)
+            self._router(
+                ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, nuget=nuget, rubygems=rubygems, oci=oci, ui=ui
+            )
         )
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
@@ -214,6 +220,7 @@ class SlowShield:
                 "maven": bool(maven),
                 "cargo": bool(cargo),
                 "nuget": bool(nuget),
+                "rubygems": bool(rubygems),
                 "oci": bool(oci),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
@@ -417,6 +424,7 @@ class SlowShield:
         maven: MavenService | None,
         cargo: CargoService | None,
         nuget: NugetService | None,
+        rubygems: RubygemsService | None,
         oci: OciService | None,
         ui: Any,
     ) -> ASGIApp:
@@ -439,6 +447,8 @@ class SlowShield:
             main.append(Mount("/cargo", app=cargo))
         if nuget is not None:
             main.append(Mount("/nuget", app=nuget))
+        if rubygems is not None:
+            main.append(Mount("/rubygems", app=rubygems))
         if oci is not None:
             main.append(Mount("/v2", app=oci))  # the OCI distribution API is mandated at the root
         if raw.shieldwall.role == "leader" and self._identity is not None:
@@ -632,6 +642,8 @@ def _route_label(path: str) -> str:
         return "/cargo/config.json" if path == "/cargo/config.json" else "/cargo/{index_file}"
     if path.startswith("/nuget/"):
         return _nuget_label(path)
+    if path.startswith("/rubygems/"):
+        return _rubygems_label(path)
     if path.startswith("/go/"):
         if path.endswith("/@v/list"):
             return "/go/{module}/@v/list"
@@ -644,6 +656,16 @@ def _route_label(path: str) -> str:
     if "/-/" in path:
         return "/{package}/-/{file}"
     return "/{package}"
+
+
+def _rubygems_label(path: str) -> str:
+    rest = path.removeprefix("/rubygems/")
+    if rest in ("", "versions", "names"):
+        return path
+    for prefix, label in (("info/", "info/{gem}"), ("gems/", "gems/{file}"), ("quick/", "quick/{spec}")):
+        if rest.startswith(prefix):
+            return "/rubygems/" + label
+    return "/rubygems/{path}"
 
 
 def _nuget_label(path: str) -> str:

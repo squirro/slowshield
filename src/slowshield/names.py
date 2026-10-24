@@ -1,5 +1,5 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet and OCI
-images."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet, RubyGems
+and OCI images."""
 
 from __future__ import annotations
 
@@ -95,6 +95,21 @@ def normalize_nuget(name: str) -> str:
 
 def is_valid_nuget(name: str) -> bool:
     return 0 < len(name) <= NUGET_MAX_LEN and _NUGET_ID.match(name) is not None
+
+
+# Gem names as RubyGems accepts them (`Gem::Specification::VALID_NAME_PATTERN`): letters, digits, `.`, `-` and `_`.
+# rubygems.org's names are case-sensitive (`RedCloth` exists, `redcloth` doesn't), so they are matched as spelled.
+# `.` and `..` alone are refused, as path segments.
+_RUBYGEMS_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+RUBYGEMS_MAX_LEN = 255  # the longest on rubygems.org has 150 characters
+
+
+def normalize_rubygems(name: str) -> str:
+    return name.strip()
+
+
+def is_valid_rubygems(name: str) -> bool:
+    return 0 < len(name) <= RUBYGEMS_MAX_LEN and _RUBYGEMS_NAME.match(name) is not None and name not in (".", "..")
 
 
 # OCI image repositories: `<registry>/<path>` as Docker spells references. A first component with a `.` or `:`, or

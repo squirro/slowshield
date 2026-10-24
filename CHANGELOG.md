@@ -34,6 +34,10 @@ All notable changes to this project are documented here. The format is based on
 ### Security
 - Package-name checks no longer accept a name with a trailing newline, in every ecosystem. Before, `rails\n` passed
   as a gem name, and the blocklist, which names `rails`, didn't match it.
+- OpenTelemetry 1.45.1 (GHSA-xcq7-p3pf-p88h: unbounded `tracestate` parsing) and certifi 2026.10.19
+  (GHSA-6q48-6c7w-9gw2: emSign roots with compromised intermediates). certifi is the CA bundle the OTLP exporter
+  uses for HTTPS; package downloads use the system store, which distrusts emSign since 0.0.10. The website's
+  Wrangler gets undici 7.30.1 (GHSA-xjj6-f33q-929c).
 
 ## [0.0.12] - 2026-10-24
 

@@ -208,6 +208,10 @@ class Upstream:
                             url, headers = redirected(url, hdrs["location"], headers)
                             continue
                         body = b"" if method == "HEAD" else await _read_limited(resp, max_bytes, url)
+                        # The client drops the codings it decoded. One left over (Brotli, which it never asks for)
+                        # would reach the parsers as bytes they can't read.
+                        if body and (coding := hdrs.get("content-encoding", "identity").strip().lower()) != "identity":
+                            raise UpstreamError(url, f"unrequested Content-Encoding: {coding}")
                         span.set_attribute("http.response.status_code", status_code)
                         span.set_attribute("network.protocol.version", resp.version)
                         if status_code >= 500:

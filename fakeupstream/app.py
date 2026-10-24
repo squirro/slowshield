@@ -1091,7 +1091,11 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/redirect", lambda r: Response(status_code=302, headers={"Location": r.query_params["to"]})),
         Route(
             "/blob",
-            lambda r: Response(b"x" * int(r.query_params.get("n", "10")), media_type="application/octet-stream"),
+            lambda r: Response(
+                b"x" * int(r.query_params.get("n", "10")),
+                media_type="application/octet-stream",
+                headers={"Content-Encoding": c} if (c := r.query_params.get("coding")) else None,
+            ),
         ),
     ]
     app = Starlette(routes=routes)

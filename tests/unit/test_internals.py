@@ -148,6 +148,8 @@ async def test_fetch_ok_redirect_and_limits(client: Upstream, fake) -> None:
         await client.fetch(f"{fake.url}/redirect?to=https://evil.example/x", max_bytes=1000)
     with pytest.raises(UpstreamError):
         await client.fetch("https://evil.example/x", max_bytes=10)
+    with pytest.raises(UpstreamError, match="unrequested Content-Encoding: br"):
+        await client.fetch(f"{fake.url}/blob?n=50&coding=br", max_bytes=1000)
 
 
 async def test_fetch_failover_between_mirrors(client: Upstream, fake) -> None:

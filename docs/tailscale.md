@@ -90,18 +90,21 @@ operator creates the Service instead, it owns it: deleting the Ingress deletes t
 
 Three details make the Deployment work with the chart's Caddy:
 
-- **HTTPS to Caddy, not HTTP.** Caddy redirects plain HTTP to HTTPS, so a plain-HTTP backend loops. Caddy uses its own
-  CA inside the cluster, hence `https+insecure://`.
+- **HTTPS to Caddy, verified.** Caddy redirects plain HTTP to HTTPS, so a plain-HTTP backend loops. Caddy signs with
+  its own root CA (`tls.mode: internal`): read it as the chart's NOTES show, put it in a ConfigMap, and add it to the
+  system roots with `SSL_CERT_DIR=/etc/ssl/certs:/caddy-ca`, so tailscaled's own connections keep the usual ones. The
+  backend is then plain `https://`. Don't use `https+insecure://`: a backend Tailscale doesn't verify could be
+  impersonated from inside the cluster and serve forged packages.
 - **The TLS name must be the Service name.** Caddy runs with `strict_sni_host`: the TLS name must equal the Host
   header, which is the Service name. A backend URL with the cluster name
-  (`https+insecure://slowshield.slowshield.svc.cluster.local`) gets `421 Misdirected Request`. The backend URL uses
+  (`https://slowshield.slowshield.svc.cluster.local`) gets `421 Misdirected Request`. The backend URL uses
   the Service name instead, and the pod's `hostAliases` points that name at the chart Service's ClusterIP. Tailscale
   dials backends with the system resolver (`/etc/hosts`), not MagicDNS, so this doesn't loop back into the tailnet.
 - **The chart's `hostnames` must include the Service name**, so Caddy serves it:
   [`examples/follower-values.yaml`](../deploy/helm/slowshield/examples/follower-values.yaml).
 
 The auth key (single-use, pre-approved, tagged `tag:slowshield`) is needed only for the first start. After that the
-node signs in from its state Secret.
+node signs in from its state Secret; the example passes the key only when it is set, so its Secret can be deleted.
 
 ### Which instance a client reaches
 

@@ -6,8 +6,9 @@
 # Service for every host.
 #
 # How it reaches SlowShield: Tailscale ends TLS for the service name and forwards HTTPS to the chart's Caddy. Plain
-# HTTP would loop (Caddy redirects it to HTTPS). Caddy uses its own CA inside the cluster, hence https+insecure, and
-# runs with strict_sni_host, so the TLS name must equal the Host header (the service name): the backend URL uses the
+# HTTP would loop (Caddy redirects it to HTTPS). Tailscale verifies Caddy's certificate against Caddy's own root CA
+# (ConfigMap slowshield-caddy-root, added to the system roots with SSL_CERT_DIR so tailscaled's own connections keep
+# the usual ones). Caddy runs with strict_sni_host, so the TLS name must equal the Host header (the service name): the backend URL uses the
 # service name, and hostAliases points it at the chart's Service. Serve dials backends with the system resolver
 # (/etc/hosts), not MagicDNS, so this doesn't loop back into the tailnet. The chart's `hostnames` must include the
 # service name (follower-values.yaml).
@@ -15,6 +16,13 @@
 # Login: a single-use, pre-approved auth key tagged tag:slowshield, only for the first start:
 #   kubectl -n slowshield create secret generic slowshield-ts-authkey --from-literal=TS_AUTHKEY='tskey-auth-...'
 # After that the node's identity lives in the Secret slowshield-ts-state, and the key's Secret can go.
+#
+# Caddy's root CA (tls.mode internal; a public certificate, on the chart's Caddy volume), read as the chart's NOTES
+# show, into a ConfigMap. Read it again if that volume is ever recreated:
+#   kubectl -n slowshield debug -q -i <slowshield pod> --target=caddy --profile=restricted \
+#     --image=public.ecr.aws/amazonlinux/amazonlinux:2023-minimal -- \
+#     cat /proc/1/root/data/caddy/pki/authorities/local/root.crt > slowshield-root.crt
+#   kubectl -n slowshield create configmap slowshield-caddy-root --from-file=root.crt=slowshield-root.crt
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -65,7 +73,7 @@ data:
       "services": {
         "svc:slowshield": {
           "endpoints": {
-            "tcp:443": "https+insecure://slowshield.your-tailnet.ts.net:443"
+            "tcp:443": "https://slowshield.your-tailnet.ts.net:443"
           }
         }
       }
@@ -130,6 +138,8 @@ spec:
                   name: slowshield-ts-authkey
                   key: TS_AUTHKEY
                   optional: true # only needed for the first login
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/caddy-ca
             - name: HOME
               value: /tmp
           securityContext:
@@ -146,9 +156,15 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: caddy-ca
+              mountPath: /caddy-ca
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: slowshield-tailscale
         - name: tmp
           emptyDir: {}
+        - name: caddy-ca
+          configMap:
+            name: slowshield-caddy-root

@@ -44,6 +44,7 @@ services:
       # follower (from `docker compose exec slowshield slowshield wall invite` on the leader).
       SLOWSHIELD_SHIELDWALL_ROLE: ${SLOWSHIELD_SHIELDWALL_ROLE:-}
       SLOWSHIELD_JOIN: ${SLOWSHIELD_JOIN:-}
+      SLOWSHIELD_JOIN_CONFIRM: ${SLOWSHIELD_JOIN_CONFIRM:-}
       SLOWSHIELD_INSTANCE_NAME: ${SLOWSHIELD_INSTANCE_NAME:-}
       SLOWSHIELD_INSTANCE_LOCATION: ${SLOWSHIELD_INSTANCE_LOCATION:-}
       # A follower must trust its leader's certificate. This stack's default (SLOWSHIELD_TLS_MODE=internal) is

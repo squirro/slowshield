@@ -55,8 +55,9 @@ wrote every 5 seconds.
 ## Pairing
 
 1. On the leader: `slowshield wall invite --name zurich-1 --location zurich` (in a container:
-   `docker exec slowshield slowshield wall invite …`). It needs `public_url` (or `--url`): the URL followers
-   reach the leader at. The token is stored with its secret; it works once, for 10 minutes (`--minutes`, up to 60).
+   `docker exec slowshield slowshield wall invite …`; with Compose `docker compose exec slowshield …`).
+   It needs `public_url` (or `--url`): the URL followers reach the leader at. The token is
+   stored with its secret; it works once, for 10 minutes (`--minutes`, up to 60).
 2. The follower starts with `SLOWSHIELD_JOIN='ssj1:https://hq.example.com#<key hash>.<token>.<secret>'`.
 3. It fetches `/.well-known/slowshield-shieldwall`, and refuses unless the key hashes to the value in the join string
    (and isn't its own). It pins the key.

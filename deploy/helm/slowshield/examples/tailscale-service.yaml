@@ -22,7 +22,9 @@
 #   kubectl -n slowshield debug -q -i <slowshield pod> --target=caddy --profile=restricted \
 #     --image=public.ecr.aws/amazonlinux/amazonlinux:2023-minimal -- \
 #     cat /proc/1/root/data/caddy/pki/authorities/local/root.crt > slowshield-root.crt
-#   kubectl -n slowshield create configmap slowshield-caddy-root --from-file=root.crt=slowshield-root.crt
+#   kubectl -n slowshield create configmap slowshield-caddy-root --from-file=root.crt=slowshield-root.crt \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n slowshield rollout restart deployment/slowshield-tailscale   # only when replacing it
 apiVersion: v1
 kind: ServiceAccount
 metadata:

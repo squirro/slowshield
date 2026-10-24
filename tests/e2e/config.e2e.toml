@@ -24,6 +24,10 @@ gradle_plugins = { url = "http://fakeupstream:9000/maven/portal" }
 index_url = "http://fakeupstream:9000/cargo-index"
 download_url = "http://fakeupstream:9000/cargo-static/crates"
 
+[upstreams.rubygems]
+index_url = "http://fakeupstream:9000/rubygems-index"
+download_url = "http://fakeupstream:9000/rubygems-dl"
+
 [upstreams.nuget]
 flat_container_url = "http://fakeupstream:9000/nuget-flat/"
 registration_url = "http://fakeupstream:9000/nuget-reg/"

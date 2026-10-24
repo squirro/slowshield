@@ -342,8 +342,7 @@ def _tools(
             # A mirror of rubygems.org rather than a new `source`: Gemfiles and Gemfile.lock keep rubygems.org. Never
             # with `.fallback_timeout`, which goes to rubygems.org when SlowShield doesn't answer in time.
             aged(
-                ("command (writes ~/.bundle/config; also for CI and Dockerfiles)",
-                 f"bundle config set --global mirror.https://rubygems.org {rubygems}"),
+                ("command (writes ~/.bundle/config; also for CI and Dockerfiles)", bundler_mirror(rubygems)),
                 ("+release age", f"bundle config set --global cooldown {d}"),
             ),
         ),
@@ -436,6 +435,12 @@ def oci_tools(base: str, registries: tuple[str, ...], *, age_days: int = CLIENT_
             age,
         ),
     )  # fmt: skip
+
+
+def bundler_mirror(rubygems: str) -> str:
+    """Bundler takes SlowShield as a mirror of rubygems.org for every project of the user. Its environment variable
+    (BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/) can't be exported by shells, so this is a command."""
+    return f"bundle config set --global mirror.https://rubygems.org {rubygems}"
 
 
 def gemrc(rubygems: str) -> str:

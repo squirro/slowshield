@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -456,3 +457,68 @@ def test_nuget_restores_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     assert added.returncode == 0 and 'Include="Fake.Hello" Version="1.1.0"' in added.stdout, added.stdout[-3000:]
     status, headers, body = stack.get("/nuget/v3/flatcontainer/fake.hello/1.2.0/fake.hello.1.2.0.nupkg")
     assert status == 425 and "retry-after" in headers and b"is too new" in body
+
+
+# A Ruby client image, as the Maven, Gradle, Rust and .NET ones (images SlowShield builds stay Amazon Linux 2023).
+RUBY_IMAGE = "ruby:3.4-slim@sha256:09125b2be429d65151802d2a04a60e0817fb8f380195fedbc3e3d8b51b12c049"
+GEMFILE = 'source "https://rubygems.org"\ngem "fake_deps"\ngem "fake_native"\n'
+PINNED_LOCK = """GEM
+  remote: https://rubygems.org/
+  specs:
+    fake_hello (1.2.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  fake_hello
+
+BUNDLED WITH
+   2.6.9
+"""
+
+
+def test_rubygems_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Bundler and gem with the Setup page's commands. fake_deps needs fake_hello ~> 1.0: 1.2.0 is two days
+    old, so it isn't in the index and Bundler picks 1.1.0, and checks it against the index's sha256 and the lockfile's
+    CHECKSUMS. fake_native 2.1.0's platform gems were pushed a day ago, so the plain gem is installed. A lockfile
+    pinning fake_hello 1.2.0 fails; gem install of it finds nothing; downloading it directly gets 425."""
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "Gemfile").write_text(GEMFILE)
+    (tmp_path / "pinned").mkdir()
+    (tmp_path / "pinned" / "Gemfile").write_text('source "https://rubygems.org"\ngem "fake_hello"\n')
+    (tmp_path / "pinned" / "Gemfile.lock").write_text(PINNED_LOCK)
+    url = "http://localhost:8080/rubygems"
+    setup = f"{snippets.bundler_mirror(url)} && {snippets.gemrc_command(url)}"
+
+    def ruby(script: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", RUBY_IMAGE, "-c", f"{setup} && {script}"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = ruby(
+        "cp -r /w/app /tmp/a && cd /tmp/a && bundle lock --add-checksums && bundle install"
+        ' && bundle exec ruby -e \'require "fake_deps"; require "fake_hello"; puts FakeHello::VERSION\''
+        " && cat Gemfile.lock"
+    )
+    assert ok.returncode == 0, ok.stdout[-3000:] + ok.stderr[-3000:]
+    assert "\n1.1.0\n" in ok.stdout and "    fake_hello (1.1.0)\n" in ok.stdout
+    assert "  remote: https://rubygems.org/\n" in ok.stdout  # the lockfile names rubygems.org, unchanged
+    sha = stack.fake_info()["rubygems"]["fake_hello"]["1.1.0"]["sha256"]
+    assert f"  fake_hello (1.1.0) sha256={sha}\n" in ok.stdout
+    assert "    fake_native (2.1.0)\n" in ok.stdout and "fake_native (2.1.0-" not in ok.stdout
+    held = ruby("cp -r /w/pinned /tmp/p && cd /tmp/p && bundle install")
+    assert held.returncode != 0
+    said = " ".join(held.stderr.split())  # Bundler wraps its messages
+    assert "locked to fake_hello (1.2.0)" in said and "can no longer be found in that source" in said, said
+    gem = ruby("gem install --no-document fake_deps && gem list fake_ && gem install fake_hello -v 1.2.0")
+    assert "fake_hello (1.1.0)" in gem.stdout and "fake_deps (0.1.0)" in gem.stdout, gem.stdout + gem.stderr
+    assert gem.returncode != 0 and "Could not find a valid gem 'fake_hello' (= 1.2.0)" in gem.stderr
+    status, headers, body = stack.get("/rubygems/gems/fake_hello-1.2.0.gem")
+    assert status == 425 and "retry-after" in headers and b"is too new" in body
+    # Through Caddy, asking for gzip: not compressed, so the ETag stays the MD5 of the body Bundler gets.
+    status, headers, body = stack.get("/rubygems/info/fake_hello", headers={"Accept-Encoding": "gzip"})
+    assert status == 200 and "content-encoding" not in headers
+    assert headers["etag"] == '"' + hashlib.md5(body, usedforsecurity=False).hexdigest() + '"'

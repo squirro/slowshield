@@ -18,7 +18,8 @@
   -e SLOWSHIELD_SHIELDWALL_ROLE=leader \
   -e SLOWSHIELD_INSTANCE_NAME=hq -e SLOWSHIELD_INSTANCE_LOCATION=Zurich \
   ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-<p>With Compose, set the same variables in <code>deploy/docker/.env</code>; with Helm, set
+<p>With Compose, set the same variables in <code>deploy/docker/.env</code>, and <code>SLOWSHIELD_HOSTNAMES</code> to the
+  public URL's host so Caddy serves that name; with Helm, set
   <code>shieldwall.role: leader</code>. The leader keeps its identity in <code>/data/shieldwall/identity.key</code>:
   back it up, because losing it means pairing every follower again.</p>
 
@@ -26,7 +27,9 @@
 <ol>
   <li><strong>On the leader, print a join string.</strong> It works once, for 10 minutes by default (<code>--minutes</code>
     up to 60):
-    <div class="code"><pre><code>docker exec slowshield slowshield wall invite --name sg-1 --location Singapore</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
+    <div class="code"><pre><code>docker exec slowshield slowshield wall invite --name sg-1 --location Singapore
+# Compose, from deploy/docker:
+docker compose exec slowshield slowshield wall invite --name sg-1 --location Singapore</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
   <li><strong>Start the new instance with it</strong>, as <code>SLOWSHIELD_JOIN='ssj1:…'</code> (or
     <code>SLOWSHIELD_JOIN_FILE</code>). Nothing else needs configuring: the follower takes the leader's policy.</li>
   <li><strong>Confirm the leader.</strong> Open the new instance's Shield wall page (<code>/ui/shieldwall</code>). It

@@ -4,7 +4,7 @@ age-gated .gem downloads verified against the index.
 A line's publish time is its `created_at`, which rubygems.org sets when the gem is pushed. Every line (a version
 and platform) is judged on its own: a platform gem pushed today for an old version waits like a new version. The
 first `created_at` SlowShield sees is kept, so an index that later moves a line's time earlier can't age it in
-advance. A line without a plausible `created_at` is timed from when SlowShield first listed it. See
+advance. A line that has never had a plausible `created_at` is timed from when SlowShield first listed it. See
 docs/design/rubygems.md.
 
 Neither Bundler nor RubyGems shows the body of a failed download; they print the reason phrase, so refusals are
@@ -341,8 +341,8 @@ class RubygemsService:
         return t if t is not None and EARLIEST <= t <= now + CLOCK_SKEW else None
 
     def _record(self, info: I.InfoFile) -> None:
-        """Keep each line's first `created_at` (or, without one, when it was first listed); mark lines that are gone
-        (yanked) and lines that are back."""
+        """Keep each line's first `created_at`, or, for a line that never had one, when it was first listed; mark
+        lines that are gone (yanked) and lines that are back."""
         ctx = self.ctx
         now = ctx.clock.now()
         times = self._times(info.name)
@@ -351,13 +351,16 @@ class RubygemsService:
         for line in info.lines.values():
             created = self._created(line, now)
             known = times.setdefault(line.key, [None, None, 0])
-            if created is None:
-                untimed += 1
-                known[1] = known[1] or now
-            else:
+            listed_now = None
+            if created is not None:
                 known[0] = known[0] or created
+            else:
+                untimed += 1
+                if known[0] is None:
+                    known[1] = known[1] or now
+                    listed_now = now
             known[2] = 0
-            rows.append((ECO, info.name, line.key, created, None if created is not None else now, 0))
+            rows.append((ECO, info.name, line.key, created, listed_now, 0))
         for key, known in times.items():
             if key not in info.lines and not known[2]:
                 known[2] = 1
@@ -372,7 +375,8 @@ class RubygemsService:
                 "INSERT INTO package_versions (ecosystem, name, version, published, first_listed, yanked) "
                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
                 "published = coalesce(package_versions.published, excluded.published), "
-                "first_listed = coalesce(package_versions.first_listed, excluded.first_listed), "
+                "first_listed = coalesce(package_versions.first_listed, "
+                "CASE WHEN package_versions.published IS NULL THEN excluded.first_listed END), "
                 "yanked = excluded.yanked",
                 rows,
             )
@@ -381,11 +385,14 @@ class RubygemsService:
         ctx.db.writer.enqueue(op)
 
     def _published(self, line: I.Line, times: dict[str, list[Any]], now: float) -> float:
-        """The latest of the clocks known for `line`: its `created_at` now, the first one seen, and when it was
-        first listed without one. Each is no earlier than the real push time, so the latest is the safest."""
+        """The later of `line`'s `created_at` now and the first one seen; for a line that has never had one, when it
+        was first listed. A fetch without a `created_at` doesn't hold an old line again once the time is back:
+        `first_listed` stays recorded (and goes to shield wall followers), but counts only without a `created_at`."""
         known = times.get(line.key, [None, None, 0])
-        clocks = [c for c in (self._created(line, now), known[0], known[1]) if c is not None]
-        return max(clocks) if clocks else now
+        created = [c for c in (self._created(line, now), known[0]) if c is not None]
+        if created:
+            return max(created)
+        return known[1] if known[1] is not None else now
 
     # ---- policy -------------------------------------------------------------------------------------------
 

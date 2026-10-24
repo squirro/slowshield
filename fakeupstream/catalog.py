@@ -1329,7 +1329,7 @@ class Catalog:
         ]
 
     def publish(self, ecosystem: str, name: str, version: str, age_days: float | None = 0.0) -> None:
-        """`age_days=None` (Go): tagged, but not on the mirror until someone asks for it."""
+        """`age_days=None` (Go): tagged, but not on the mirror until someone asks for it; (RubyGems) no `created_at`."""
         if ecosystem == "pypi":
             self.add_pypi(name, version, age_days or 0.0)
         elif ecosystem == "go":
@@ -1343,7 +1343,7 @@ class Catalog:
         elif ecosystem == "composer":
             self.add_composer(name, version, age_days or 0.0)
         elif ecosystem == "rubygems":
-            self.add_gem(name, version, age_days or 0.0)
+            self.add_gem(name, version, age_days or 0.0, created=age_days is not None)
         elif ecosystem == "oci":  # name: registry/path:tag
             image, _, tag = name.rpartition(":")
             self.add_oci(image, tag, version, age_days or 0.0)

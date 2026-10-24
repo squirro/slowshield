@@ -249,6 +249,26 @@ async def test_lines_without_a_plausible_created_at_are_timed_from_when_they_wer
     assert (await running.client.get("/rubygems/gems/untimed_gem-1.0.0.gem")).status_code == 200
 
 
+async def test_first_listed_counts_only_for_a_line_that_never_had_a_created_at(running: Running) -> None:
+    row = "SELECT published, first_listed FROM package_versions WHERE name = ? AND version = '1.0.0'"
+    # An old line, then one fetch without its `created_at`: still 100 days old, not held again from now.
+    assert _keys((await running.client.get(HELLO)).text) == ["1.0.0", "1.1.0"]
+    await running.drain()
+    running.fake.control("publish", ecosystem="rubygems", name="fake_hello", version="1.0.0", age_days="none")
+    running.clock.advance(7 * 3600)  # past the metadata TTL
+    assert "1.0.0" in _keys((await running.client.get(HELLO)).text)
+    await running.drain()
+    assert running.rows(row, ("fake_hello",)) == [(NOW - 100 * DAY, None)]
+    # A line first seen without one is timed from then; when its `created_at` arrives, that counts instead.
+    assert _keys((await running.client.get("/rubygems/info/untimed_gem")).text) == []
+    await running.drain()
+    running.fake.control("publish", ecosystem="rubygems", name="untimed_gem", version="1.0.0", age_days="30")
+    running.clock.advance(7 * 3600)
+    assert _keys((await running.client.get("/rubygems/info/untimed_gem")).text) == ["1.0.0"]
+    await running.drain()
+    assert running.rows(row, ("untimed_gem",)) == [(NOW - 30 * DAY, NOW + 7 * 3600)]
+
+
 async def test_a_publish_time_never_moves_earlier(running: Running) -> None:
     assert _keys((await running.client.get(HELLO)).text) == ["1.0.0", "1.1.0"]
     await running.drain()

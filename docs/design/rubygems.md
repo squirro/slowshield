@@ -203,7 +203,10 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
 2. **It never moves earlier.** The first `created_at` seen for a line is kept in `package_versions`. If the file later
    states another one, the later of the two counts.
 3. **Without a plausible `created_at`** (missing, unreadable, before 2004, or in the future), the clock starts when
-   SlowShield first sees the line (`first_listed`), and a warning is logged.
+   SlowShield first sees the line (`first_listed`), and a warning is logged. As on NuGet, `first_listed` is recorded
+   only for a line that has never had a plausible `created_at`, and counts only while it hasn't: one fetch without
+   the time doesn't hold an old line again, and a line first seen without one is judged by its `created_at` once it
+   appears.
 4. **A line that disappears** (yanked) is recorded as yanked. rubygems.org doesn't accept a version again once it
    was pushed, yanked or not.
 

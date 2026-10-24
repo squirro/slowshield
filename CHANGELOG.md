@@ -38,13 +38,16 @@ All notable changes to this project are documented here. The format is based on
   `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
   stored and no longer needs the join string; one that hasn't joined yet still does.
 - Python 3.15.0, the stable release, instead of 3.15.0rc2, in the images (GIL and free-threaded), CI and
-  `.python-version`. The patch version is pinned, so a newer uv no longer changes the interpreter. uv 0.13.1.
+  `.python-version`. The patch version is pinned, so a newer uv no longer changes the interpreter.
 
 ### Security
 - The images no longer trust emSign ECC Root CA - G3, emSign ECC Root CA - C3 and emSign Root CA - C1, which Amazon
   Linux 2023 still ships. Eight intermediates under G3 have compromised keys (GHSA-6q48-6c7w-9gw2), and Mozilla has
   dropped all three. Before, an on-path attacker holding one of those keys could have intercepted SlowShield's
   upstream requests and Caddy's ACME requests. The image build fails if one of them is still in the bundle.
+- uv 0.13.4 in the image builder and CI. Earlier versions trust emSign ECC Root CA - G3 in their bundled root
+  certificates, and eight intermediates under it have compromised keys (GHSA-hq85-5cpj-mr62, critical). Taken
+  inside the 7-day dependency cooldown as a security exception.
 
 ## [0.0.9] - 2026-10-10
 

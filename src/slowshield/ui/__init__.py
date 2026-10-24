@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markdown_it import MarkdownIt
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -31,6 +31,7 @@ from slowshield.context import AppContext
 from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
 from slowshield.ecosystems.oci.service import delay_days
 from slowshield.policy import DAY
+from slowshield.ui import expect as X
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
@@ -134,6 +135,14 @@ def short_version(version: str) -> str:
     return version
 
 
+_TICKS = re.compile(r"`([^`]+)`")
+
+
+def ticks(text: str) -> Markup:
+    """`text` escaped, with `code` in backticks as <code>."""
+    return Markup(_TICKS.sub(r"<code>\1</code>", str(escape(text))))  # noqa: S704 - escaped first
+
+
 class UI:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
@@ -147,7 +156,7 @@ class UI:
         )
         env.filters.update(
             bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href,
-            short_version=short_version,
+            short_version=short_version, ticks=ticks,
         )  # fmt: skip
         cast(dict[str, Any], env.globals).update(
             version=__version__,
@@ -687,6 +696,8 @@ class UI:
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
         urls = (pypi_index, npm_registry, go_proxy, maven_base, cargo_index)
         os_name = _client_os(request)
+        days = f"{round(raw.default_delay_days, 1):g}"  # as the template writes it
+        hosts = X.firewall_hosts(cfg)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
             "setup.html.j2",
@@ -719,6 +730,10 @@ class UI:
             dockerfile_plain=S.dockerfile_env(pypi_index, npm_registry, go_proxy, age_days=0),
             shell=shell,
             os=os_name,
+            expect=X.rows(cfg, days),
+            firewall=hosts,
+            firewall_text="\n".join(h for _, group in hosts for h in group),
+            firewall_off=[eco for eco in IDS if not getattr(raw.upstreams, eco).enabled],
         )
 
     async def about(self, request: Request) -> Response:

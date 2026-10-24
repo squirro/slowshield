@@ -1,4 +1,5 @@
 {% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
 {% block title %}Setup{% endblock %}
 {% macro snippet(code, label="", age="") -%}
 <div class="snippet"{% if age %} data-age="{{ age }}"{% if age == "off" %} hidden{% endif %}{% endif %}>
@@ -108,6 +109,7 @@
         <span class="badge">disabled</span>{% endif %}
         <a class="tool-guide" href="{{ docs(t.ecosystem, t.name) }}" rel="noopener noreferrer" target="_blank">Guide ↗</a></h3>
       {%- if t.age %}<p class="muted small age-note" data-age="on">Release age: {{ t.age }}</p>{% endif %}
+      {%- if t.note %}<p class="muted small tool-note">{{ t.note|ticks }}</p>{% endif %}
       {%- if t.snippets == plain.snippets %}
       {%- for label, code in t.snippets %}{{ snippet(code, label) }}{% endfor %}
       {%- else %}
@@ -125,66 +127,64 @@
     <div>{{ aged(ci, ci_plain, "CI") }}</div>
     <div>{{ aged(dockerfile, dockerfile_plain, "Dockerfile") }}</div>
   </div>
-  <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
-    the container itself. Block direct access to pypi.org, files.pythonhosted.org, registry.npmjs.org,
-    proxy.golang.org, sum.golang.org, repo1.maven.org, repo.maven.apache.org, dl.google.com, plugins.gradle.org,
-    index.crates.io, static.crates.io, api.nuget.org, repo.packagist.org, api.github.com, codeload.github.com,
-    rubygems.org, index.rubygems.org and the container registries (registry-1.docker.io, ghcr.io, quay.io,
-    registry.k8s.io, ...) at the firewall so nothing bypasses SlowShield (the go command reaches the checksum
-    database through SlowShield too; BuildKit and Docker's classic image store go to the registry after a
-    refusal). For Maven, Gradle, Cargo, NuGet, Composer and Ruby in CI and images, copy the
-    <code>settings.xml</code>, the init script, the Cargo, NuGet or Composer command, or the Bundler and gem commands
-    from Per tool.</p>
+  <p class="muted small">Builds need a URL they can reach: inside a container, <code>localhost</code> is the container
+    itself.</p>
+  <h3 class="sub">Block these at the firewall so nothing goes around SlowShield</h3>
+  <div class="grid-2 firewall">
+    <div class="host-groups">
+      {%- for e, hosts in firewall %}
+      <div class="host-group">{{ m.eco(e) }}<span class="hosts">
+        {%- for h in hosts %}<code class="host">{{ h }}</code>{% endfor -%}
+      </span></div>
+      {%- endfor %}
+      <p class="muted small">The go command reaches the checksum database through SlowShield too. BuildKit and Docker's
+        classic image store go to the registry themselves after a refusal.{% if firewall_off %} Not listed, because
+        they are switched off here:
+        {% for e in firewall_off %}{{ eco_label[e] }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</p>
+    </div>
+    <div>{{ snippet(firewall_text, "All hosts, one per line") }}</div>
+  </div>
 </section>
-<section class="card">
+<section class="card expect">
   <header class="card-head"><h2>What to expect</h2></header>
-  <ul>
-    <li><strong>Too new:</strong> versions younger than the delay are hidden from indexes; downloading one directly (e.g. from a lockfile) returns <code>403</code> with a <code>Retry-After</code> header.</li>
-    {%- if age_days %}
-    <li data-age="on"><strong>Exceptions:</strong> when an administrator lets a release through early, package managers
-      with their own release age still wait {{ age_days }} days for it. Use their exclude list for that package
-      (<code>min-release-age-exclude</code> in npm, <code>exclude-newer-package</code> in uv,
-      <code>solver.min-release-age-exclude</code> in Poetry), or switch the second layer off for that build.</li>
-    {%- endif %}
-    <li><strong>Malware:</strong> packages or versions on the blocklist return <code>451 Unavailable For Legal Reasons</code> with the advisory in the body.</li>
-    <li><strong>Go:</strong> Go builds the exact versions <code>go.mod</code> requires, so a requirement that is too new
-      fails with <code>403</code> instead of picking an older version. Leave <code>,direct</code> and <code>|</code>
-      out of <code>GOPROXY</code>: with them, the go command goes around SlowShield when it says no.</li>
-    <li><strong>Maven and Gradle:</strong> a version that is too new fails with <code>425 Too Early</code> (both tools
-      only show the status line); the next build after the hold ends works without <code>-U</code>. Builds pin exact
-      versions, so a pin that is too new fails instead of picking an older version. Artifacts none of whose versions is
-      old enough are held too.</li>
-    <li><strong>Cargo:</strong> versions that are too new or blocked show up as yanked, so cargo resolves to an older
-      one. A <code>Cargo.lock</code> that pins one fails with the reason and the version to use instead. Crates none of
-      whose versions is old enough are held too. <code>cargo search</code> needs crates.io; <code>cargo publish</code>
-      needs <code>--registry crates-io</code>.</li>
-    <li><strong>NuGet:</strong> versions that are too new or blocked are left out of the version lists and of
-      search. A download of one fails with <code>425 Too Early</code> or <code>451</code> (dotnet shows only the
-      status line). A <code>PackageReference</code> to a held version resolves the next version up, with
-      warning <code>NU1603</code>. Make the build fail on it: <code>TreatWarningsAsErrors</code>, or
-      <code>NU1603</code> in <code>WarningsAsErrors</code> (the <code>Directory.Build.props</code> under Per tool). Packages none of
-      whose versions is old enough are held too. Keep <code>&lt;clear/&gt;</code> in <code>NuGet.Config</code>:
-      without it, nuget.org stays a source and goes around SlowShield.</li>
-    <li><strong>Composer:</strong> versions that are too new or blocked are left out of the metadata, so Composer
-      resolves to an older one. A <code>composer.lock</code> that pins one fails with <code>425 Too Early</code> or
-      <code>451</code> and a warning that names the version to use instead. Packages none of whose versions is old
-      enough are held too. Needs Composer 2.10 or later: older versions clone a refused version from GitHub instead.
-      Lock files written through SlowShield name it in their dist URLs; <code>composer update --lock</code> points an
-      older lock file at it. <code>composer search</code> needs packagist.org.</li>
-    <li><strong>Ruby:</strong> versions that are too new or blocked are left out of the index, so
-      <code>bundle update</code> and <code>gem install</code> pick an older one. Each platform gem is judged by its own
-      push time. A <code>Gemfile.lock</code> that pins a held version fails with Bundler's "can no longer be found in
-      that source"; a direct download fails with <code>425 Too Early</code> or <code>451</code>. Gems none of whose
-      versions is old enough are held too. <code>gem search</code>, <code>gem outdated</code> and
-      <code>gem update</code> need rubygems.org's full index, which SlowShield doesn't serve: they find nothing.
-      Don't set a <code>fallback_timeout</code> on the mirror: with it, Bundler goes to rubygems.org when SlowShield
-      is slow.</li>
-    <li><strong>Containers:</strong> a tag resolves to the newest image it has pointed to for {{ days }} days, so
-      <code>nginx:latest</code> stays about {{ days }} days behind. A digest that is too new, and a blocked image, fail
-      with <code>403</code>: Docker, Podman, BuildKit, skopeo and crane print the reason, containerd 2.2 and older only
-      <code>403 Forbidden</code>. With the pull-only <code>hosts.toml</code>, pushes need the registry's own file.</li>
-    <li><strong>Brand-new packages:</strong> if <em>no</em> version is old enough yet, SlowShield fails open and serves them, recording a fail-open event. For container images this only happens during an instance's first {{ days }} days, for tags it has no history for yet.</li>
-    <li><strong>Tampering:</strong> every artifact is fingerprinted on first download; if the bytes ever change, the download is aborted and the event recorded.</li>
-  </ul>
+  <div class="expect-facts">
+    <div class="kpi hold"><div class="kpi-label">Too new</div><div class="fact-value">Hidden from indexes</div>
+      <p class="muted small">A direct download gets <code>425</code> or <code>403</code>, with <code>Retry-After</code>.</p>
+    </div>
+    <div class="kpi danger"><div class="kpi-label">Malware</div><div class="fact-value">451</div>
+      <p class="muted small">With the advisory in the body.</p></div>
+    <div class="kpi tamper"><div class="kpi-label">Tampering</div><div class="fact-value">Download aborted</div>
+      <p class="muted small">And recorded as a security event.</p></div>
+    <div class="kpi fail-open"><div class="kpi-label">Brand-new packages</div><div class="fact-value">Served or held</div>
+      <p class="muted small">When no version is old enough yet. Depends on the ecosystem.</p></div>
+  </div>
+  <div class="table-wrap">
+    <table class="table expect-table">
+      <thead><tr><th scope="col">Ecosystem</th><th scope="col">Too new in a range</th><th scope="col">Pinned too new</th>
+        <th scope="col">Blocked</th><th scope="col">Brand-new</th><th scope="col">Good to know</th></tr></thead>
+      <tbody>
+        {%- for r in expect %}
+        <tr{% if not r.enabled %} class="withdrawn"{% endif %}>
+          <th scope="row">{{ m.eco(r.eco) }}{% if not r.enabled %} <span class="badge">disabled</span>{% endif %}</th>
+          <td data-label="Too new in a range"><span>{{ r.in_range|ticks }}</span></td>
+          <td data-label="Pinned too new"><span><span class="badge st-held">{{ r.pinned }}</span>
+            {%- if r.pinned_how %} <span class="muted small">{{ r.pinned_how }}</span>{% endif %}</span></td>
+          <td data-label="Blocked"><span><span class="badge st-blocked">{{ r.blocked }}</span>
+            {%- if r.blocked_how %} <span class="muted small">{{ r.blocked_how }}</span>{% endif %}</span></td>
+          <td data-label="Brand-new"><span>{% if r.fail_open %}<span class="badge ev-fail_open">served</span>
+            <span class="muted small">{{ "first " ~ days ~ " days, fail-open" if r.eco == "oci" else "fail-open" }}</span>
+            {%- else %}<span class="badge st-held">held</span>{% endif %}</span></td>
+          <td data-label="Good to know" class="small">{% if r.note %}<span>{{ r.note|ticks }}</span>{% endif %}</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- if age_days %}
+  <p class="muted small expect-foot" data-age="on"><strong>Exceptions:</strong> a release an administrator lets
+    through early still waits {{ age_days }} days in package managers with their own release age. Use their exclude
+    list (<code>min-release-age-exclude</code> in npm, <code>exclude-newer-package</code> in uv,
+    <code>solver.min-release-age-exclude</code> in Poetry), or switch the second layer off for that build.</p>
+  {%- endif %}
 </section>
 {% endblock %}

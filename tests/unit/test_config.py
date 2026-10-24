@@ -273,3 +273,24 @@ def test_restart_only_changes_detects_everything() -> None:
         "upstreams.npm.public_url",
         "cache.artifacts_enabled",
     } <= set(changed)
+
+
+def test_upstream_hosts_are_the_ones_clients_would_use() -> None:
+    hosts = C.Upstreams().hosts()
+    assert hosts == {
+        "pypi": ["pypi.org", "files.pythonhosted.org"],
+        "npm": ["registry.npmjs.org"],
+        "go": ["proxy.golang.org", "sum.golang.org"],
+        "maven": ["repo1.maven.org", "dl.google.com", "plugins.gradle.org"],
+        "cargo": ["index.crates.io", "static.crates.io"],
+        "nuget": ["api.nuget.org", "azuresearch-usnc.nuget.org"],
+        "composer": ["repo.packagist.org", "packagist.org"],
+        "rubygems": ["index.rubygems.org", "rubygems.org"],
+        "oci": [
+            "registry-1.docker.io", "index.docker.io", "ghcr.io", "quay.io", "registry.k8s.io", "gcr.io",
+            "mcr.microsoft.com", "public.ecr.aws",
+        ],
+    }  # fmt: skip
+    # Not where downloads redirect to: CDNs and cloud storage serve far more than packages.
+    flat = {h for group in hosts.values() for h in group}
+    assert not flat & {"storage.googleapis.com", "codeload.github.com", "hub.docker.com", "gitlab.com"}

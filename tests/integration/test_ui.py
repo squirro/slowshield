@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
+import inspect
+import re
+
+import pytest
 
 from slowshield.app import STATIC_DIR
+from slowshield.ecosystems import IDS
 from slowshield.ecosystems.pypi.project import JSON_V1
 from slowshield.feeds import FeedScheduler
 from slowshield.feeds.github import GithubFeed
 from slowshield.feeds.osv import OsvFeed
+from slowshield.ui import expect as X
+from slowshield.ui import snippets as S
 from tests.conftest import Running
 
 PAGES = [
@@ -214,3 +222,108 @@ async def test_setup_teaches_setup_url_while_responses_keep_public_url(start_app
     run = await start_app('public_url = "https://slowshield.example.com"\n')
     page = (await run.client.get("/ui/setup")).text
     assert "https://slowshield.example.com/pypi/simple/" in page and "New clients use" not in page
+
+
+# ---- Setup: what to expect, and the hosts to block ---------------------------------------------------------------
+
+
+def _expect_rows(page: str) -> dict[str, str]:
+    """Each ecosystem's row of the What to expect table, by ecosystem id, in page order."""
+    table = page[page.index('<table class="table expect-table">') :]
+    table = table[: table.index("</table>")]
+    row = r'<tr( class="withdrawn")?>\s*<th scope="row"><span class="eco eco-([a-z]+)">(.*?)</tr>'
+    rows = re.findall(row, table, re.S)
+    return {eco: withdrawn + body for withdrawn, eco, body in rows}
+
+
+def _firewall(page: str) -> str:
+    section = page[page.index("Block these at the firewall") :]
+    return section[: section.index("</section>")]
+
+
+@pytest.mark.parametrize("eco", IDS)
+def test_expect_statuses_are_the_ones_the_service_answers_with(eco: str) -> None:
+    """The table's codes come from the services' own refusals, not from prose."""
+    module = importlib.import_module(f"slowshield.ecosystems.{eco}.service")
+    service = next(c for c in vars(module).values() if inspect.isclass(c) and hasattr(c, "_too_new"))
+    statuses = {"TOO_EARLY": 425}
+
+    def codes(method: str) -> set[int]:
+        src = inspect.getsource(getattr(service, method))
+        found = re.findall(r"(?:error|warning)\(\s*(4\d\d|TOO_EARLY)\b", src)
+        return {statuses.get(c) or int(c) for c in found}
+
+    row = X.EXPECT[eco]
+    assert codes("_too_new") == {row.pinned}
+    assert codes("_blocked") == {row.blocked}
+
+
+async def test_setup_what_to_expect_has_a_row_per_ecosystem(running: Running) -> None:
+    page = (await running.client.get("/ui/setup")).text
+    rows = _expect_rows(page)
+    assert list(rows) == list(IDS)  # ECOSYSTEMS order, with their labels and colours
+    pinned = {eco: int(re.findall(r'class="badge st-held">(\d+)<', body)[0]) for eco, body in rows.items()}
+    assert pinned == {
+        "pypi": 403, "npm": 403, "go": 403, "maven": 425, "cargo": 403, "nuget": 425, "composer": 425,
+        "rubygems": 425, "oci": 403,
+    }  # fmt: skip
+    blocked = {eco: int(re.findall(r'class="badge st-blocked">(\d+)<', body)[0]) for eco, body in rows.items()}
+    assert blocked == {eco: 403 if eco == "oci" else 451 for eco in IDS}
+    assert "withdrawn" not in "".join(rows.values()) and ">disabled<" not in "".join(rows.values())
+    # Brand-new packages follow the config: fail_open = true at the top, false for Maven and the others by default.
+    served = {eco for eco, body in rows.items() if "ev-fail_open" in body}
+    assert served == {"pypi", "npm", "go", "oci"}
+
+
+async def test_setup_brand_new_follows_fail_open(start_app) -> None:
+    run = await start_app("fail_open = false\n[upstreams.maven]\nfail_open = true\n")
+    rows = _expect_rows((await run.client.get("/ui/setup")).text)
+    assert {eco for eco, body in rows.items() if "ev-fail_open" in body} == {"maven"}
+    assert all('class="badge st-held">held<' in body for eco, body in rows.items() if eco != "maven")
+
+
+async def test_setup_marks_a_disabled_ecosystem(start_app) -> None:
+    run = await start_app('[upstreams.composer]\nenabled = false\nrepo_url = "https://packagist.mirror.example"\n')
+    page = (await run.client.get("/ui/setup")).text
+    rows = _expect_rows(page)
+    composer = rows["composer"]
+    assert composer.startswith(' class="withdrawn"') and '<span class="badge">disabled</span>' in composer
+    assert sum("withdrawn" in body for body in rows.values()) == 1
+    # Its hosts aren't on the list to block: SlowShield doesn't serve it here.
+    firewall = _firewall(page)
+    assert "packagist.mirror.example" not in firewall and "api.github.com" not in firewall
+    assert re.search(r"switched off here:\s*PHP\.", firewall)
+
+
+async def test_setup_firewall_hosts_come_from_the_config(start_app) -> None:
+    run = await start_app(
+        '[upstreams.maven.repos.jitpack]\nurl = "https://jitpack.example.net/m2"\n'
+        '[upstreams.pypi]\nmirrors = ["https://pypi.mirror.example/"]\n'
+    )
+    firewall = _firewall((await run.client.get("/ui/setup")).text)
+    groups = dict(re.findall(r'<span class="eco eco-([a-z]+)">.*?<span class="hosts">(.*?)</span>', firewall, re.S))
+    # Each host once, under the first ecosystem that names it (here, most upstreams are the same fake registry).
+    assert list(groups) == [eco for eco in IDS if eco in groups] and {"pypi", "maven", "composer"} <= set(groups)
+    assert '<code class="host">pypi.mirror.example</code>' in groups["pypi"]
+    assert '<code class="host">jitpack.example.net</code>' in groups["maven"]
+    # Hosts clients use that the config doesn't hold, once each.
+    assert '<code class="host">repo.maven.apache.org</code>' in groups["maven"]
+    assert '<code class="host">api.github.com</code><code class="host">codeload.github.com</code>' in groups["composer"]
+    # The same hosts, one per line, to copy.
+    listed = re.search(r"<pre><code>(.*?)</code></pre>", firewall, re.S)
+    assert listed is not None
+    lines = listed.group(1).split("\n")
+    assert len(lines) == len(set(lines))
+    assert {"pypi.mirror.example", "jitpack.example.net", "api.github.com"} <= set(lines)
+    # Never the download hosts, which serve far more than packages.
+    assert "storage.googleapis.com" not in firewall and "localhost" not in lines
+
+
+async def test_setup_tool_notes_render_code(running: Running) -> None:
+    page = (await running.client.get("/ui/setup")).text
+    assert (
+        '<p class="muted small tool-note">Leave <code>,direct</code> and <code>|</code> out of <code>GOPROXY</code>'
+        in page
+    )
+    assert page.count('class="muted small tool-note"') == sum(1 for t in S.tools(*["https://x"] * 5, nuget="https://x",
+        composer="https://x", rubygems="https://x") if t.note)  # fmt: skip

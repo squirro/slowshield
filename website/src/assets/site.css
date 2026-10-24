@@ -383,6 +383,13 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .edge-registry rect { fill: var(--surface); stroke: var(--line); }
 .edge-registry text { fill: var(--ink); }
 .trunk { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 9; opacity: 0.55; }
+.trunk.faint { opacity: 0.25; }
+/* Shield wall: followers fetch package files through the leader. */
+.wall-link { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 6 8; opacity: 0.85; }
+.edge-svg .en-note { font: 11px var(--mono); fill: var(--muted); }
+.edge-svg .en-role { font: 12px var(--mono); fill: var(--brand); }
+.edge-svg .en-role.end { text-anchor: end; }
+.edge-svg .en-role.start { text-anchor: start; }
 .en-mark { color: var(--brand); filter: drop-shadow(0 10px 25px color-mix(in srgb, var(--brand) 45%, transparent)); }
 .fan path { stroke: var(--brand); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 3 8; animation: flow 0.9s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -22; } }
@@ -390,9 +397,10 @@ section { padding: clamp(4rem, 9vw, 7rem) 1.5rem; max-width: var(--max); margin:
 .packet { fill: var(--amber); opacity: 0; }
 @supports (offset-path: path("M0 0")) {
   .packet { opacity: 1; offset-rotate: 0deg; animation: ride 4.5s ease-in-out infinite; }
-  .pk1 { offset-path: path("M450 76 C450 130 150 130 150 190"); }
-  .pk2 { offset-path: path("M450 76 C450 140 450 140 450 190"); animation-delay: 1.5s; }
-  .pk3 { offset-path: path("M450 76 C450 130 750 130 750 190"); animation-delay: 3s; }
+  /* registry to the leader, then the leader to each follower */
+  .pk1 { offset-path: path("M450 76 C450 140 450 140 450 190"); }
+  .pk2 { offset-path: path("M404 236 H198"); animation-delay: 1.5s; }
+  .pk3 { offset-path: path("M496 236 H702"); animation-delay: 3s; }
 }
 @keyframes ride { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 60% { offset-distance: 100%; opacity: 1; } 70%, 100% { offset-distance: 100%; opacity: 0; } }
 @supports (animation-timeline: view()) {
@@ -842,6 +850,9 @@ a.eco:hover { text-decoration: none; filter: brightness(1.12); }
 .docs-table th, .docs-table td { text-align: left; vertical-align: top; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); }
 .docs-table th { color: var(--muted); font-weight: 600; }
 .docs-main .doc-tool { border-top: 1px solid var(--line); margin-top: 1.5rem; padding-top: 0.2rem; }
+.changelog .release { border-top: 1px solid var(--line); margin-top: 2.4rem !important; }
+.changelog .release h2 { margin-top: 1.6rem; display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
+.changelog .release-date { font: 500 0.9rem var(--mono); color: var(--muted); }
 .doc-md { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.86rem; color: var(--muted); }
 .doc-label, .doc-age { font-size: 0.86rem; color: var(--muted); margin: 0.7rem 0 0.25rem; }
 .doc-cards { list-style: none; padding: 0 !important; display: grid !important; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.9rem !important; }

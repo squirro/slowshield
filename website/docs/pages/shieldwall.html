@@ -1,0 +1,84 @@
+<!-- title: Shield wall | description: Run several SlowShield instances as one shield wall: a leader that holds the policy and the view over all of them, and followers that take its policy and fetch package files through it. Setup with Docker, Compose and Helm, automated pairing, and Tailscale. -->
+<h1>Shield wall</h1>
+<p class="lead">A shield wall is several SlowShield instances working as one: a leader and its followers. The leader
+  holds the policy and shows the traffic of every instance. Followers take the leader's policy and blocks, report their
+  statistics and events to it, and fetch package files through its cache, so the wall downloads each file from the
+  registries once. A follower that can't reach its leader keeps working on its own.</p>
+
+<h2 id="when">When to use one</h2>
+<p>Run one instance per office, region or CI cluster, close to the machines that use it. Without a shield wall each
+  instance has its own policy and its own dashboard. With one, you set the delay, the exceptions and the blocks once on
+  the leader, and you see every instance's installs and security events in one place.</p>
+
+<h2 id="leader">1. Make one instance the leader</h2>
+<p>Start the instance that should lead with <code>SLOWSHIELD_SHIELDWALL_ROLE=leader</code>. It needs a
+  <code>public_url</code> its followers can reach over HTTPS.</p>
+<div class="code"><pre><code>docker run -d --name slowshield -p 127.0.0.1:8080:8080 -v slowshield:/data \
+  -e SLOWSHIELD_PUBLIC_URL=https://slowshield.example.com \
+  -e SLOWSHIELD_SHIELDWALL_ROLE=leader \
+  -e SLOWSHIELD_INSTANCE_NAME=hq -e SLOWSHIELD_INSTANCE_LOCATION=Zurich \
+  ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>With Compose, set the same variables in <code>deploy/docker/.env</code>, and <code>SLOWSHIELD_HOSTNAMES</code> to the
+  public URL's host so Caddy serves that name; with Helm, set
+  <code>shieldwall.role: leader</code>. The leader keeps its identity in <code>/data/shieldwall/identity.key</code>:
+  back it up, because losing it means pairing every follower again.</p>
+
+<h2 id="follower">2. Add a follower</h2>
+<ol>
+  <li><strong>On the leader, print a join string.</strong> It works once, for 10 minutes by default (<code>--minutes</code>
+    up to 60):
+    <div class="code"><pre><code>docker exec slowshield slowshield wall invite --name sg-1 --location Singapore
+# Compose, from deploy/docker:
+docker compose exec slowshield slowshield wall invite --name sg-1 --location Singapore</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
+  <li><strong>Start the new instance with it</strong>, as <code>SLOWSHIELD_JOIN='ssj1:…'</code> (or
+    <code>SLOWSHIELD_JOIN_FILE</code>). Nothing else needs configuring: the follower takes the leader's policy.</li>
+  <li><strong>Confirm the leader.</strong> Open the new instance's Shield wall page (<code>/ui/shieldwall</code>). It
+    shows the leader's name and fingerprint; click <strong>Join</strong> if the fingerprint matches the one the invite
+    printed. With <code>SLOWSHIELD_JOIN_CONFIRM=auto</code> the follower joins without the click.</li>
+</ol>
+<p><strong>The follower must trust the leader's certificate.</strong> A leader with a publicly trusted certificate (ACME)
+  needs nothing. The shipped Compose and Helm setups default to Caddy's private CA, so a follower of such a leader needs
+  that CA certificate: <code>LEADER_CA_SECRET_FILE</code> with Compose, <code>shieldwall.leaderCaSecret</code> with Helm
+  (or <code>shieldwall.leaderPubliclyTrusted: true</code> for a public certificate). The leader's Helm NOTES show how to
+  read the CA.</p>
+
+<h3 id="helm">On Kubernetes</h3>
+<p>Create the join string as a Secret right before installing, and install the chart with
+  <code>shieldwall.joinSecret</code> and <code>shieldwall.confirm: auto</code>. The chart README has a full walkthrough
+  and example values, including a leader that is only reachable on a tailnet:
+  <a href="https://github.com/squirro/slowshield/blob/main/deploy/helm/slowshield/README.md" rel="noopener noreferrer">deploy/helm/slowshield</a>.</p>
+
+<h3 id="automation">With configuration management</h3>
+<p>Ansible, cloud-init or a GitOps tool can pair followers without anyone clicking: run
+  <code>slowshield wall invite --quiet</code> on the leader, pass the string as <code>SLOWSHIELD_JOIN</code> with
+  <code>SLOWSHIELD_JOIN_CONFIRM=auto</code>, and check with <code>slowshield wall status</code>. A follower that has
+  joined ignores a join string, so the automation can leave it set; an invalid join string stops the instance at
+  startup, so never use a placeholder. Details:
+  <a href="https://github.com/squirro/slowshield/blob/main/docs/operations.md" rel="noopener noreferrer">docs/operations.md</a>.</p>
+
+<h2 id="policy">3. What followers take from the leader</h2>
+<ul>
+  <li><strong>Policy and blocks.</strong> Stricter settings apply at once; looser ones after an hour, and a follower's
+    delay never goes below one day (<code>SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS</code>). A follower's own stricter settings
+    and its own exceptions stay in force, so leave the policy settings out of a follower's config.</li>
+  <li><strong>Package files</strong> through the leader's cache when it is up, checked by the follower as always
+    (<code>SLOWSHIELD_SHIELDWALL_VIA_LEADER</code>). Indexes and publish times still come from the registries.</li>
+  <li><strong>Evidence:</strong> takedowns, tamper flags and the first fingerprint of each file. A follower that saw
+    different bytes for a file than the leader refuses it.</li>
+</ul>
+
+<h2 id="view">4. Watch the whole wall</h2>
+<p>The leader's Overview and Security pages cover every instance and narrow to one instance, a location or a label.
+  Its Shield wall page lists the instances and what each served in the last 24 hours: installs, packages, data, and how
+  much came from its own cache, through the leader, or from the registries.</p>
+
+<h2 id="tailscale">One name on a tailnet</h2>
+<p>On Tailscale, every instance of the wall can serve one Tailscale Service, so clients use one URL and reach an
+  instance that is up, the nearest one with regional routing or MagicRoute. How to set it up on hosts and on
+  Kubernetes: <a href="https://github.com/squirro/slowshield/blob/main/docs/tailscale.md" rel="noopener noreferrer">docs/tailscale.md</a>.</p>
+
+<h2 id="leave">Remove or leave</h2>
+<p><code>slowshield wall remove &lt;name&gt;</code> on the leader removes a follower; it keeps running on its own. An
+  instance keeps its role across restarts; only <code>SLOWSHIELD_SHIELDWALL_ROLE=standalone</code> takes it out of the
+  shield wall. How it works in detail:
+  <a href="https://github.com/squirro/slowshield/blob/main/docs/design/shieldwall.md" rel="noopener noreferrer">docs/design/shieldwall.md</a>.</p>

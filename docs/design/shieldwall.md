@@ -55,8 +55,9 @@ wrote every 5 seconds.
 ## Pairing
 
 1. On the leader: `slowshield wall invite --name zurich-1 --location zurich` (in a container:
-   `docker exec slowshield slowshield wall invite …`). It needs `public_url` (or `--url`): the URL followers
-   reach the leader at. The token is stored with its secret; it works once, for 10 minutes (`--minutes`, up to 60).
+   `docker exec slowshield slowshield wall invite …`; with Compose `docker compose exec slowshield …`).
+   It needs `public_url` (or `--url`): the URL followers reach the leader at. The token is
+   stored with its secret; it works once, for 10 minutes (`--minutes`, up to 60).
 2. The follower starts with `SLOWSHIELD_JOIN='ssj1:https://hq.example.com#<key hash>.<token>.<secret>'`.
 3. It fetches `/.well-known/slowshield-shieldwall`, and refuses unless the key hashes to the value in the join string
    (and isn't its own). It pins the key.
@@ -68,6 +69,10 @@ wrote every 5 seconds.
    the member, and burns the token.
 6. In one transaction, the follower queues its history for the leader (below) and turns active; from then on every
    statistics flush also goes into the outbox.
+
+Pairing from configuration management (`SLOWSHIELD_JOIN_CONFIRM=auto`, `wall invite --quiet`) and through a tailnet:
+[docs/operations.md](../operations.md#shield-wall-pairing-followers-automatically),
+[docs/tailscale.md](../tailscale.md).
 
 **After a restart** the follower needs the join string only if it hasn't joined yet. A follower that has joined
 syncs with the leader it stored (`shieldwall_leader.url` and the pinned key), with or without the join string, so a

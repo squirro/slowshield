@@ -93,9 +93,12 @@ def _eco_clause(
     return sql, params
 
 
-def scope_instances(conn: sqlite3.Connection, selector: str, own_location: str) -> tuple[str, ...] | None:
+def scope_instances(
+    conn: sqlite3.Connection, selector: str, own_location: str, own_labels: dict[str, str] | None = None
+) -> tuple[str, ...] | None:
     """The instances a leader's page covers: everything (None), this instance (`self`), one follower (its ID), a
-    location (`loc:<location>`) or a label (`label:<key>=<value>`)."""
+    location (`loc:<location>`) or a label (`label:<key>=<value>`). The leader ('') counts where its own location or
+    labels match."""
     if not selector:
         return None
     if selector == "self":
@@ -106,9 +109,8 @@ def scope_instances(conn: sqlite3.Connection, selector: str, own_location: str) 
         return (*([""] if loc and loc == own_location else []), *ids)
     if selector.startswith("label:"):
         key, _, value = selector[6:].partition("=")
-        return tuple(
-            r[0] for r in conn.execute("SELECT id, labels FROM shieldwall_members") if _label(r[1], key) == value
-        )
+        ids = [r[0] for r in conn.execute("SELECT id, labels FROM shieldwall_members") if _label(r[1], key) == value]
+        return (*([""] if (own_labels or {}).get(key) == value else []), *ids)
     return tuple(r[0] for r in conn.execute("SELECT id FROM shieldwall_members WHERE id = ?", (selector,)))
 
 
@@ -121,15 +123,34 @@ def _label(raw: str, key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def node_traffic(conn: sqlite3.Connection, since: float) -> dict[str, dict[str, int]]:
+    """What each instance of a shield wall served since `since`, by instance ID ('' is the leader): installs, distinct
+    packages, bytes, and of those bytes what came from its cache and through the leader (the rest came from the
+    registries)."""
+    out: dict[str, dict[str, int]] = {}
+    for r in conn.execute(
+        "SELECT instance, sum(serves), count(DISTINCT ecosystem || char(0) || package), sum(bytes), sum(cache_bytes), "
+        "sum(leader_bytes) FROM downloads_hourly WHERE bucket >= ? GROUP BY instance",
+        (since,),
+    ):
+        serves, packages, total, cached, via_leader = (int(v or 0) for v in r[1:])
+        out[r[0]] = {
+            "serves": serves,
+            "packages": packages,
+            "bytes": total,
+            "cache_bytes": cached,
+            "leader_bytes": via_leader,
+            "upstream_bytes": max(0, total - cached - via_leader),
+        }
+    return out
+
+
+NO_TRAFFIC = {"serves": 0, "packages": 0, "bytes": 0, "cache_bytes": 0, "leader_bytes": 0, "upstream_bytes": 0}
+
+
 def shieldwall_members(conn: sqlite3.Connection, now: float) -> list[dict[str, Any]]:
     """A leader's followers, with what they served in the last 24 hours."""
-    served = {
-        r[0]: (int(r[1]), int(r[2]))
-        for r in conn.execute(
-            "SELECT instance, sum(serves), sum(bytes) FROM downloads_hourly WHERE bucket >= ? GROUP BY instance",
-            (now - DAY,),
-        )
-    }
+    traffic = node_traffic(conn, now - DAY)
     out = []
     for r in _rows(conn, "SELECT * FROM shieldwall_members ORDER BY state, location, name"):
         try:
@@ -137,16 +158,18 @@ def shieldwall_members(conn: sqlite3.Connection, now: float) -> list[dict[str, A
             labels = json.loads(r["labels"]) if r["labels"] else {}
         except ValueError:
             status, labels = {}, {}
-        s, b = served.get(r["id"], (0, 0))
-        out.append({**dict(r), "labels": labels, "status": status, "serves": s, "bytes": b})
+        out.append({**dict(r), "labels": labels, "status": status, "traffic": traffic.get(r["id"], NO_TRAFFIC)})
     return out
 
 
-def shieldwall_choices(conn: sqlite3.Connection) -> dict[str, list[tuple[str, str]]]:
-    """What a leader's pages can be narrowed to: followers, locations, labels."""
+def shieldwall_choices(
+    conn: sqlite3.Connection, own_name: str = "", own_location: str = "", own_labels: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """What a leader's pages can be narrowed to: this instance (named), followers, locations and labels, the leader's
+    own among them."""
     members = _rows(conn, "SELECT id, name, location, labels FROM shieldwall_members ORDER BY name")
-    locations = sorted({m["location"] for m in members if m["location"]})
-    labels: set[str] = set()
+    locations = sorted({m["location"] for m in members if m["location"]} | ({own_location} if own_location else set()))
+    labels: set[str] = {f"{k}={v}" for k, v in (own_labels or {}).items()}
     for m in members:
         try:
             raw = json.loads(m["labels"] or "{}")
@@ -154,6 +177,7 @@ def shieldwall_choices(conn: sqlite3.Connection) -> dict[str, list[tuple[str, st
             continue
         labels.update(f"{k}={v}" for k, v in raw.items() if isinstance(v, str))
     return {
+        "self": own_name,
         "members": [(m["id"], m["name"]) for m in members],
         "locations": [(f"loc:{loc}", loc) for loc in locations],
         "labels": [(f"label:{kv}", kv) for kv in sorted(labels)],

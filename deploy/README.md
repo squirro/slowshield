@@ -19,6 +19,9 @@ Each has an observability variant (Alloy → Prometheus / Loki / Tempo → Grafa
 dashboards and alerts): `docker/compose.observability.yaml`, `podman/observability/`,
 `helm/slowshield-observability/`.
 
+On a tailnet: several instances behind one Tailscale Service, and followers of a leader that is only on the
+tailnet, from hosts and from the Helm chart: [docs/tailscale.md](../docs/tailscale.md).
+
 ## TLS
 
 Selected with one variable everywhere (`SLOWSHIELD_TLS_MODE` / `tls.mode`):

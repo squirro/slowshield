@@ -89,6 +89,11 @@ Quadlet) and Kubernetes (Helm) setups live in [`deploy/podman`](deploy/podman/RE
 `ghcr.io/squirro/slowshield` and `ghcr.io/squirro/slowshield-caddy` (amd64 and arm64, SBOM and provenance
 attached); pin a release or a digest in production.
 
+Several instances can work as a shield wall: one leader holds the policy and the view over all of them, and the
+followers take its policy and fetch package files through it ([docs/design/shieldwall.md](docs/design/shieldwall.md)).
+On a tailnet, all of them can serve one Tailscale Service name, and each client reaches the nearest instance
+([docs/tailscale.md](docs/tailscale.md)).
+
 ## Point your clients at it
 
 ```bash

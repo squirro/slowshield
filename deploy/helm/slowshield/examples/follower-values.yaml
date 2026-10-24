@@ -1,0 +1,43 @@
+# Values for a shield wall follower whose leader is only on the tailnet (see tailnet-leader-egress.yaml) and which
+# also serves a Tailscale Service (see tailscale-service.yaml). docs/tailscale.md explains each part.
+hostnames:
+  - slowshield.slowshield.svc.cluster.local
+  # The Tailscale Service name: tailscale-service.yaml forwards it over HTTPS, and Caddy answers only names it serves
+  # (421 otherwise).
+  - slowshield.your-tailnet.ts.net
+# Followers tell clients the Tailscale Service URL.
+publicUrl: https://slowshield.your-tailnet.ts.net
+
+shieldwall:
+  # kubectl -n slowshield create secret generic slowshield-join --from-literal=join='ssj1:...'
+  # (from `slowshield wall invite --quiet` on the leader, right before installing: single use, valid up to an hour)
+  joinSecret: slowshield-join
+  confirm: auto
+  name: us-east
+  location: Virginia
+  # The leader serves a publicly trusted certificate (ACME). Otherwise give its CA in leaderCaSecret.
+  leaderPubliclyTrusted: true
+  # With NetworkPolicy enforced: the egress proxy pods, on any port (the operator allocates it).
+  leaderEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+          podSelector:
+            matchLabels:
+              tailscale.com/parent-resource: slowshield-egress
+
+# The leader's name, pointed at the egress ClusterIP Service (tailnet-leader-egress.yaml). If the operator ever
+# recreates that Service, its new ClusterIP goes here.
+hostAliases:
+  - ip: 10.100.200.10
+    hostnames:
+      - slowshield.example.com
+
+persistence:
+  data:
+    # Must name a class that exists right now (kubectl get storageclass): a dry run doesn't check it, and a PVC's
+    # class can't be changed later.
+    storageClass: gp3
+  caddy:
+    storageClass: gp3

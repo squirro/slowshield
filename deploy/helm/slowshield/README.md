@@ -57,8 +57,36 @@ helm install slowshield deploy/helm/slowshield \
 | `shieldwall.leaderEgress` | `[]` | Network policy egress rules to a leader on a private network |
 | `shieldwall.leaderCaSecret` / `.leaderCaSecretKey` | `""` / `ca.crt` | A Secret with the CA that signed the leader's certificate (its Caddy's internal CA, the chart's default `tls.mode`). A follower needs this or `leaderPubliclyTrusted`: the chart refuses a `joinSecret` without one of them |
 | `shieldwall.leaderPubliclyTrusted` | `false` | `true` when the leader's certificate is publicly trusted (`tls.mode=acme`), so the follower needs no CA |
+| `shieldwall.confirm` | `ui` | `auto` joins without the click on the Shield wall page (automated installs) |
+| `hostAliases` | `[]` | `/etc/hosts` entries for the pod, e.g. a tailnet-only leader's name pointed at an in-cluster egress proxy ([docs/tailscale.md](../../../docs/tailscale.md)) |
 
 `helm test slowshield` runs a pod (the SlowShield image itself) that checks `/healthz` through the Service.
+
+## A shield wall follower
+
+A follower pairs on its first start and keeps its leader in its volume; it ignores the join string from then on.
+
+1. **On the leader**, right before installing (the string works once, for up to 60 minutes):
+   `slowshield wall invite --name us-east --location Virginia --minutes 60 --quiet`
+2. **Store it**: `kubectl -n slowshield create secret generic slowshield-join --from-literal=join='ssj1:...'`
+3. **Check the storage class**: `kubectl get storageclass`. A dry run doesn't notice a class that doesn't exist, and a
+   PVC's class can't be changed later: the claims stay Pending, and fixing it means deleting them (and, with Flux,
+   the failed release) so they're created again.
+4. **Install** with `shieldwall.joinSecret`, `shieldwall.confirm=auto`, and either `shieldwall.leaderPubliclyTrusted`
+   or `shieldwall.leaderCaSecret`.
+5. **Check** `kubectl -n slowshield exec deploy/slowshield -c slowshield -- slowshield wall status` (leader `active`)
+   and `slowshield wall members` on the leader.
+
+Examples in [`examples/`](examples/):
+
+| File | |
+|---|---|
+| [`follower-values.yaml`](examples/follower-values.yaml) | A follower of a tailnet-only leader that also serves a Tailscale Service |
+| [`tailnet-leader-egress.yaml`](examples/tailnet-leader-egress.yaml) | Tailscale operator egress to a leader that is only on the tailnet |
+| [`tailscale-service.yaml`](examples/tailscale-service.yaml) | Serves the release as a Tailscale Service shared with `tailscale serve` hosts |
+| [`flux.yaml`](examples/flux.yaml) | Flux: the chart straight from a release tag (it isn't in a chart registry) |
+
+[docs/tailscale.md](../../../docs/tailscale.md) explains the Tailscale parts.
 
 The observability stack (Alloy, Prometheus, Loki, Tempo, Grafana with dashboards) is a separate
 chart: `deploy/helm/slowshield-observability`.

@@ -7,6 +7,7 @@ Stdlib only, Python 3.9 or later.
 * renders the guide (website/docs) into /docs/, with each tool's settings from the product's own snippets, and the
   same pages as Markdown for agents: /docs/**/index.md, /llms.txt, /llms-full.txt and the Agent Skill's references
   (plugins/slowshield/skills/slowshield, served at /skills/; `--write-skill` updates the committed copy),
+* renders CHANGELOG.md into /changelog/, every published release (Unreleased is left out),
 * fingerprints CSS/JS (immutable caching) and rewrites references,
 * fails on CSP violations (inline script/style, event-handler attributes, javascript: URLs),
   broken in-page anchors, missing local assets, external sub-resources, or an exceeded size budget,
@@ -66,7 +67,7 @@ DOCS = HERE / "docs"
 DOCS_NAV = (
     ("", "Overview"), ("python", "Python"), ("javascript", "JavaScript"), ("go", "Go"), ("java", "Java"),
     ("rust", "Rust"), ("csharp", "C#"), ("containers", "Container images"), ("container-builds", "Building images"),
-    ("agents", "Agents"),
+    ("shieldwall", "Shield wall"), ("agents", "Agents"),
 )  # fmt: skip
 EXAMPLE = "https://slowshield.example.com"
 EXAMPLE_REGISTRIES = (
@@ -86,6 +87,10 @@ _VERSION = re.compile(r"\d+\.\d+\.\d+")
 # release it names. The skill's own copy of the guide names no release (it is read at any).
 SKILL_SINCE = (0, 0, 9)
 SKILL_MARKERS = ("{{skill_install}}", "{{skill_marketplace}}", "{{skill_zip}}")
+# The changelog page: website/src/changelog/index.html with the releases from the repository's CHANGELOG.md.
+CHANGELOG = HERE.parent / "CHANGELOG.md"
+CHANGELOG_MARKERS = ("<!-- @changelog-intro -->", "<!-- @changelog-nav -->", "<!-- @changelog -->")
+REPO_BLOB = "https://github.com/squirro/slowshield/blob/main/"
 FINGERPRINT = ("assets/site.css", "assets/site.js")
 BUDGET_BYTES = 200_000  # per page: its html + css + js, uncompressed
 HEADERS = HERE / "_headers"
@@ -344,6 +349,137 @@ def write_agent_files(
             zf.writestr(info, path.read_bytes(), zipfile.ZIP_DEFLATED)
 
 
+_MD_CODE = re.compile(r"(`[^`]*`)")
+_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_MD_URL = re.compile(r'(?<![">])\bhttps?://[^\s<]*[^\s<.,;:)]')
+_MD_ITEM = re.compile(r"( *)- (.*)")
+
+
+def md_inline(text: str) -> str:
+    """The inline Markdown CHANGELOG.md uses: `code`, **bold**, [links](…) (relative ones to the repository on
+    GitHub) and bare URLs."""
+
+    def link(m: re.Match[str]) -> str:
+        url = m.group(2) if m.group(2).startswith(("http://", "https://")) else REPO_BLOB + m.group(2)
+        return f'<a href="{url}" rel="noopener noreferrer">{m.group(1)}</a>'
+
+    out = []
+    for i, part in enumerate(_MD_CODE.split(text)):
+        if i % 2:
+            out.append(f"<code>{html.escape(part[1:-1], quote=False)}</code>")
+            continue
+        rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", html.escape(part, quote=False))
+        rendered = _MD_LINK.sub(link, rendered)
+        out.append(
+            _MD_URL.sub(lambda m: f'<a href="{m.group(0)}" rel="noopener noreferrer">{m.group(0)}</a>', rendered)
+        )
+    return "".join(out)
+
+
+def md_blocks(text: str) -> str:
+    """Paragraphs, ### headings and nested `- ` lists whose items continue on indented lines."""
+    out: list[str] = []
+    para: list[str] = []
+    depth: list[int] = []  # indents of the open lists, each with an open <li>
+    item: list[str] | None = None
+
+    def flush_item() -> None:
+        nonlocal item
+        if item is not None:
+            out.append(md_inline(" ".join(item)))
+            item = None
+
+    def close_lists(indent: int = -1) -> None:
+        while depth and depth[-1] > indent:
+            flush_item()
+            out.append("</li></ul>")
+            depth.pop()
+
+    def flush_para() -> None:
+        if para:
+            out.append(f"<p>{md_inline(' '.join(para))}</p>")
+            para.clear()
+
+    for line in text.splitlines():
+        if not line.strip():
+            flush_para()
+            continue
+        if line.startswith("### "):
+            flush_para()
+            close_lists()
+            out.append(f"<h3>{md_inline(line[4:].strip())}</h3>")
+            continue
+        m = _MD_ITEM.fullmatch(line)
+        if m:
+            flush_para()
+            indent = len(m.group(1))
+            if depth and indent > depth[-1]:
+                flush_item()
+                out.append("<ul>")
+                depth.append(indent)
+            else:
+                close_lists(indent)
+                if depth and depth[-1] == indent:
+                    flush_item()
+                    out.append("</li>")
+                else:
+                    out.append("<ul>")
+                    depth.append(indent)
+            out.append("<li>")
+            item = [m.group(2).strip()]
+            continue
+        if depth and line.startswith(" "):
+            item = [*(item or []), line.strip()]
+            continue
+        close_lists()
+        para.append(line.strip())
+    flush_para()
+    close_lists()
+    return "\n".join(out)
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in version.split("."))
+
+
+def render_changelog(page: Path, errors: list[str], release: str) -> None:
+    """Fill website/src/changelog/index.html from CHANGELOG.md: the intro, a list of releases, and every release
+    with an anchor of its version (#0.0.11). Only what is published shows: Unreleased stays out, and so does a release
+    newer than `release`, the latest GitHub Release (a merged release PR deploys the site before its tag exists; the
+    release workflow redeploys it once the release is out)."""
+    sections = re.split(r"(?m)^## ", CHANGELOG.read_text(encoding="utf-8"))
+    intro = re.sub(r"(?m)\A# .*\n", "", sections[0])
+    nav, body = [], []
+    for section in sections[1:]:
+        head, _, rest = section.partition("\n")
+        m = re.fullmatch(r"\[([^\]]+)\](?: - (\d{4}-\d{2}-\d{2}))?\s*", head)
+        if m is None:
+            errors.append(f"CHANGELOG.md: unexpected release heading {head!r}")
+            continue
+        version, date = m.groups()
+        if version == "Unreleased":
+            continue
+        if date is None or not _VERSION.fullmatch(version):
+            errors.append(f"CHANGELOG.md: release {version!r} needs an X.Y.Z version and a date")
+            continue
+        if _version_key(version) > _version_key(release):
+            continue
+        nav.append(f'<a href="#{version}">{version}</a>')
+        body.append(
+            f'<section class="release" id="{version}" aria-labelledby="h-{version}">'
+            f'<h2 id="h-{version}">{version} <time class="release-date" datetime="{date}">{date}</time></h2>\n'
+            f"{md_blocks(rest)}\n</section>"
+        )
+    if not body:
+        errors.append("CHANGELOG.md: no published release found")
+    text = page.read_text(encoding="utf-8")
+    for marker, value in zip(CHANGELOG_MARKERS, (md_blocks(intro), "\n".join(nav), "\n".join(body)), strict=True):
+        if marker not in text:
+            errors.append(f"{page.name}: missing {marker}")
+        text = text.replace(marker, value)
+    page.write_text(text, encoding="utf-8")
+
+
 def snippet(snippets: dict[str, str], m: re.Match[str], page: str, errors: list[str]) -> str:
     key = f"{m.group(1)}.{m.group(2)}"
     if key not in snippets:
@@ -413,6 +549,7 @@ def build(out: Path, *, write_skill: bool = False, release: str = DEFAULT_RELEAS
     snippets = load_snippets()
     snippet_errors: list[str] = []
     docs_md = render_docs(out, snippet_errors, release)
+    render_changelog(out / "changelog" / "index.html", snippet_errors, release)
     write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill, release=release)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")

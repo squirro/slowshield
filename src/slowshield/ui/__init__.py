@@ -246,7 +246,15 @@ class UI:
         return (request.query_params.get("in") or "").strip()[:200]
 
     def _instances(self, conn: Any, scope: str) -> tuple[str, ...] | None:
-        return Q.scope_instances(conn, scope, self.ctx.cfg.raw.shieldwall.location) if scope else None
+        sw = self.ctx.cfg.raw.shieldwall
+        return Q.scope_instances(conn, scope, sw.location, sw.labels) if scope else None
+
+    def _choices(self, conn: Any) -> dict[str, Any]:
+        """The instance picker on a leader's pages, the leader's own name, location and labels included."""
+        from slowshield.shieldwall.leader import instance_name
+
+        sw = self.ctx.cfg.raw.shieldwall
+        return Q.shieldwall_choices(conn, instance_name(self.ctx.cfg), sw.location, sw.labels)
 
     async def _q(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         conn = self.ctx.db.readers
@@ -286,7 +294,7 @@ class UI:
                 "events": Q.recent_events(conn, 8, inst=inst),
                 "totals": Q.totals(conn),
                 "new_deps": Q.new_dependencies(conn, w, eco=eco, limit=6),
-                "choices": Q.shieldwall_choices(conn) if leader else None,
+                "choices": self._choices(conn) if leader else None,
             }
 
         data = await self._q(collect)
@@ -477,7 +485,7 @@ class UI:
                 "rows": rows[:50],
                 "has_next": len(rows) > 50,
                 "counts": Q.event_counts(conn, w, inst),
-                "choices": Q.shieldwall_choices(conn) if leader else None,
+                "choices": self._choices(conn) if leader else None,
             }
 
         data = await self._q(collect)
@@ -573,6 +581,7 @@ class UI:
             if role == "leader":
                 return {
                     "members": Q.shieldwall_members(conn, now),
+                    "leader_traffic": Q.node_traffic(conn, now - Q.DAY).get("", Q.NO_TRAFFIC),
                     "invitations": conn.execute(
                         "SELECT count(*) FROM shieldwall_tokens WHERE used IS NULL AND revoked IS NULL AND expires > ?",
                         (now,),
@@ -587,10 +596,17 @@ class UI:
         from slowshield.shieldwall.policy import Bundle, describe
 
         if role == "leader":
+            from slowshield.shieldwall.leader import instance_name
             from slowshield.shieldwall.runtime import identity
 
             me = await asyncio.to_thread(identity, self.ctx)
             data["fingerprint"] = me.fingerprint if me else ""
+            sw = self.ctx.cfg.raw.shieldwall
+            data["leader_node"] = {"id": me.id if me else "", "name": instance_name(self.ctx.cfg),
+                                   "location": sw.location, "labels": sw.labels, "version": __version__}  # fmt: skip
+            data["traffic_rows"] = [(data["leader_node"]["name"], "self", data["leader_traffic"])] + [
+                (f["name"], f["id"], f["traffic"]) for f in data["members"]
+            ]
         if role == "follower" and data.get("leader"):
             leader = data["leader"]
             leader["fingerprint"] = fingerprint(leader["pubkey"])

@@ -438,9 +438,15 @@ def md_blocks(text: str) -> str:
     return "\n".join(out)
 
 
-def render_changelog(page: Path, errors: list[str]) -> None:
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in version.split("."))
+
+
+def render_changelog(page: Path, errors: list[str], release: str) -> None:
     """Fill website/src/changelog/index.html from CHANGELOG.md: the intro, a list of releases, and every release
-    with an anchor of its version (#0.0.11). Unreleased stays out: the page shows what was published."""
+    with an anchor of its version (#0.0.11). Only what is published shows: Unreleased stays out, and so does a release
+    newer than `release`, the latest GitHub Release (a merged release PR deploys the site before its tag exists; the
+    release workflow redeploys it once the release is out)."""
     sections = re.split(r"(?m)^## ", CHANGELOG.read_text(encoding="utf-8"))
     intro = re.sub(r"(?m)\A# .*\n", "", sections[0])
     nav, body = [], []
@@ -455,6 +461,8 @@ def render_changelog(page: Path, errors: list[str]) -> None:
             continue
         if date is None or not _VERSION.fullmatch(version):
             errors.append(f"CHANGELOG.md: release {version!r} needs an X.Y.Z version and a date")
+            continue
+        if _version_key(version) > _version_key(release):
             continue
         nav.append(f'<a href="#{version}">{version}</a>')
         body.append(
@@ -541,7 +549,7 @@ def build(out: Path, *, write_skill: bool = False, release: str = DEFAULT_RELEAS
     snippets = load_snippets()
     snippet_errors: list[str] = []
     docs_md = render_docs(out, snippet_errors, release)
-    render_changelog(out / "changelog" / "index.html", snippet_errors)
+    render_changelog(out / "changelog" / "index.html", snippet_errors, release)
     write_agent_files(out, docs_md, snippet_errors, write_skill=write_skill, release=release)
     for page in out.rglob("*.html"):
         text = page.read_text(encoding="utf-8")

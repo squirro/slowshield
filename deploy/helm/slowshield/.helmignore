@@ -4,5 +4,3 @@
 *.tmp
 .git/
 ci/
-# Example manifests and values, not part of the chart
-examples/

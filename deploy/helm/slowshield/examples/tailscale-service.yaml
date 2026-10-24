@@ -14,7 +14,7 @@
 #
 # Login: a single-use, pre-approved auth key tagged tag:slowshield, only for the first start:
 #   kubectl -n slowshield create secret generic slowshield-ts-authkey --from-literal=TS_AUTHKEY='tskey-auth-...'
-# After that the node's identity lives in the Secret slowshield-ts-state.
+# After that the node's identity lives in the Secret slowshield-ts-state, and the key's Secret can go.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -79,8 +79,11 @@ data:
       kill -0 "$daemon" || exit 1
       sleep 1
     done
-    # The auth key is only used when the stored state has no login.
-    tailscale --socket="$S" up --auth-key="$TS_AUTHKEY" --hostname=slowshield-us-east --advertise-tags=tag:slowshield
+    # The auth key only matters for the first login; with saved state the node starts without it, so the bootstrap
+    # Secret can be deleted once slowshield-ts-state holds the node's identity.
+    set -- up --hostname=slowshield-us-east --advertise-tags=tag:slowshield
+    if [ -n "${TS_AUTHKEY:-}" ]; then set -- "$@" --auth-key="$TS_AUTHKEY"; fi
+    tailscale --socket="$S" "$@"
     tailscale --socket="$S" serve set-config --all /config/serve.json
     tailscale --socket="$S" serve advertise svc:slowshield
     wait "$daemon"
@@ -126,6 +129,7 @@ spec:
                 secretKeyRef:
                   name: slowshield-ts-authkey
                   key: TS_AUTHKEY
+                  optional: true # only needed for the first login
             - name: HOME
               value: /tmp
           securityContext:

@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  UV_VERSION: "0.12.19"
+  UV_VERSION: "0.13.4"
 
 jobs:
   stack:
@@ -115,8 +115,8 @@ jobs:
 
       - name: Build GIL and free-threaded images
         run: |
-          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15 -t slowshield:gil --load .
-          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15t -t slowshield:ft --load .
+          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15.0 -t slowshield:gil --load .
+          docker buildx build -f containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15.0t -t slowshield:ft --load .
           docker buildx build -f containers/fakeupstream/Dockerfile -t slowshield-fakeupstream:nightly --load .
           docker image ls --filter reference='slowshield:*'
 

@@ -5,7 +5,7 @@
 # third-party frontend image is pulled into the build.
 #
 #   docker buildx build --file containers/slowshield/Dockerfile -t slowshield:dev .
-#   docker buildx build --file containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15t -t slowshield:dev-ft .
+#   docker buildx build --file containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15.0t -t slowshield:dev-ft .
 #   docker buildx build --file containers/slowshield/Dockerfile --build-arg BUILD_CACHE=off ...   # release builds
 #
 # BUILD_CACHE=on uses BuildKit cache mounts for uv/cargo downloads; BUILD_CACHE=off selects stages that
@@ -39,7 +39,7 @@ COPY pyproject.toml uv.lock README.md LICENSE NOTICE ./
 
 # ---- deps (interpreter + third-party packages), with or without cache mounts ----------------------
 FROM toolchain AS deps-on
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 ARG TARGETARCH
 RUN --mount=type=cache,id=slowshield-uv-${TARGETARCH},target=/cache/uv \
     --mount=type=cache,id=slowshield-cargo-${TARGETARCH},target=/cache/cargo \
@@ -47,7 +47,7 @@ RUN --mount=type=cache,id=slowshield-uv-${TARGETARCH},target=/cache/uv \
     sh -c 'uv python install --no-bin "$UV_PYTHON" && uv sync --locked --no-dev --no-install-project'
 
 FROM toolchain AS deps-off
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 RUN UV_NO_CACHE=1 CARGO_HOME=/tmp/cargo UV_PYTHON="$PYTHON_VARIANT" \
     sh -c 'uv python install --no-bin "$UV_PYTHON" && uv sync --locked --no-dev --no-install-project && rm -rf /tmp/cargo'
 
@@ -55,7 +55,7 @@ FROM deps-${BUILD_CACHE} AS deps
 
 # ---- app: install SlowShield itself (non-editable) and prune ---------------------------------------
 FROM deps AS app
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 COPY src ./src
 RUN UV_NO_CACHE=1 UV_PYTHON="$PYTHON_VARIANT" uv sync --locked --no-dev --no-editable
 COPY containers/slowshield/prune.sh /usr/local/bin/prune.sh
@@ -69,7 +69,7 @@ COPY LICENSE NOTICE *.md /app/share/doc/
 FROM scratch
 ARG SLOWSHIELD_VERSION=dev
 ARG SLOWSHIELD_GIT_SHA=unknown
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 
 COPY --from=rootfs /rootfs/ /
 COPY --from=app /opt/python /opt/python

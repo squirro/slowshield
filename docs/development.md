@@ -37,6 +37,6 @@ UI templates reload on every request with `SLOWSHIELD_DEV_TEMPLATES=1`.
 
 ## Python 3.15 and free-threading
 
-The default image uses the regular (GIL) build. The nightly workflow builds `PYTHON_VARIANT=3.15t` and
+The default image uses the regular (GIL) build. The nightly workflow builds `PYTHON_VARIANT=3.15.0t` and
 compares it against the GIL build with the same perf harness; Granian refuses to start if any extension
 re-enables the GIL, so a green free-threaded run is meaningful.

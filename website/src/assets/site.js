@@ -171,7 +171,7 @@ if ("IntersectionObserver" in window) {
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) e.target.classList.toggle("paused", !e.isIntersecting);
   });
-  document.querySelectorAll(".hero-art, .edge-map, .sun").forEach((el) => io.observe(el));
+  document.querySelectorAll(".hero-art, .edge-map").forEach((el) => io.observe(el));
 }
 
 // Caching diagram: an office and a cloud region near the visitor, taken only from the time zone setting

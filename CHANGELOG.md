@@ -37,6 +37,10 @@ All notable changes to this project are documented here. The format is based on
   it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
   `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
   stored and no longer needs the join string; one that hasn't joined yet still does.
+
+## [0.0.10] - 2026-10-24
+
+### Changed
 - Python 3.15.0, the stable release, instead of 3.15.0rc2, in the images (GIL and free-threaded), CI and
   `.python-version`. The patch version is pinned, so a newer uv no longer changes the interpreter.
 

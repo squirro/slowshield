@@ -127,11 +127,17 @@ def current(published: float | None, now: float) -> float | None:
 
 
 def zip_content(path: Path) -> str | None:
-    """The `h1:` hash of the files in a zip (Go's dirhash), or None if it isn't a readable zip. GitHub builds zipballs
-    on request; their bytes may change while the files in them don't (docs/design/composer.md)."""
+    """The `h1:` hash of the files in a zip (Go's dirhash), or None if it isn't a readable zip: anything that can't be
+    read (an encrypted entry, a broken stream), an entry name used twice, or bytes before the first entry, which
+    other unzip tools may read differently. GitHub builds zipballs on request; their bytes may change while the files
+    in them don't (docs/design/composer.md)."""
     try:
+        with zipfile.ZipFile(path) as zf:
+            infos = zf.infolist()
+            if len({i.filename for i in infos}) != len(infos) or min((i.header_offset for i in infos), default=0):
+                return None
         return dirhash.hash_zip(path)
-    except zipfile.BadZipFile, ValueError, OSError, EOFError, NotImplementedError:
+    except Exception:  # whatever the reason, it isn't a file that can be served
         return None
 
 

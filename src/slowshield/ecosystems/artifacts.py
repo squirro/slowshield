@@ -340,7 +340,11 @@ class ArtifactServer:
                     problems.append(problem)
             content = None
             if req.content_digest is not None and tee is not None and not problems:
-                content = await asyncio.to_thread(req.content_digest, tee.path)
+                try:
+                    content = await asyncio.to_thread(req.content_digest, tee.path)
+                except Exception:  # an archive that can't be read is an integrity failure, not a broken stream
+                    log.warning("content digest failed", extra={"artifact": req.key}, exc_info=True)
+                    content = None
                 if content is None:
                     problems.append("the file can't be read as an archive")
                 req.upstream_digest = content

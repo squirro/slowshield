@@ -346,6 +346,20 @@ async def test_a_shasum_is_checked(running: Running) -> None:
     assert any(t == "integrity_mismatch" and "sha1" in d for t, _, d in events), events
 
 
+async def test_a_dist_that_cannot_be_read_is_an_integrity_failure(running: Running, monkeypatch) -> None:
+    def unreadable(_path: object) -> str:
+        raise RuntimeError("File is encrypted, password required for extraction")
+
+    # The hook raising (not only returning None) is recorded like a digest mismatch, not a broken stream.
+    monkeypatch.setattr("slowshield.ecosystems.composer.service.zip_content", unreadable)
+    res = await asgi_get(running.app, _dist(running, "fake/hello", "1.0.0"))
+    assert res.status == 503 and b"can't be read as an archive" in res.body
+    await running.drain()
+    events = running.rows("SELECT type, package, version FROM events WHERE ecosystem = 'composer'")
+    assert ("integrity_mismatch", "fake/hello", "1.0.0") in events
+    assert running.rows("SELECT count(*) FROM artifacts") == [(0,)]
+
+
 async def test_other_files_after_the_first_download_are_tampering(running: Running) -> None:
     path = _dist(running, "fake/hello", "1.0.0")
     assert (await running.client.get(path)).status_code == 200

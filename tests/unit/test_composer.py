@@ -7,6 +7,7 @@ import itertools
 import json
 import re
 import time
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -215,6 +216,32 @@ def test_zip_content_ignores_how_the_zip_was_written(tmp_path: Path) -> None:
     assert (zip_content(a) or "").startswith("h1:")
     (tmp_path / "c.zip").write_bytes(b"not a zip")
     assert zip_content(tmp_path / "c.zip") is None
+
+
+def test_zip_content_refuses_archives_it_cannot_read_or_that_read_two_ways(tmp_path: Path) -> None:
+    def zipped(*entries: tuple[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with warnings.catch_warnings(), zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            warnings.simplefilter("ignore")  # "Duplicate name"
+            for name, data in entries:
+                zf.writestr(name, data)
+        return buf.getvalue()
+
+    good = zipped(("p/composer.json", b"{}"))
+    encrypted = bytearray(good)
+    encrypted[6] |= 1  # the local header's and the central directory's "encrypted" flag: zipfile raises RuntimeError
+    encrypted[encrypted.find(b"PK\x01\x02") + 8] |= 1
+    broken = bytearray(good)
+    broken[30 + len("p/composer.json")] ^= 0xFF  # the deflate stream: zlib.error
+    for name, data in (
+        ("good.zip", good),
+        ("encrypted.zip", bytes(encrypted)),
+        ("broken.zip", bytes(broken)),
+        ("twice.zip", zipped(("p/a.php", b"<?php 1"), ("p/a.php", b"<?php 2"))),
+        ("prefixed.zip", b"#!/bin/sh\n" + good),
+    ):
+        (tmp_path / name).write_bytes(data)
+        assert (zip_content(tmp_path / name) is not None) == (name == "good.zip"), name
 
 
 def test_errors_are_warnings_composer_prints() -> None:

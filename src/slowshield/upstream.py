@@ -1,6 +1,6 @@
 """Upstream HTTP access (pyreqwest: Rust reqwest/hyper, HTTP/2).
 
-Two clients: one for metadata (transparent gzip/br/zstd, bounded body size) and one for artifacts
+Two clients: one for metadata (transparent gzip/zstd/deflate, bounded body size) and one for artifacts
 (identity encoding so we hash exactly the bytes the registry serves). Redirects are never followed
 automatically; they are only followed within the configured upstream hosts (exact names, or `*` patterns for
 CDNs such as `*.data.mcr.microsoft.com`), so this can never be turned into an open proxy. A redirect to another
@@ -138,7 +138,9 @@ class Upstream:
                 .https_only(False)
             )
 
-        self.meta: Client = base().gzip(True).brotli(True).zstd(True).deflate(True).build()
+        # No Brotli: registries all serve gzip, and a Brotli decoder is attack surface for a response SlowShield
+        # hasn't checked yet (CVE-2026-111497 was in the C decoder; pyreqwest's is a Rust port, never named).
+        self.meta: Client = base().gzip(True).brotli(False).zstd(True).deflate(True).build()
         self.raw: Client = base().gzip(False).brotli(False).zstd(False).deflate(False).build()
 
     async def close(self) -> None:

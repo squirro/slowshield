@@ -83,7 +83,7 @@ class FakeUpstream:
         if params:
             url += "?" + urllib.parse.urlencode(params)
         data = json.dumps(body).encode() if body is not None else b""
-        method = "GET" if action in ("hits", "info") else "POST"
+        method = "GET" if action in ("hits", "headers", "info") else "POST"
         req = urllib.request.Request(url, data=data if method == "POST" else None, method=method)  # noqa: S310
         req.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
@@ -94,6 +94,10 @@ class FakeUpstream:
 
     def hits(self, prefix: str = "") -> dict[str, int]:
         return self.control("hits", prefix=prefix)
+
+    def headers(self, path: str) -> dict[str, str]:
+        """Headers of the last request for `path` (names in lower case)."""
+        return self.control("headers", path=path)
 
     def info(self) -> dict[str, Any]:
         return self.control("info")

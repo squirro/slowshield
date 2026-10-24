@@ -49,6 +49,11 @@ All notable changes to this project are documented here. The format is based on
   certificates, and eight intermediates under it have compromised keys (GHSA-hq85-5cpj-mr62, critical). Taken
   inside the 7-day dependency cooldown as a security exception.
 
+### Security
+- SlowShield no longer asks registries for Brotli-compressed metadata, so it never decodes a Brotli stream. It
+  was not affected by CVE-2026-111497 ("Node2Shell", in the C Brotli decoder): its decoder is the Rust port in
+  pyreqwest, and the images ship no libbrotli. Registries send gzip instead.
+
 ## [0.0.9] - 2026-10-10
 
 ### Added

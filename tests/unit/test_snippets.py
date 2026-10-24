@@ -81,7 +81,9 @@ def test_the_client_age_never_exceeds_slowshields_delay() -> None:
 
 def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() -> None:
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
-    tool = {t.name: t for t in S.tools(*urls, nuget="https://h/nuget/v3/index.json")}["NuGet"]
+    tool = {t.name: t for t in S.tools(*urls, nuget="https://h/nuget/v3/index.json", rubygems="https://h/rubygems")}[
+        "NuGet"
+    ]
     assert tool.ecosystem == "nuget" and tool.age == S.NO_AGE_DEFAULT
     config, command, props = (code for _, code in tool.snippets)
     assert config.startswith('<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>')
@@ -94,10 +96,10 @@ def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() ->
     assert "<WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>" in props
     assert "TreatWarningsAsErrors" in props and "NU1603" in tool.snippets[2][0]
     # Plain HTTP on localhost: NuGet refuses an http:// source without it (NU1302).
-    local = {t.name: t for t in S.tools(*urls, nuget="http://localhost/nuget/v3/index.json")}["NuGet"]
+    local = {t.name: t for t in S.tools(*urls, nuget="http://localhost/nuget/v3/index.json", rubygems="r")}["NuGet"]
     assert 'protocolVersion="3" allowInsecureConnections="true" />' in local.snippets[0][1]
     with pytest.raises(ValueError, match="refusing"):
-        S.tools(*urls, nuget="https://h/nuget/'$(id)'")
+        S.tools(*urls, nuget="https://h/nuget/'$(id)'", rubygems="r")
     assert (
         S.docs_url("nuget", "NuGet") == f"{S.DOCS}csharp/#nuget"
         and S.docs_url("cargo", "Cargo") == f"{S.DOCS}rust/#cargo"
@@ -106,11 +108,27 @@ def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() ->
     assert S.docs_url("unknown", "Tool") == S.DOCS
 
 
+def test_ruby_tools_mirror_rubygems_org_and_make_slowshield_gems_only_source() -> None:
+    urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
+    tools = {t.name: t for t in S.tools(*urls, nuget="n", rubygems="https://h/rubygems")}
+    bundler, gem = tools["Bundler"], tools["gem"]
+    assert bundler.ecosystem == gem.ecosystem == "rubygems"
+    # A mirror, so Gemfiles and Gemfile.lock keep rubygems.org; never a fallback_timeout, which goes around it.
+    assert bundler.snippets[0][1] == "bundle config set --global mirror.https://rubygems.org https://h/rubygems"
+    assert not any("fallback" in code for _, code in bundler.snippets)
+    assert gem.snippets[0][1] == "---\n:sources:\n- https://h/rubygems/"
+    assert gem.snippets[1][1] == "printf -- '---\\n:sources:\\n- %s\\n' https://h/rubygems/ > ~/.gemrc"
+    assert "Bundler has, from 4.0.13" in gem.age
+    assert S.docs_url("rubygems", "Bundler") == f"{S.DOCS}ruby/#bundler"
+    with pytest.raises(ValueError, match="refusing"):
+        S.tools(*urls, nuget="n", rubygems="https://h/rubygems'$(id)'")
+
+
 def test_tools_name_the_version_their_release_age_needs() -> None:
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
     nuget = "https://h/nuget/v3/index.json"
-    on = {t.name: t for t in S.tools(*urls, nuget=nuget)}
-    off = {t.name: t for t in S.tools(*urls, nuget=nuget, age_days=0)}
+    on = {t.name: t for t in S.tools(*urls, nuget=nuget, rubygems="https://h/rubygems")}
+    off = {t.name: t for t in S.tools(*urls, nuget=nuget, rubygems="https://h/rubygems", age_days=0)}
     assert on["npm"].age.startswith("npm 11.10 or later") and on["uv"].age.startswith("uv 0.9.17 or later")
     assert on["Go"].age == S.NO_AGE_DEFAULT and "min-publish-age" in on["Cargo"].age
     assert all(t.age == "" for t in off.values())
@@ -123,10 +141,15 @@ def test_tools_name_the_version_their_release_age_needs() -> None:
     )
     assert 'exclude-newer = "P3D"' in codes["uv"] and "poetry config solver.min-release-age 3" in codes["Poetry"]
     assert '[tool.pdm.resolution]\nexclude-newer = "3d"' in codes["PDM"]
+    assert "bundle config set --global cooldown 3" in codes["Bundler"] and on["Bundler"].age.startswith(
+        "Bundler 4.0.13"
+    )
     assert "UV_EXCLUDE_NEWER" not in codes["uv"]
     for name, t in off.items():
         plain = "\n".join(code for _, code in t.snippets)
-        assert not any(k in plain for k in ("release-age", "exclude-newer", "ReleaseAge", "AgeGate", "prior-to")), name
+        assert not any(
+            k in plain for k in ("release-age", "exclude-newer", "ReleaseAge", "AgeGate", "prior-to", "cooldown")
+        ), name
     assert on["Go"].snippets == off["Go"].snippets  # tools without a setting are the same either way
 
 

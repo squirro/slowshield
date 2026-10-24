@@ -21,7 +21,7 @@ CLIENT_AGE_DAYS = 3
 DOCS = "https://slowshield.org/docs/"
 DOCS_PAGES = {
     "pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "nuget": "csharp",
-    "oci": "containers",
+    "rubygems": "ruby", "oci": "containers",
 }  # fmt: skip
 _AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
@@ -138,30 +138,43 @@ AGE_SUPPORT = {
     "pnpm": "pnpm 10.16 or later (older versions ignore it)",
     "Yarn": "Yarn 4.10 or later (older versions refuse to run with it)",
     "Bun": "Bun 1.3 or later (older versions ignore it)",
+    "Bundler": "Bundler 4.0.13 or later (older versions ignore it). It reads the created_at that SlowShield passes on",
 }
 NO_AGE = {
     "Cargo": "Cargo's own setting (min-publish-age) isn't stable yet: SlowShield is the only layer.",
+    "gem": "gem has no release-age setting of its own (Bundler has, from 4.0.13): SlowShield is the only layer.",
 }
 NO_AGE_DEFAULT = "No release-age setting of its own: SlowShield is the only layer."
 
 
 def tools(
-    pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int = CLIENT_AGE_DAYS
+    pypi: str,
+    npm: str,
+    go: str,
+    maven: str,
+    cargo: str,
+    *,
+    nuget: str,
+    rubygems: str,
+    age_days: int = CLIENT_AGE_DAYS,
 ) -> tuple[Tool, ...]:
     """Per-tool setup (Setup page only), with this instance's URLs and, unless `age_days` is 0, each tool's own
     release age. `maven` is the base of the Maven repositories (`<public_url>/maven`), `cargo` the sparse index
-    (`<public_url>/cargo/`), `nuget` the service index (`<public_url>/nuget/v3/index.json`)."""
+    (`<public_url>/cargo/`), `nuget` the service index (`<public_url>/nuget/v3/index.json`), `rubygems` the compact
+    index (`<public_url>/rubygems`, without the trailing `/`)."""
     urls = (safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo))
     if age_days <= 0:
-        return _tools(*urls, nuget=safe(nuget), age_days=0)
-    aged = _tools(*urls, nuget=safe(nuget), age_days=age_days)
+        return _tools(*urls, nuget=safe(nuget), rubygems=safe(rubygems), age_days=0)
+    aged = _tools(*urls, nuget=safe(nuget), rubygems=safe(rubygems), age_days=age_days)
     return tuple(
         Tool(t.name, t.ecosystem, t.keywords, t.snippets, AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT))
         for t in aged
     )
 
 
-def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int) -> tuple[Tool, ...]:
+def _tools(
+    pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, rubygems: str, age_days: int
+) -> tuple[Tool, ...]:
     # Units differ per tool: npm's min-release-age and Poetry's solver.min-release-age count days (npm 11.10 to 12.1:
     # `before = now - 86400000 * min-release-age`), pnpm's minimumReleaseAge minutes, Bun's seconds; pip, uv, Yarn and
     # PDM take a duration (P3D, 3d).
@@ -322,6 +335,27 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, 
                  NUGET_FAIL_ON_SKIPPED),
             ),
         ),
+        Tool(
+            "Bundler",
+            "rubygems",
+            "bundler bundle ruby gemfile gemfile.lock rails gems rubygems.org mirror",
+            # A mirror of rubygems.org rather than a new `source`: Gemfiles and Gemfile.lock keep rubygems.org. Never
+            # with `.fallback_timeout`, which goes to rubygems.org when SlowShield doesn't answer in time.
+            aged(
+                ("command (writes ~/.bundle/config; also for CI and Dockerfiles)",
+                 f"bundle config set --global mirror.https://rubygems.org {rubygems}"),
+                ("+release age", f"bundle config set --global cooldown {d}"),
+            ),
+        ),
+        Tool(
+            "gem",
+            "rubygems",
+            "gem install rubygems gemrc ruby gem sources",
+            (
+                ("~/.gemrc: SlowShield as the only source", gemrc(rubygems)),
+                ("CI and Dockerfiles (replaces ~/.gemrc)", gemrc_command(rubygems)),
+            ),
+        ),
     )  # fmt: skip
 
 
@@ -402,6 +436,16 @@ def oci_tools(base: str, registries: tuple[str, ...], *, age_days: int = CLIENT_
             age,
         ),
     )  # fmt: skip
+
+
+def gemrc(rubygems: str) -> str:
+    """`gem`'s sources: SlowShield only. With rubygems.org still listed, gem asks it too."""
+    return f"---\n:sources:\n- {rubygems}/"
+
+
+def gemrc_command(rubygems: str) -> str:
+    """`gemrc` as one shell command (`gem sources --add` asks before adding an http:// source)."""
+    return f"printf -- '---\\n:sources:\\n- %s\\n' {rubygems}/ > ~/.gemrc"
 
 
 def cargo_config(cargo: str) -> str:

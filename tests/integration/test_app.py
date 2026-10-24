@@ -113,6 +113,11 @@ def test_host_parsing() -> None:
         ("/nuget/v3/vulnerabilities/v3-vulnerabilities/x/base.json", "/nuget/v3/vulnerabilities/{file}"),
         ("/nuget/v3/whatever/else", "/nuget/v3/{path}"),
         ("/nuget/feed-id/x", "/nuget/{path}"),
+        ("/rubygems/versions", "/rubygems/versions"),
+        ("/rubygems/info/rack", "/rubygems/info/{gem}"),
+        ("/rubygems/gems/rack-3.1.8.gem", "/rubygems/gems/{file}"),
+        ("/rubygems/quick/Marshal.4.8/rack-3.1.8.gemspec.rz", "/rubygems/quick/{spec}"),
+        ("/rubygems/specs.4.8.gz", "/rubygems/{path}"),
     ],
 )
 def test_route_labels_are_low_cardinality(path: str, label: str) -> None:

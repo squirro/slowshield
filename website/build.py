@@ -162,9 +162,9 @@ def docs_parts() -> dict[str, str]:
         "pypi": f"{EXAMPLE}/pypi/simple/", "npm": f"{EXAMPLE}/npm/", "go": f"{EXAMPLE}/go",
         "maven": f"{EXAMPLE}/maven", "cargo": f"{EXAMPLE}/cargo/",
     }  # fmt: skip
-    tools = snip.tools(*urls.values(), nuget=f"{EXAMPLE}/nuget/v3/index.json") + snip.oci_tools(
-        EXAMPLE, EXAMPLE_REGISTRIES
-    )
+    tools = snip.tools(
+        *urls.values(), nuget=f"{EXAMPLE}/nuget/v3/index.json", rubygems=f"{EXAMPLE}/rubygems"
+    ) + snip.oci_tools(EXAMPLE, EXAMPLE_REGISTRIES)
     parts: dict[str, list[str]] = {}
 
     def code_block(code: str) -> str:

@@ -356,3 +356,10 @@ async def test_names_are_passed_on(running: Running) -> None:
     r = await running.client.get("/rubygems/names")
     assert r.status_code == 200 and r.content == await _upstream(running, "/rubygems-index/names")
     assert r.headers["etag"] == _md5(r.content)
+
+
+async def test_setup_page_shows_the_bundler_mirror_and_gems_source(running: Running) -> None:
+    page = (await running.client.get("/ui/setup")).text
+    assert "bundle config set --global mirror.https://rubygems.org https://slowshield.test/rubygems" in page
+    assert ":sources:\n- https://slowshield.test/rubygems/" in page
+    assert "bundle config set --global cooldown 3" in page and "rubygems.org, index.rubygems.org" in page

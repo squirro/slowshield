@@ -172,8 +172,8 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
    states another one, the later of the two counts.
 3. **Without a plausible `created_at`** (missing, unreadable, before 2004, or in the future), the clock starts when
    SlowShield first sees the line (`first_listed`), and a warning is logged.
-4. **A line that disappears** (yanked) is recorded as yanked; if the same version is pushed again, its new
-   `created_at` is later than the old one, so it waits.
+4. **A line that disappears** (yanked) is recorded as yanked. rubygems.org doesn't accept a version again once it
+   was pushed, yanked or not.
 
 ## Policy
 
@@ -193,6 +193,8 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
 | Trust on first use | the sha256 of the bytes first served, per file |
 
 - **The download must match a line in the gem's current info file**, or it is a `404`.
+- **File names are immutable**: rubygems.org doesn't accept a version again, so different bytes under a known file
+  name are tampering.
 - **Bytes are never changed**, so the gem's own signature (rarely used, `gem cert`) and Bundler's checksum checks
   work as with rubygems.org.
 - **`.gemspec.rz`** files have no published digest. They are fetched once and kept; the `.gem` that follows is
@@ -258,8 +260,6 @@ uncompressed.
 - **`/versions` still lists held version numbers.** Tools that read it directly see them.
 - **Other gem servers** (gem.coop, private servers, GitHub Packages) are not covered; `/rubygems/<id>/` is kept free
   for them.
-- **A gem yanked and pushed again under the same version** has a new checksum, which shows as tampering until an
-  operator clears it.
 
 ## Code and tests
 

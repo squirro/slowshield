@@ -23,7 +23,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_WORKERS` | `workers` | Granian workers |
 | `SLOWSHIELD_DEFAULT_DELAY_DAYS` | `default_delay_days` | float |
 | `SLOWSHIELD_PYPI_HOSTNAMES`, `SLOWSHIELD_NPM_HOSTNAMES` | `upstreams.*.hostnames` | **deprecated, removed in 0.1**; space/comma separated |
-| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED`, `SLOWSHIELD_MAVEN_ENABLED`, `SLOWSHIELD_CARGO_ENABLED`, `SLOWSHIELD_NUGET_ENABLED`, `SLOWSHIELD_OCI_ENABLED` | `upstreams.*.enabled` | booleans |
+| `SLOWSHIELD_PYPI_ENABLED`, `SLOWSHIELD_NPM_ENABLED`, `SLOWSHIELD_GO_ENABLED`, `SLOWSHIELD_MAVEN_ENABLED`, `SLOWSHIELD_CARGO_ENABLED`, `SLOWSHIELD_NUGET_ENABLED`, `SLOWSHIELD_RUBYGEMS_ENABLED`, `SLOWSHIELD_OCI_ENABLED` | `upstreams.*.enabled` | booleans |
 | `SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD` | `enforce_age_on_download` | |
 | `SLOWSHIELD_FAIL_OPEN` | `fail_open` | |
 | `SLOWSHIELD_RECORD_CLIENT_IP` | `record_client_ip` | |
@@ -50,7 +50,7 @@ Local development: `uv run slowshield serve` also loads a `.env` file from the w
 One host serves everything, each ecosystem under a path named after its protocol: PyPI at `/pypi/simple/`,
 npm at `/npm/`, Go modules at `/go/` (`GOPROXY`, [design/go.md](design/go.md)), Maven at `/maven/<repo-id>/`
 ([design/maven.md](design/maven.md)), Cargo at `/cargo/` ([design/cargo.md](design/cargo.md)), NuGet at `/nuget/`
-([design/nuget.md](design/nuget.md)), and container images at `/v2/`, the path the OCI distribution API requires ([design/oci.md](design/oci.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
+([design/nuget.md](design/nuget.md)), RubyGems at `/rubygems/` ([design/rubygems.md](design/rubygems.md)), and container images at `/v2/`, the path the OCI distribution API requires ([design/oci.md](design/oci.md)). The UI lives under `/ui/` (`/` redirects there), probes at `/healthz` and `/readyz`. Only
 these and the names reserved for future ecosystems may be used at the root; see
 [design/routing.md](design/routing.md) for the contract and the plan for every ecosystem on the roadmap.
 
@@ -58,7 +58,7 @@ PyPI file links are relative, so they work behind any prefix without trusting th
 requires absolute tarball URLs; they are built from `upstreams.npm.public_url`, or `public_url + /npm`,
 never from request headers. Cargo's `config.json` points downloads at `public_url + /cargo/crates` (or the local
 HTTP origin), and NuGet's service index, registration pages and search results point at `public_url + /nuget/v3/`
-the same way. The Go module proxy protocol has no URLs in its responses.
+the same way. The Go module proxy protocol and RubyGems' compact index have no URLs in their responses.
 
 ## Go
 
@@ -131,6 +131,25 @@ which hosts it may reach, and changing them needs a restart. A version's publish
 `published`, which nuget.org sets; the first one seen is kept. `catalog_url` is where the `packageHash` of every
 `.nupkg` comes from. `fail_open` is off, as for Maven and Cargo ([design/nuget.md](design/nuget.md)).
 
+## RubyGems
+
+```toml
+[upstreams.rubygems]
+enabled = true
+fail_open = false
+index_url = "https://index.rubygems.org"
+download_url = "https://rubygems.org"
+download_hosts = []
+```
+
+Bundler uses `<public_url>/rubygems` as a mirror of `https://rubygems.org`
+(`bundle config set --global mirror.https://rubygems.org <public_url>/rubygems`), and `gem` as its only source in
+`~/.gemrc`; the Setup page has both. `index_url` serves `/versions`, `/names` and `/info/<gem>`; `download_url` the
+`.gem` files and gem specifications. A line's publish time is its `created_at`, which rubygems.org sets; the first one
+seen is kept. SlowShield keeps a copy of `/versions` (about 24 MB) under `<data_dir>/rubygems/`. `fail_open` is off,
+as for Cargo and NuGet. `download_hosts` are hosts `download_url` may redirect to (rubygems.org doesn't). Changing
+these needs a restart ([design/rubygems.md](design/rubygems.md)).
+
 ## Container images
 
 ```toml
@@ -170,7 +189,7 @@ it.
 ## Fail-open per ecosystem
 
 `upstreams.<ecosystem>.fail_open` overrides the top-level `fail_open` for one ecosystem; unset, the top-level
-value applies. Maven, Cargo and NuGet default to `false`, the others to the top-level setting (`true`). For container
+value applies. Maven, Cargo, NuGet and RubyGems default to `false`, the others to the top-level setting (`true`). For container
 images it only ever applies during the instance's first `default_delay_days`, to tags it has no history for yet.
 
 **Deprecated, removed in 0.1:**

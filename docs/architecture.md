@@ -15,6 +15,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ Maven service (ecosystems/maven) ─┤
    │               ├─ Cargo service (ecosystems/cargo) ─┤
    │               ├─ NuGet service (ecosystems/nuget) ─┤
+   │               ├─ RubyGems service (ecosystems/rubygems)
    │               ├─ OCI service   (ecosystems/oci)   ─┤   container images at /v2/
    │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)
@@ -104,6 +105,23 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 4. `flatcontainer/<id>/<version>/<id>.<version>.nupkg`: version block → `451`, too new → `425` with
    `Retry-After`, else the catalog leaf gives the `packageHash`, and the artifact server fetches the file from
    `<flat_container_url>`, checked against it and the first-seen fingerprint.
+
+## Request flow: RubyGems
+
+`/rubygems/` is a compact index that Bundler uses as a mirror of rubygems.org and `gem` as its source
+([design/rubygems.md](design/rubygems.md)).
+
+1. `versions`: a copy of rubygems.org's `/versions` under `<data_dir>/rubygems/`, every md5 written as zeros, brought
+   up to date with a `Range` request at most once a minute (one worker at a time, a file lock), and served with
+   `Range` from the file.
+2. `info/<gem>`: from memory, the shared metadata cache, or `GET <index_url>/info/<gem>` (`If-None-Match` once known).
+   Each line's `created_at` is its publish time; the first plausible one is kept, and a line without one is timed
+   from when SlowShield first listed it. Too-new and blocked lines are left out; `ETag` is the MD5 of what is served.
+3. `gems/<file>.gem`: the gem and line are found by reading the file name against the gem's info file; a block →
+   `451`, too new → `425` with `Retry-After`, else the artifact server fetches `<download_url>/gems/<file>`, checked
+   against the line's `checksum` and the first-seen fingerprint. `quick/Marshal.4.8/<file>.gemspec.rz` is judged the
+   same way and fetched once.
+4. The full Marshal index (`specs.4.8.gz` and the others) and `api/` → `404` with the reason.
 
 ## Request flow: container images
 

@@ -137,7 +137,9 @@ def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     parser = argparse.ArgumentParser(
         prog="slowshield",
-        description="Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet and container images.",
+        description=(
+            "Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet, RubyGems and container images."
+        ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

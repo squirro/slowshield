@@ -15,7 +15,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_CONFIG` | — | path to the TOML file |
 | `SLOWSHIELD_BIND` | `bind_address` | `host:port` |
 | `SLOWSHIELD_PUBLIC_URL` | `public_url` | external URL of the UI host, used in setup snippets and as default npm base |
-| `SLOWSHIELD_SETUP_URL` | `setup_url` | the URL the Setup page gives clients instead of `public_url`, when moving them to a new name; the instance still answers under `public_url`, and npm, Cargo and NuGet URLs stay there |
+| `SLOWSHIELD_SETUP_URL` | `setup_url` | the URL the Setup page gives clients instead of `public_url`, when moving them to a new name; the instance still answers under `public_url`, and npm, Cargo and NuGet URLs stay there ([moving clients to a Tailscale Service](tailscale.md#moving-clients-to-the-service-url)) |
 | `SLOWSHIELD_NPM_PUBLIC_URL` | `upstreams.npm.public_url` | base URL written into npm tarball links |
 | `SLOWSHIELD_LOCAL_HTTP` | `local_http` | with Caddy's switch of the same name: offer `http://localhost` in the Setup page and npm tarball links (Compose default `on`) |
 | `SLOWSHIELD_DATA_DIR` | `data_dir` | SQLite DB, artifact cache, leader lock |

@@ -1,0 +1,37 @@
+# A follower in a cluster whose leader is only on the tailnet (its name resolves to a MagicDNS name the cluster
+# can't resolve or reach). The Tailscale Kubernetes operator's egress proxies carry the traffic.
+#
+# The operator points the ExternalName Service below at a ClusterIP Service in its own namespace. That ClusterIP
+# keeps port 443 (only the proxy pods' target port is allocated), so the chart's `hostAliases` can map the leader's
+# name to it: the follower keeps the leader's URL and certificate. Read the ClusterIP after applying this:
+#
+#   kubectl -n slowshield get svc slowshield-leader -o jsonpath='{.spec.externalName}'
+#   kubectl -n tailscale get svc <first label of that name> -o jsonpath='{.spec.clusterIP}'
+#
+# The proxies' tag must be allowed to reach the leader on 443 in the tailnet policy.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: slowshield-egress
+spec:
+  type: egress
+  replicas: 2
+  hostnamePrefix: slowshield-egress
+  tags:
+    - tag:k8s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slowshield-leader
+  namespace: slowshield
+  annotations:
+    tailscale.com/tailnet-fqdn: leader.your-tailnet.ts.net # the leader host's MagicDNS name
+    tailscale.com/proxy-group: slowshield-egress
+spec:
+  type: ExternalName
+  externalName: placeholder # the operator replaces it
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP

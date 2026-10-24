@@ -69,6 +69,10 @@ wrote every 5 seconds.
 6. In one transaction, the follower queues its history for the leader (below) and turns active; from then on every
    statistics flush also goes into the outbox.
 
+Pairing from configuration management (`SLOWSHIELD_JOIN_CONFIRM=auto`, `wall invite --quiet`) and through a tailnet:
+[docs/operations.md](../operations.md#shield-wall-pairing-followers-automatically),
+[docs/tailscale.md](../tailscale.md).
+
 **After a restart** the follower needs the join string only if it hasn't joined yet. A follower that has joined
 syncs with the leader it stored (`shieldwall_leader.url` and the pinned key), with or without the join string, so a
 used, expired join string can stay in its environment or go. One that was still waiting for the Join click, or

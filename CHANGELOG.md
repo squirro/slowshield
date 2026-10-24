@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-10-25
+
 ### Added
 - Composer (PHP): Packagist through SlowShield at `/composer/` ([docs/design/composer.md](docs/design/composer.md)).
   A version's publish time is Packagist's `published-time`, never the author's `time`; one in the future counts as

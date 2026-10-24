@@ -745,11 +745,14 @@ def _client_os(request: Request) -> str:
 
 def _same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
     """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site, scheme
-    included (behind Caddy, the scheme the browser used comes from X-Forwarded-Proto)."""
+    included (behind Caddy, the scheme the browser used comes from X-Forwarded-Proto). Our `Referrer-Policy:
+    no-referrer` makes browsers send `Origin: null` on a form POST, so then only `Sec-Fetch-Site` can vouch."""
     site = request.headers.get("sec-fetch-site")
     if site is not None and site != "same-origin":
         return False
     origin = request.headers.get("origin")
+    if origin == "null":
+        return site == "same-origin"
     if origin is not None:
         own = f"{request_scheme(request.scope, trusted)}://{request.headers.get('host', '')}"
         return origin.lower() == own.lower()

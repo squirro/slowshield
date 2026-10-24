@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://slowshield.org/</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://slowshield.org/changelog/</loc><changefreq>weekly</changefreq></url>
   <url><loc>https://slowshield.org/docs/</loc><changefreq>weekly</changefreq></url>
   <url><loc>https://slowshield.org/docs/python/</loc><changefreq>weekly</changefreq></url>
   <url><loc>https://slowshield.org/docs/javascript/</loc><changefreq>weekly</changefreq></url>

@@ -23,6 +23,8 @@
   Cache-Control: public, max-age=300, must-revalidate
 /docs/*
   Cache-Control: public, max-age=300, must-revalidate
+/changelog/
+  Cache-Control: public, max-age=300, must-revalidate
 
 # Static files: one day.
 /assets/*

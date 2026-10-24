@@ -56,7 +56,7 @@ npm, pnpm, Yarn, Bun).
 docker buildx build --file containers/slowshield/Dockerfile -t slowshield:dev .
 docker buildx build --file containers/caddy/Dockerfile      -t slowshield-caddy:dev .
 # free-threaded interpreter
-docker buildx build --file containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15t -t slowshield:dev-ft .
+docker buildx build --file containers/slowshield/Dockerfile --build-arg PYTHON_VARIANT=3.15.0t -t slowshield:dev-ft .
 # release builds: no BuildKit cache mounts
 docker buildx build --file containers/slowshield/Dockerfile --build-arg BUILD_CACHE=off ...
 ```

@@ -37,7 +37,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  UV_VERSION: "0.12.19"
+  UV_VERSION: "0.13.1"
   NODE_VERSION: "24"
   WRANGLER_SEND_METRICS: "false"
 

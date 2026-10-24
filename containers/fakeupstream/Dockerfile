@@ -34,7 +34,7 @@ COPY pyproject.toml uv.lock README.md LICENSE NOTICE ./
 
 # ---- deps (interpreter + third-party packages), with or without cache mounts ----------------------
 FROM toolchain AS deps-on
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 ARG TARGETARCH
 RUN --mount=type=cache,id=slowshield-uv-${TARGETARCH},target=/cache/uv \
     --mount=type=cache,id=slowshield-cargo-${TARGETARCH},target=/cache/cargo \
@@ -42,7 +42,7 @@ RUN --mount=type=cache,id=slowshield-uv-${TARGETARCH},target=/cache/uv \
     sh -c 'uv python install --no-bin "$UV_PYTHON" && uv sync --locked --no-dev --no-install-project'
 
 FROM toolchain AS deps-off
-ARG PYTHON_VARIANT=3.15
+ARG PYTHON_VARIANT=3.15.0
 RUN UV_NO_CACHE=1 CARGO_HOME=/tmp/cargo UV_PYTHON="$PYTHON_VARIANT" \
     sh -c 'uv python install --no-bin "$UV_PYTHON" && uv sync --locked --no-dev --no-install-project && rm -rf /tmp/cargo'
 

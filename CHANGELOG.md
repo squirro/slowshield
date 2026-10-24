@@ -37,6 +37,8 @@ All notable changes to this project are documented here. The format is based on
   it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
   `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
   stored and no longer needs the join string; one that hasn't joined yet still does.
+- Python 3.15.0, the stable release, instead of 3.15.0rc2, in the images (GIL and free-threaded), CI and
+  `.python-version`. The patch version is pinned, so a newer uv no longer changes the interpreter. uv 0.13.1.
 
 ### Security
 - The images no longer trust emSign ECC Root CA - G3, emSign ECC Root CA - C3 and emSign Root CA - C1, which Amazon

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 
@@ -123,6 +123,9 @@ class Tool:
     keywords: str
     snippets: tuple[tuple[str, str], ...]  # (label, code)
     age: str = ""  # what the tool's own release age needs (shown while it is switched on); "" when it has none
+    # One short caveat under the snippets (the Setup page only: the guide says it in its own words). `code` in
+    # backticks.
+    note: str = ""
 
 
 # The first version with a relative release-age setting, and what older ones do with it (checked 2026-10-06).
@@ -169,10 +172,7 @@ def tools(
     if age_days <= 0:
         return _tools(*urls, nuget=safe(nuget), composer=safe(composer), rubygems=safe(rubygems), age_days=0)
     aged = _tools(*urls, nuget=safe(nuget), composer=safe(composer), rubygems=safe(rubygems), age_days=age_days)
-    return tuple(
-        Tool(t.name, t.ecosystem, t.keywords, t.snippets, AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT))
-        for t in aged
-    )
+    return tuple(replace(t, age=AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT)) for t in aged)
 
 
 def _tools(
@@ -291,8 +291,16 @@ def _tools(
                 ("command (writes go env)", f"go env -w GOPROXY={go}"),
                 ("private modules: fetched directly, not through SlowShield", "go env -w GOPRIVATE=git.example.com/*"),
             ),
+            note="Leave `,direct` and `|` out of `GOPROXY`: with them, the go command goes around SlowShield when it "
+            "says no.",
         ),
-        Tool("Maven", "maven", "maven mvn settings.xml m2 java pom", (("~/.m2/settings.xml", maven_settings(maven)),)),
+        Tool(
+            "Maven",
+            "maven",
+            "maven mvn settings.xml m2 java pom",
+            (("~/.m2/settings.xml", maven_settings(maven)),),
+            note="After a `425`, the first build after the hold ends works without `-U`.",
+        ),
         Tool(
             "Gradle",
             "maven",
@@ -325,6 +333,7 @@ def _tools(
                 # The official rust images set CARGO_HOME=/usr/local/cargo, where ~/.cargo is not read.
                 ("CI and Dockerfiles (appends to $CARGO_HOME/config.toml)", cargo_command(cargo)),
             ),
+            note="`cargo search` needs crates.io, and `cargo publish` needs `--registry crates-io`.",
         ),
         Tool(
             "NuGet",
@@ -337,6 +346,7 @@ def _tools(
                 ("Directory.Build.props next to the solution: fail the build when a held version is skipped (NU1603)",
                  NUGET_FAIL_ON_SKIPPED),
             ),
+            note="Keep `<clear />` in NuGet.Config: without it, nuget.org stays a source and goes around SlowShield.",
         ),
         Tool(
             "Composer",
@@ -349,6 +359,8 @@ def _tools(
                 ("a composer.lock written against packagist.org: point its dists at SlowShield (run next to it)",
                  composer_relock(composer)),
             ),
+            note="Composer 2.10 or later: older versions clone a refused version from GitHub. `composer search` needs "
+            "packagist.org.",
         ),
         Tool(
             "Bundler",
@@ -360,6 +372,8 @@ def _tools(
                 ("command (writes ~/.bundle/config; also for CI and Dockerfiles)", bundler_mirror(rubygems)),
                 ("+release age", f"bundle config set --global cooldown {d}"),
             ),
+            note="Don't set `fallback_timeout` on the mirror: with it, Bundler goes to rubygems.org when SlowShield is "
+            "slow.",
         ),
         Tool(
             "gem",
@@ -369,6 +383,7 @@ def _tools(
                 ("~/.gemrc: SlowShield as the only source", gemrc(rubygems)),
                 ("CI and Dockerfiles (replaces ~/.gemrc)", gemrc_command(rubygems)),
             ),
+            note="`gem search`, `gem outdated` and `gem update` find nothing: they need rubygems.org's full index.",
         ),
     )  # fmt: skip
 

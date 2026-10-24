@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import msgspec
 
@@ -301,6 +302,34 @@ class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     composer: ComposerUpstream = msgspec.field(default_factory=ComposerUpstream)
     rubygems: RubygemsUpstream = msgspec.field(default_factory=RubygemsUpstream)
     oci: OciUpstream = msgspec.field(default_factory=OciUpstream)
+
+    def hosts(self) -> dict[str, list[str]]:
+        """Per ecosystem, the hosts SlowShield fetches packages and metadata from, in config order: the ones a client
+        would use without SlowShield. Not the hosts downloads may redirect to (CDNs and cloud storage), and for
+        registries the API host and the aliases clients use, not where tag times come from."""
+        oci = [h for reg in self.oci.all_registries().values() for h in (reg.url, *reg.aliases)]
+        urls = {
+            "pypi": [*self.pypi.mirrors, self.pypi.files_url],
+            "npm": self.npm.mirrors,
+            "go": [*self.go.mirrors, self.go.sumdb_url],
+            "maven": [repo.url for repo in self.maven.all_repos().values()],
+            "cargo": [self.cargo.index_url, self.cargo.download_url],
+            "nuget": list(self.nuget.urls().values()),
+            "composer": [self.composer.repo_url, self.composer.advisories_url],
+            "rubygems": [self.rubygems.index_url, self.rubygems.download_url],
+            "oci": oci,
+        }
+        return {eco: _unique_hosts(values) for eco, values in urls.items()}
+
+
+def _unique_hosts(urls: list[str]) -> list[str]:
+    """The host of each URL (or the value itself, for a bare host name), lower-cased, first occurrence kept."""
+    out: dict[str, None] = {}
+    for url in urls:
+        host = (urlsplit(url).hostname if "://" in url else url) or ""
+        if host:
+            out.setdefault(host.lower(), None)
+    return list(out)
 
 
 class FeedSource(msgspec.Struct, forbid_unknown_fields=True):

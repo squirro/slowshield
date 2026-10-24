@@ -131,7 +131,7 @@ h3 { font-size: 0.95rem; }
 .grid-2 > .card, .grid-3 > .card { margin-bottom: 0; }
 .grid-2, .grid-3 { margin-bottom: 16px; }
 .span-2 { grid-column: span 2; } .span-all { grid-column: 1 / -1; }
-@media (max-width: 980px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } .span-2 { grid-column: auto; } .topbar { flex-wrap: wrap; } }
+@media (max-width: 980px) { .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); } .span-2 { grid-column: auto; } .topbar { flex-wrap: wrap; } }
 
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -248,6 +248,44 @@ button.button.primary { background: var(--primary); border-color: var(--primary)
 .card li, .card td, .events li { overflow-wrap: anywhere; min-width: 0; }
 code.ver[title] { white-space: nowrap; cursor: help; }
 @media (max-width: 900px) { .setup-steps { grid-template-columns: minmax(0, 1fr); } }
+.tool-note { margin: -4px 0 8px; }
+/* CI and containers: the hosts to block, per ecosystem, next to the same list to copy */
+.firewall { margin: 0; }
+.host-groups { display: grid; gap: 7px; align-content: start; }
+.host-group { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.host-group > .eco { justify-self: start; }
+.hosts { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+code.host { font-size: 0.8rem; padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; overflow-wrap: anywhere; }
+.host-groups p { margin: 6px 0 0; }
+.firewall .snippet pre { max-height: 292px; }
+/* What to expect: four facts, then one row per ecosystem */
+.expect-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.expect-facts .kpi { box-shadow: none; }
+.expect-facts p { margin: 2px 0 0; }
+.fact-value { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.01em; }
+.kpi.tamper { border-left: 3px solid var(--tamper); }
+.kpi.fail-open { border-left: 3px solid var(--hold-bright); }
+.expect-table th[scope="row"] { white-space: nowrap; text-transform: none; letter-spacing: normal; font-size: inherit;
+  padding: 7px 8px; border-bottom-color: var(--grid); }
+.expect-table td, .expect-table th[scope="row"] { vertical-align: top; }
+.expect-table td:last-child { color: var(--muted); min-width: 16em; }
+.expect-table .badge { font-variant-numeric: tabular-nums; }
+.expect-foot { margin: 10px 0 0; }
+@media (max-width: 1100px) { .expect-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: each ecosystem becomes a short block of label and value */
+@media (max-width: 700px) {
+  .expect-facts { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .expect-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .expect-table, .expect-table tbody, .expect-table tr, .expect-table th[scope="row"], .expect-table td { display: block; }
+  .expect-table tr { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .expect-table tbody tr:hover { background: none; }
+  .expect-table th[scope="row"] { padding: 0 0 4px; border: 0; }
+  .expect-table td { display: grid; grid-template-columns: 8.5em minmax(0, 1fr); gap: 8px; padding: 2px 0; border: 0; }
+  .expect-table td:last-child { min-width: 0; }
+  .expect-table td::before { content: attr(data-label); color: var(--muted); font-size: 0.78rem; font-weight: 600; }
+  .expect-table td:empty { display: none; }
+  .host-group { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
 
 .prose h1 { font-size: 1.3rem; } .prose h2 { font-size: 1.1rem; margin-top: 18px; } .prose table { border-collapse: collapse; }
 .prose td, .prose th { border: 1px solid var(--border); padding: 4px 8px; }

@@ -362,4 +362,5 @@ async def test_setup_page_shows_the_bundler_mirror_and_gems_source(running: Runn
     page = (await running.client.get("/ui/setup")).text
     assert "bundle config set --global mirror.https://rubygems.org https://slowshield.test/rubygems" in page
     assert ":sources:\n- https://slowshield.test/rubygems/" in page
-    assert "bundle config set --global cooldown 3" in page and "rubygems.org, index.rubygems.org" in page
+    assert "bundle config set --global cooldown 3" in page
+    assert "set <code>fallback_timeout</code> on the mirror" in page and "<code>gem search</code>" in page  # notes

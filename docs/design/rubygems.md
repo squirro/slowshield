@@ -53,6 +53,38 @@ the compact index and against the fingerprint recorded on its first download.
 - **`gem search`, `gem list --remote`, `gem outdated`, `gem update` and `gem update --system`** read the full
   Marshal index (`specs.4.8.gz`, `latest_specs.4.8.gz`, `prerelease_specs.4.8.gz`), with no compact index option.
 
+## Checked with real clients
+
+On 2026-10-24 and 25, against a local `slowshield serve` in front of rubygems.org, with clients in the official
+`ruby` images (Ruby 3.2.11 with Bundler 2.4.19 and RubyGems 3.4.19, Ruby 3.4.12 with Bundler 2.6.9 and RubyGems 3.6.9,
+Ruby 4.0.9 with Bundler 4.0.20 and RubyGems 4.0.20):
+
+- **A too-new version is held back.** rubocop 1.92.1 (2.7 days old) was left out of `info/rubocop`; Bundler resolved
+  1.92.0 on all three versions, `gem install rubocop` installed 1.92.0, and `gem install rubocop -v 1.92.1` said
+  "Could not find a valid gem 'rubocop' (= 1.92.1)". aws-sdk-core resolved 3.257.0 with three newer versions held.
+- **Platform gems.** grpc 1.84.1's platform gems, pushed two days earlier, were held: Bundler locked 1.84.0 for all
+  seven platforms and installed `grpc 1.84.0 (aarch64-linux-gnu)`; nokogiri 1.19.4 installed as `aarch64-linux-gnu`.
+- **An unfiltered Bundler cache is not used.** After `bundle lock` straight from rubygems.org (cache with rubocop
+  1.92.1), the same cache through SlowShield resolved 1.92.0: the zeroed md5s made Bundler ask for all 172 info
+  files again.
+- **Checksums.** `bundle lock --add-checksums` and `bundle install` passed with the `CHECKSUMS` section, and
+  Gemfile.lock kept `remote: https://rubygems.org/`. Bundler 2.4.19 accepted the ETags (MD5 of the body).
+- **Appends.** A second `bundle lock --update` appended to `/versions` with a `Range` request; SlowShield's own copy
+  grew by appends from rubygems.org, checked against its `Repr-Digest`.
+- **A lockfile pin** of rubocop 1.92.1 failed with "Your bundle is locked to rubocop (1.92.1) … can no longer be found
+  in that source". `curl …/rubygems/gems/rubocop-1.92.1.gem` got `425 Too Early` with `Retry-After: 371473` and the
+  message.
+- **Malware.** OSV's RubyGems data gave 5,036 blocks; `info/QubitSDK` was served as an empty list and a yanked
+  QubitSDK version's download got `451`.
+- **The full index.** `gem search` and `gem outdated` printed nothing (the `404` shows only with `--verbose`), `gem
+  update` said "Nothing to update", `gem update --system` failed with `bad response Not Found 404`.
+- **Bundler's cooldown** (4.0.20) worked through SlowShield: `bundle lock --cooldown 60` resolved rubocop 1.90.0 and
+  named the versions it skipped, from the `created_at` SlowShield passes on.
+
+`tests/e2e/test_stack.py::test_rubygems_installs_through_the_proxy` runs Bundler 2.6 and gem against the Compose stack
+and the fake registry, and checks through Caddy that an info file asked for with gzip stays uncompressed with its MD5
+ETag. It passed locally (arm64) with images built from this branch, with the rest of the e2e suite.
+
 ## Client setup
 
 Bundler, for every project on the machine:

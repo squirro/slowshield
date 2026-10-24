@@ -22,11 +22,11 @@ MAX_P2_BYTES = 64 << 20
 MINIFIED = "composer/2.0"
 UNSET = "__unset"
 # A dist's reference (a commit, for every VCS Packagist reads) and type, as they appear in SlowShield's dist URLs.
-REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-DIST_TYPE = re.compile(r"^[a-z0-9]{1,10}$")
+REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+DIST_TYPE = re.compile(r"[a-z0-9]{1,10}")
 # GitHub API archive URLs redirect to codeload.github.com, which has no API rate limit (60 an hour without a token).
 _GITHUB_API = re.compile(
-    r"^https://api\.github\.com/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(zipball|tarball)/([A-Za-z0-9._-]+)$"
+    r"https://api\.github\.com/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(zipball|tarball)/([A-Za-z0-9._-]+)"
 )
 _decoder = msgspec.json.Decoder()
 _encoder = msgspec.json.Encoder()
@@ -128,8 +128,8 @@ def _version(entry: dict[str, Any]) -> Version | None:
     return Version(
         version=ver,
         published=_time(entry.get("published-time")),
-        reference=ref if ref and REFERENCE.match(ref) else None,
-        dist_type=typ if typ and DIST_TYPE.match(typ) else None,
+        reference=ref if ref and REFERENCE.fullmatch(ref) else None,
+        dist_type=typ if typ and DIST_TYPE.fullmatch(typ) else None,
         dist_url=url if url and url.startswith(("https://", "http://")) else None,
         shasum=shasum,
         data=entry,
@@ -207,7 +207,7 @@ def parse_advisories(body: bytes) -> bool:
 
 def fetch_url(dist_url: str) -> str:
     """Where SlowShield fetches a dist: GitHub API archive URLs go to codeload.github.com, where they redirect."""
-    m = _GITHUB_API.match(dist_url)
+    m = _GITHUB_API.fullmatch(dist_url)
     if m is None:
         return dist_url
     owner, repo, kind, ref = m.groups()

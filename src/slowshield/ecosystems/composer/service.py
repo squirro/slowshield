@@ -181,7 +181,8 @@ class ComposerService:
         if len(parts) == 4 and parts[0] == "dists":
             name = f"{parts[1]}/{parts[2]}"
             reference, _, dist_type = parts[3].rpartition(".")
-            if not (names.is_valid_composer(name) and M.REFERENCE.match(reference) and M.DIST_TYPE.match(dist_type)):
+            valid = M.REFERENCE.fullmatch(reference) and M.DIST_TYPE.fullmatch(dist_type)
+            if not (names.is_valid_composer(name) and valid):
                 return text_error(404, "not found")
             return await self.download(request, name, reference, dist_type)
         return text_error(404, "not found")

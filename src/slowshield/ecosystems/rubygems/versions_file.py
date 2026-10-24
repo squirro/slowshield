@@ -37,7 +37,7 @@ MAX_VERSIONS_BYTES = 256 << 20
 REFRESH_EVERY = 60.0  # rubygems.org's max-age for /versions
 ZEROS = b"0" * 32
 _MD5_COLUMN = re.compile(rb" [0-9a-f]{32}\n")
-_CONTENT_RANGE = re.compile(r"^bytes (\d+)-(\d+)/(\d+|\*)$")
+_CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
 CHUNK = 1 << 20
 
 
@@ -183,7 +183,7 @@ class VersionsFile:
             if res.status == 416:
                 return None
             raise UpstreamError(res.url, f"upstream returned {res.status}", res.status)
-        m = _CONTENT_RANGE.match(res.headers.get("content-range", ""))
+        m = _CONTENT_RANGE.fullmatch(res.headers.get("content-range", ""))
         if m is None or int(m.group(1)) != snap.size - 1 or not res.body:
             return None
         return await asyncio.to_thread(self._write_append, snap, res.body, res.headers)

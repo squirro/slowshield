@@ -167,6 +167,12 @@ def test_parse_reads_published_time_and_the_dist() -> None:
     assert M.parse("v/p", False, b'{"packages": {}}').versions == {}  # no tags (only branches)
 
 
+def test_references_and_dist_types_with_a_trailing_newline_are_refused() -> None:
+    p2 = _p2([_entry("2.0.0", "b" * 40 + "\n"), _entry("1.0.0", "a" * 40, type="zip\n")])
+    v2, v1 = p2.versions.values()
+    assert v2.reference is None and v1.dist_type is None and not v2.servable and not v1.servable
+
+
 def test_render_drops_versions_rewrites_dists_and_strips_mirrors() -> None:
     mirrored = _entry("1.0.0", "a" * 40, mirrors=[{"url": "https://mirror.example/x.zip", "preferred": True}])
     mirrored["source"]["mirrors"] = [{"url": "https://git.example/x.git", "preferred": True}]

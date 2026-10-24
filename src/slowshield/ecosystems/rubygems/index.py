@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 MAX_INFO_BYTES = 32 << 20
-_CHECKSUM = re.compile(rb"^[0-9a-f]{64}$")
+_CHECKSUM = re.compile(rb"[0-9a-f]{64}")
 _SEPARATOR = b"---"
 
 
@@ -67,7 +67,7 @@ def parse_line(raw: bytes) -> Line | None:
         k, _, v = item.partition(b":")
         fields.setdefault(k, v)
     checksum = fields.get(b"checksum", b"")
-    if not _CHECKSUM.match(checksum):
+    if not _CHECKSUM.fullmatch(checksum):
         return None
     try:
         key = head.decode("ascii")

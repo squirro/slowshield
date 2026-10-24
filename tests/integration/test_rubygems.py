@@ -209,6 +209,8 @@ async def test_file_names_are_read_against_the_index(running: Running) -> None:
         "/rubygems/gems/fake_hello.gem",
         "/rubygems/gems/fake_hello-1.0.0.tgz",
         "/rubygems/info/a/b",
+        "/rubygems/info/fake_hello%0A",  # a trailing newline isn't part of a name (it would miss the blocklist)
+        "/rubygems/gems/fake_hello%0A-1.0.0.gem",
         "/rubygems/elsewhere",
     ):
         assert (await running.client.get(path)).status_code == 404, path

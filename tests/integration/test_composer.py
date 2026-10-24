@@ -210,6 +210,10 @@ async def test_unknown_names_references_and_spellings_are_404(running: Running) 
         assert (await running.client.get(path)).status_code == 404, path
     assert (await running.client.get("/composer/p2/fake/no-such-package.json")).status_code == 404
     assert running.fake.hits("/packagist/p2/fake/no-") == {"/packagist/p2/fake/no-such-package.json": 1}  # remembered
+    # A trailing newline isn't part of a name: refused without asking Packagist (it would miss the blocklist).
+    for path in ("/composer/p2/fake/hello%0A.json", f"/composer/dists/fake/hello/{ref}%0A.zip"):
+        assert (await running.client.get(path)).status_code == 404, path
+    assert not [p for p in running.fake.hits("/packagist/") if "\n" in p or "%0A" in p.upper()]
 
 
 async def test_a_dist_on_a_host_that_is_not_allowed_is_refused(running: Running) -> None:

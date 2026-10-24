@@ -1,5 +1,8 @@
 """Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet, Composer,
-RubyGems and OCI images."""
+RubyGems and OCI images.
+
+Every check is a `fullmatch`: `$` also matches before a final newline, so `rails\n` would pass and then miss the
+blocklist, which names `rails`."""
 
 from __future__ import annotations
 
@@ -8,10 +11,10 @@ from functools import lru_cache
 
 _PEP503_SEP = re.compile(r"[-_.]+")
 # PEP 508 project names (also enforced by PyPI on upload).
-_PYPI_NAME = re.compile(r"^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$", re.IGNORECASE)
+_PYPI_NAME = re.compile(r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE)
 # npm: optional @scope/, then the name. Legacy packages may contain upper-case letters.
 _NPM_PART = r"[A-Za-z0-9~-][A-Za-z0-9._~-]*"
-_NPM_NAME = re.compile(rf"^(?:@{_NPM_PART}/)?{_NPM_PART}$")
+_NPM_NAME = re.compile(rf"(?:@{_NPM_PART}/)?{_NPM_PART}")
 NPM_MAX_LEN = 214
 PYPI_MAX_LEN = 200
 
@@ -23,7 +26,7 @@ def normalize_pypi(name: str) -> str:
 
 
 def is_valid_pypi(name: str) -> bool:
-    return 0 < len(name) <= PYPI_MAX_LEN and _PYPI_NAME.match(name) is not None
+    return 0 < len(name) <= PYPI_MAX_LEN and _PYPI_NAME.fullmatch(name) is not None
 
 
 def normalize_npm(name: str) -> str:
@@ -32,7 +35,7 @@ def normalize_npm(name: str) -> str:
 
 
 def is_valid_npm(name: str) -> bool:
-    if not (0 < len(name) <= NPM_MAX_LEN) or _NPM_NAME.match(name) is None:
+    if not (0 < len(name) <= NPM_MAX_LEN) or _NPM_NAME.fullmatch(name) is None:
         return False
     base = name.rsplit("/", 1)[-1]
     return not base.startswith((".", "_")) and base not in {"node_modules", "favicon.ico"}
@@ -46,9 +49,9 @@ def npm_basename(name: str) -> str:
 # Go module paths (decoded, case-sensitive) as golang.org/x/mod/module.CheckPath accepts them: a lower-case
 # first element with a dot (a domain), then elements of letters, digits and `-._~` that neither start nor end
 # with a dot. Windows-reserved element names are refused too.
-_GO_FIRST = re.compile(r"^[a-z0-9.-]+$")
-_GO_ELEM = re.compile(r"^[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?$")
-_GO_MAJOR = re.compile(r"^v(?:0|1|0\d+)$")  # /v0, /v1 and /v01 are not major-version suffixes
+_GO_FIRST = re.compile(r"[a-z0-9.-]+")
+_GO_ELEM = re.compile(r"[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?")
+_GO_MAJOR = re.compile(r"v(?:0|1|0\d+)")  # /v0, /v1 and /v01 are not major-version suffixes
 _WINDOWS = frozenset({"con", "prn", "aux", "nul", *(f"{d}{i}" for d in ("com", "lpt") for i in range(1, 10))})
 GO_MAX_LEN = 1024
 
@@ -56,7 +59,7 @@ GO_MAX_LEN = 1024
 # Maven coordinates `groupId:artifactId`, as Maven Central accepts them: dot-separated groupId segments and an
 # artifactId of letters, digits and `_-.` (matched exactly; Maven is case-sensitive here).
 _MAVEN_PART = r"[A-Za-z0-9_-](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?"
-_MAVEN_NAME = re.compile(rf"^{_MAVEN_PART}:{_MAVEN_PART}$")
+_MAVEN_NAME = re.compile(rf"{_MAVEN_PART}:{_MAVEN_PART}")
 MAVEN_MAX_LEN = 512
 
 
@@ -65,12 +68,12 @@ def normalize_maven(name: str) -> str:
 
 
 def is_valid_maven(name: str) -> bool:
-    return 0 < len(name) <= MAVEN_MAX_LEN and _MAVEN_NAME.match(name) is not None and ".." not in name
+    return 0 < len(name) <= MAVEN_MAX_LEN and _MAVEN_NAME.fullmatch(name) is not None and ".." not in name
 
 
 # Crate names as crates.io accepts them: ASCII letters, digits, `-` and `_`, at most 64 characters. crates.io treats
 # names that differ only in case or in `-` versus `_` as the same crate, and so does its own canonical form.
-_CARGO_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_CARGO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 
 def normalize_cargo(name: str) -> str:
@@ -79,12 +82,12 @@ def normalize_cargo(name: str) -> str:
 
 
 def is_valid_cargo(name: str) -> bool:
-    return _CARGO_NAME.match(name) is not None
+    return _CARGO_NAME.fullmatch(name) is not None
 
 
 # NuGet package ids as nuget.org accepts them (NuGet's PackageIdValidator, ASCII only): runs of letters, digits and
 # `_`, joined by single `.` or `-`, at most 100 characters. Ids are case-insensitive; nuget.org's paths use lower case.
-_NUGET_ID = re.compile(r"^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*$")
+_NUGET_ID = re.compile(r"[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*")
 NUGET_MAX_LEN = 100
 
 
@@ -94,7 +97,7 @@ def normalize_nuget(name: str) -> str:
 
 
 def is_valid_nuget(name: str) -> bool:
-    return 0 < len(name) <= NUGET_MAX_LEN and _NUGET_ID.match(name) is not None
+    return 0 < len(name) <= NUGET_MAX_LEN and _NUGET_ID.fullmatch(name) is not None
 
 
 # Composer package names as Packagist accepts them (composer/composer's ValidatingArrayLoader): `vendor/package`, lower
@@ -117,7 +120,7 @@ def is_valid_composer(name: str) -> bool:
 # Gem names as RubyGems accepts them (`Gem::Specification::VALID_NAME_PATTERN`): letters, digits, `.`, `-` and `_`.
 # rubygems.org's names are case-sensitive (`RedCloth` exists, `redcloth` doesn't), so they are matched as spelled.
 # `.` and `..` alone are refused, as path segments.
-_RUBYGEMS_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+_RUBYGEMS_NAME = re.compile(r"[A-Za-z0-9._-]+")
 RUBYGEMS_MAX_LEN = 255  # the longest on rubygems.org has 150 characters
 
 
@@ -126,7 +129,7 @@ def normalize_rubygems(name: str) -> str:
 
 
 def is_valid_rubygems(name: str) -> bool:
-    return 0 < len(name) <= RUBYGEMS_MAX_LEN and _RUBYGEMS_NAME.match(name) is not None and name not in (".", "..")
+    return 0 < len(name) <= RUBYGEMS_MAX_LEN and _RUBYGEMS_NAME.fullmatch(name) is not None and name not in (".", "..")
 
 
 # OCI image repositories: `<registry>/<path>` as Docker spells references. A first component with a `.` or `:`, or
@@ -161,7 +164,7 @@ def normalize_oci(name: str) -> str:
 
 
 def is_valid_oci(name: str) -> bool:
-    if not (0 < len(name) <= OCI_MAX_LEN):
+    if not (0 < len(name) <= OCI_MAX_LEN) or name != name.strip():  # oci_split strips: spaces are refused here
         return False
     registry, path = oci_split(name)
     return _OCI_HOST.fullmatch(registry) is not None and all(_OCI_COMPONENT.fullmatch(c) for c in path.split("/"))
@@ -178,9 +181,9 @@ def is_valid_go(path: str) -> bool:
         return False
     elems = path.split("/")
     first = elems[0]
-    if "." not in first or not _GO_FIRST.match(first):
+    if "." not in first or not _GO_FIRST.fullmatch(first):
         return False
     for elem in elems:
-        if not _GO_ELEM.match(elem) or elem.split(".", 1)[0].lower() in _WINDOWS:
+        if not _GO_ELEM.fullmatch(elem) or elem.split(".", 1)[0].lower() in _WINDOWS:
             return False
-    return len(elems) == 1 or not _GO_MAJOR.match(elems[-1])
+    return len(elems) == 1 or not _GO_MAJOR.fullmatch(elems[-1])

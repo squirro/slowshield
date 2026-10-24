@@ -82,6 +82,7 @@ def test_info_lines_are_parsed_and_kept_byte_for_byte() -> None:
     assert (native.version, native.platform, native.sha256, native.raw) == ("1.19.4", "x86_64-linux-gnu", SHA, lines[0])
     assert info.lines["1.19.4"].platform == "ruby" and info.lines["1.19.4"].created_at == 1767323045.0
     assert info.lines["2.0.1"].created_at is None and info.lines["2.0.2"].created_at is None
+    assert I.parse_line(f"2.0.3 |checksum:{SHA}\n".encode()) is None  # `$` would match before the newline
     served = I.render(info, {"1.19.4-x86_64-linux-gnu"})
     assert served == b"---\n" + lines[1] + b"\n" + lines[4] + b"\n" + lines[5] + b"\n"
     assert I.render(info, set(info.lines)) == b"---\n"

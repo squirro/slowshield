@@ -579,8 +579,8 @@
       Laptops, servers and CI runners on your tailnet use a single URL, and Tailscale sends each of them to an instance
       that is up. Nothing is exposed to the internet, Tailscale issues the HTTPS certificate, and there is no load
       balancer to run. Make the instances a shield wall and every client gets the same policy, whichever instance it
-      reaches. We run SlowShield this way: a leader in Nuremberg and followers in Singapore and in a Kubernetes cluster
-      in Ohio serve one Tailscale Service.</p>
+      reaches. We run SlowShield this way, across three regions, on servers and on
+      Kubernetes.</p>
   </div>
   <figure class="team-map ts-map reveal" aria-labelledby="ts-map-cap">
     <svg viewBox="0 0 960 524" class="team-svg ts-svg" role="img" aria-labelledby="ts-map-t">

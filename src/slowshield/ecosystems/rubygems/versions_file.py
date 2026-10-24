@@ -134,7 +134,7 @@ class VersionsFile:
 
     async def snapshot(self) -> Snapshot:
         """The current copy, updated from rubygems.org first when it is more than a minute old. While rubygems.org
-        can't be reached, the last copy; without one, UpstreamError."""
+        can't be reached, or the update can't be written (a full disk), the last copy; without one, the error."""
         snap = await asyncio.to_thread(self._read_state)
         if snap is not None and self.now() - snap.checked < REFRESH_EVERY:
             return snap
@@ -148,6 +148,13 @@ class VersionsFile:
                 if snap is None:
                     raise
                 log.warning("rubygems.org /versions unavailable; serving the last copy", extra={"error": exc.detail})
+                return snap
+            except OSError as exc:
+                # A failed write leaves the last copy as it was: an append writes past its size, a rebuild writes a new
+                # generation, and the state is replaced last.
+                if snap is None:
+                    raise
+                log.error("could not update the /versions copy; serving the last one", extra={"error": str(exc)})
                 return snap
 
     async def _refresh(self, snap: Snapshot | None) -> Snapshot:

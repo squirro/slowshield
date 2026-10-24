@@ -184,6 +184,26 @@ async def test_the_versions_copy_appends_rebuilds_and_survives_a_crash(tmp_path:
     assert (await vf.snapshot()).generation == 2
 
 
+async def test_a_copy_that_cannot_be_written_leaves_the_last_one_served(tmp_path: Path) -> None:
+    now = [1000.0]
+    base = b"created_at: x\n---\na 1.0 " + b"1" * 32 + b"\n"
+    up = _Upstream(base)
+    vf = VF.VersionsFile(tmp_path, up, "https://index.example/versions", lambda: now[0])  # type: ignore[arg-type]
+    good = await vf.snapshot()
+
+    def full(*_args: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    vf._write_append = full  # type: ignore[method-assign]
+    vf._write_full = full  # type: ignore[method-assign]
+    for body in (base + b"b 2.0 " + b"2" * 32 + b"\n", b"created_at: y\n---\n"):  # an append, then a rebuild
+        now[0] += 61
+        up.body = body
+        assert await vf.snapshot() == good
+        with vf.open(good) as f:
+            assert f.read() == VF.zero_checksums(base)
+
+
 async def test_without_a_copy_an_upstream_failure_is_an_error(tmp_path: Path) -> None:
     up = _Upstream(b"")
     up.fail = True

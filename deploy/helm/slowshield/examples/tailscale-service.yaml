@@ -1,0 +1,150 @@
+# This release serves the Tailscale Service svc:slowshield (https://slowshield.your-tailnet.ts.net), next to hosts that
+# run `tailscale serve --service=svc:slowshield`. It does what those hosts do, in a small Deployment.
+#
+# Why not the Tailscale operator: its ingress refuses a Tailscale Service it didn't create (one made in the admin
+# console, or shared with `tailscale serve` hosts). If the operator owns the Service, deleting its Ingress deletes the
+# Service for every host.
+#
+# How it reaches SlowShield: Tailscale ends TLS for the service name and forwards HTTPS to the chart's Caddy. Plain
+# HTTP would loop (Caddy redirects it to HTTPS). Caddy uses its own CA inside the cluster, hence https+insecure, and
+# runs with strict_sni_host, so the TLS name must equal the Host header (the service name): the backend URL uses the
+# service name, and hostAliases points it at the chart's Service. Serve dials backends with the system resolver
+# (/etc/hosts), not MagicDNS, so this doesn't loop back into the tailnet. The chart's `hostnames` must include the
+# service name (follower-values.yaml).
+#
+# Login: a single-use, pre-approved auth key tagged tag:slowshield, only for the first start:
+#   kubectl -n slowshield create secret generic slowshield-ts-authkey --from-literal=TS_AUTHKEY='tskey-auth-...'
+# After that the node's identity lives in the Secret slowshield-ts-state.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: slowshield-tailscale
+  namespace: slowshield
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: slowshield-tailscale
+  namespace: slowshield
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["slowshield-ts-state"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: slowshield-tailscale
+  namespace: slowshield
+subjects:
+  - kind: ServiceAccount
+    name: slowshield-tailscale
+    namespace: slowshield
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: slowshield-tailscale
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowshield-tailscale
+  namespace: slowshield
+data:
+  # The format of `tailscale serve get-config --all`.
+  serve.json: |
+    {
+      "version": "0.0.1",
+      "services": {
+        "svc:slowshield": {
+          "endpoints": {
+            "tcp:443": "https+insecure://slowshield.your-tailnet.ts.net:443"
+          }
+        }
+      }
+    }
+  start.sh: |
+    set -eu
+    S=/tmp/tailscaled.sock
+    tailscaled --tun=userspace-networking --state=kube:slowshield-ts-state --statedir=/tmp/tailscale --socket="$S" &
+    daemon=$!
+    until tailscale --socket="$S" status --json >/dev/null 2>&1 || tailscale --socket="$S" status 2>&1 | grep -q -i "logged out\|needslogin"; do
+      kill -0 "$daemon" || exit 1
+      sleep 1
+    done
+    # The auth key is only used when the stored state has no login.
+    tailscale --socket="$S" up --auth-key="$TS_AUTHKEY" --hostname=slowshield-us-east --advertise-tags=tag:slowshield
+    tailscale --socket="$S" serve set-config --all /config/serve.json
+    tailscale --socket="$S" serve advertise svc:slowshield
+    wait "$daemon"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowshield-tailscale
+  namespace: slowshield
+spec:
+  replicas: 1 # one node identity (slowshield-ts-state)
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: slowshield-tailscale
+  template:
+    metadata:
+      labels:
+        app: slowshield-tailscale
+    spec:
+      serviceAccountName: slowshield-tailscale
+      # The ClusterIP of the chart's Service: kubectl -n slowshield get svc slowshield -o jsonpath='{.spec.clusterIP}'.
+      # If that Service is ever recreated, its new ClusterIP goes here.
+      hostAliases:
+        - ip: 10.100.200.20
+          hostnames:
+            - slowshield.your-tailnet.ts.net
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tailscale
+          # Pin the digest of the release you use; Tailscale Services need 1.86 or later.
+          image: tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5d7e449311dd1933a400ab849d
+          command: ["/bin/sh", "/config/start.sh"]
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: slowshield-ts-authkey
+                  key: TS_AUTHKEY
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: slowshield-tailscale
+        - name: tmp
+          emptyDir: {}

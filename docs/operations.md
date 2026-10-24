@@ -28,6 +28,31 @@ Schema migrations run automatically at start (`PRAGMA user_version`). Releases f
 changelog before a major upgrade. Podman deployments with `AutoUpdate=registry` pick up new `latest`
 images automatically.
 
+## Shield wall: pairing followers automatically
+
+Configuration management (Ansible, cloud-init, a Helm release) can pair a follower without anyone clicking
+([design](design/shieldwall.md#pairing)):
+
+1. **Before the follower's first start, ask the leader for a join string:**
+   `slowshield wall invite --name <name> --location <location> --minutes 60 --quiet` prints only the string.
+2. **Pass it in.** Use `SLOWSHIELD_JOIN` (or `SLOWSHIELD_JOIN_FILE`, or a container secret) together with
+   `SLOWSHIELD_JOIN_CONFIRM=auto`.
+3. **Check:** `slowshield wall status` on the follower shows the leader as `active`, and `slowshield wall members` on
+   the leader lists the follower.
+
+Notes for automation:
+
+- **A joined follower ignores a join string, even a fresh one.** It keeps the leader stored in its data directory.
+  Automation can therefore leave the variable set and only ask for a new string while `wall status` doesn't show
+  `active`.
+- **An invalid join string is a configuration error at startup.** Never pass a placeholder; leave the variable out
+  until there is a real string.
+- **A follower restarted without a role or join string keeps its role** (a warning names it). Only
+  `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes it out.
+- **A leader that is only on a tailnet** needs a route from the follower's container or pod:
+  [docs/tailscale.md](tailscale.md#a-follower-whose-leader-is-only-on-the-tailnet).
+- **Back up the leader's `<data_dir>/shieldwall/identity.key`.** Losing it means pairing every follower again.
+
 ## Capacity planning
 
 * Memory: about 200 MB per worker under load plus `cache.metadata_memory_mb` (default 64 MB, in total across all workers).

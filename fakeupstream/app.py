@@ -1096,6 +1096,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                 media_type="application/octet-stream",
                 headers={"Content-Encoding": c} if (c := r.query_params.get("coding")) else None,
             ),
+            methods=["GET", "POST"],
         ),
     ]
     app = Starlette(routes=routes)

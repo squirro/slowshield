@@ -50,8 +50,8 @@ All notable changes to this project are documented here. The format is based on
   inside the 7-day dependency cooldown as a security exception.
 - SlowShield no longer asks registries for Brotli-compressed metadata, so it never decodes a Brotli stream. It
   was not affected by CVE-2026-111497 ("Node2Shell", in the C Brotli decoder): its decoder is the Rust port in
-  pyreqwest, and the images ship no libbrotli. Registries send gzip instead. A metadata response in an encoding
-  SlowShield didn't ask for is refused as an upstream error instead of being parsed.
+  pyreqwest, and the images ship no libbrotli. Registries send gzip instead. A metadata or `npm audit` response in
+  an encoding SlowShield didn't ask for is refused as an upstream error instead of being parsed or passed on.
 
 ## [0.0.9] - 2026-10-10
 

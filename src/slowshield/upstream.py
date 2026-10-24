@@ -208,10 +208,7 @@ class Upstream:
                             url, headers = redirected(url, hdrs["location"], headers)
                             continue
                         body = b"" if method == "HEAD" else await _read_limited(resp, max_bytes, url)
-                        # The client drops the codings it decoded. One left over (Brotli, which it never asks for)
-                        # would reach the parsers as bytes they can't read.
-                        if body and (coding := hdrs.get("content-encoding", "identity").strip().lower()) != "identity":
-                            raise UpstreamError(url, f"unrequested Content-Encoding: {coding}")
+                        _check_coding(url, hdrs, body)
                         span.set_attribute("http.response.status_code", status_code)
                         span.set_attribute("network.protocol.version", resp.version)
                         if status_code >= 500:
@@ -294,9 +291,18 @@ class Upstream:
             req = self.meta.post(url).headers(headers or {}).body_bytes(body).build_streamed()
             async with req as resp:
                 data = await _read_limited(resp, max_bytes, url)
-                return FetchResult(resp.status, _headers(resp), data, url, resp.version)
+                hdrs = _headers(resp)
+                _check_coding(url, hdrs, data)
+                return FetchResult(resp.status, hdrs, data, url, resp.version)
         except PyreqwestError as exc:
             raise UpstreamError(url, type(exc).__name__) from exc
+
+
+def _check_coding(url: str, hdrs: dict[str, str], body: bytes) -> None:
+    """The client drops the codings it decoded. One left over (Brotli, which it never asks for) would reach the
+    parsers, or an npm client after an audit, as bytes they can't read."""
+    if body and (coding := hdrs.get("content-encoding", "identity").strip().lower()) != "identity":
+        raise UpstreamError(url, f"unrequested Content-Encoding: {coding}")
 
 
 async def _read_limited(resp: Any, max_bytes: int, url: str) -> bytes:

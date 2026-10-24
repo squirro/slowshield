@@ -180,6 +180,8 @@ async def test_stream_and_post(client: Upstream, fake) -> None:
             pass
     res = await client.post(f"{fake.url}/npm/-/npm/v1/security/audits/quick", b"{}", max_bytes=1000)
     assert res.status == 200
+    with pytest.raises(UpstreamError, match="unrequested Content-Encoding: br"):
+        await client.post(f"{fake.url}/blob?n=50&coding=br", b"{}", max_bytes=1000)
     with pytest.raises(UpstreamError):
         await client.post("https://evil.example/", b"", max_bytes=1)
     with pytest.raises(UpstreamError):

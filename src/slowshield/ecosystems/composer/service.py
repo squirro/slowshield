@@ -451,7 +451,9 @@ class ComposerService:
         v.since = since
         return since
 
-    async def _resolve(self, request: Request, name: str, dev: bool, kind: str) -> tuple[M.P2File, View] | Response:
+    async def _resolve(
+        self, request: Request, name: str, dev: bool, kind: str, *, record_missing: bool = True
+    ) -> tuple[M.P2File, View] | Response:
         ctx = self.ctx
         blocks = ctx.blocklist.for_package(ECO, name)
         if blocks.package_block is not None:
@@ -462,7 +464,8 @@ class ComposerService:
             ctx.recorder.decision(ECO, kind, "upstream_error")
             return warning(503, f"slowshield: Packagist is unavailable for {name}: {exc.detail}", headers=RETRY_SOON)
         if p2 is None:
-            ctx.recorder.decision(ECO, kind, "not_found")
+            if record_missing:
+                ctx.recorder.decision(ECO, kind, "not_found")
             return text_error(404, "not found")
         v = self.view(p2, self._base(request))
         if v.package_block is not None:
@@ -581,22 +584,26 @@ class ComposerService:
 
     async def _matching(
         self, request: Request, name: str, reference: str, dist_type: str
-    ) -> tuple[M.P2File, View, list[M.Version]] | Response:
-        """The versions whose dist is this reference: the tags first, then the branches."""
-        found: Response | None = None
+    ) -> list[tuple[M.P2File, View, list[M.Version]]] | Response:
+        """The versions whose dist is this reference, in the tags and in the branches, with the file each is in."""
+        found: list[tuple[M.P2File, View, list[M.Version]]] = []
+        missing: Response | None = None
         for dev in (False, True):
-            resolved = await self._resolve(request, name, dev, "artifact")
+            # A package without branches (or tags) is no outcome yet: recorded once, below, if neither file has it.
+            resolved = await self._resolve(request, name, dev, "artifact", record_missing=False)
             if isinstance(resolved, Response):
                 if resolved.status_code != 404:
                     return resolved
-                found = found or resolved
+                missing = missing or resolved
                 continue
             p2, v = resolved
             hits = [i for i in p2.versions.values() if i.reference == reference and i.dist_type == dist_type]
             if hits:
-                return p2, v, hits
-        self.ctx.recorder.decision(ECO, "artifact", "not_found")
-        return found or text_error(404, f"not found: {name} has no version with the dist {reference}.{dist_type}")
+                found.append((p2, v, hits))
+        if not found:
+            self.ctx.recorder.decision(ECO, "artifact", "not_found")
+            return missing or text_error(404, f"not found: {name} has no version with the dist {reference}.{dist_type}")
+        return found
 
     async def download(self, request: Request, name: str, reference: str, dist_type: str) -> AsgiResponse:
         ctx = self.ctx
@@ -608,20 +615,23 @@ class ComposerService:
         found = await self._matching(request, name, reference, dist_type)
         if isinstance(found, Response):
             return found
-        p2, v, hits = found
-        for info in hits:
-            if info.version in v.blocked:
-                return self._blocked(request, name, info.version, v.blocked[info.version], kind="artifact")
-        hits = [i for i in hits if i.version not in v.unservable]
-        if not hits:
+        # A commit holds the same files whatever the version is called: refused when any of its versions is blocked,
+        # served when any is old enough.
+        for _p2, v, hits in found:
+            for info in hits:
+                if info.version in v.blocked:
+                    return self._blocked(request, name, info.version, v.blocked[info.version], kind="artifact")
+        matches = [(p2, v, i) for p2, v, hits in found for i in hits if i.version not in v.unservable]
+        if not matches:
             ctx.recorder.decision(ECO, "artifact", "not_found")
             return text_error(404, f"not found: no dist SlowShield can serve for {name} {reference}")
-        served = [i for i in hits if i.version not in v.held]
+        served = [m for m in matches if m[2].version not in m[1].held]
         if not served:
             if ctx.cfg.raw.enforce_age_on_download:
-                return self._too_new(request, p2, v, hits[0].version)
-            served = hits
-        info = served[0]
+                p2, v, info = matches[0]
+                return self._too_new(request, p2, v, info.version)
+            served = matches
+        _p2, v, info = served[0]
         upstream = info.fetch_url or ""  # every servable version has one
         parts, repo = urlsplit(upstream), urlsplit(self.settings.repo_url)
         host, repo_host = (parts.hostname or "").lower(), (repo.hostname or "").lower()

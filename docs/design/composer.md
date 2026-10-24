@@ -141,9 +141,10 @@ Each served version's `dist.url` becomes `<public_url>/composer/dists/<vendor>/<
 the next URL when a mirror fails, and the next URL is GitHub: every refusal would turn into a download that goes
 around SlowShield. With the URL itself rewritten, a refused download fails.
 
-A download is judged by the versions whose dist names that reference in the package's p2 files (the tags first,
-then the branches): it is refused when one of them is blocked, and served when one of them is served. A commit
-holds the same files whatever the version is called. SlowShield fetches it from the version's own dist URL, except
+A download is judged by every version whose dist names that reference, in both of the package's p2 files (the tags
+and the branches): it is refused when one of them is blocked, and served when one of them is served. A commit holds
+the same files whatever the version is called: a tag pushed today on the commit of a branch that is a month old is
+served, and a tag on a blocked branch's commit is refused. SlowShield fetches it from the version's own dist URL, except
 that `https://api.github.com/repos/<owner>/<repo>/zipball/<ref>` (and `tarball`) is fetched from
 `https://codeload.github.com/<owner>/<repo>/legacy.zip/<ref>`, where api.github.com redirects to: that skips
 api.github.com's limit of 60 requests an hour. Such a GitHub URL must name the version's own `dist.reference`: the

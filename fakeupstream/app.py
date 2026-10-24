@@ -1111,10 +1111,13 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         return JSONResponse({"ok": True})
 
     async def ctl_composer_push(request: Request) -> Response:
-        """A new commit under a version's name: `age_days` for its `published-time`, `none` for none."""
+        """A new commit under a version's name (or `reference`, another version's): `age_days` for its
+        `published-time`, `none` for none."""
         q = request.query_params
         age = q.get("age_days", "none")
-        ref = state.catalog.composer_push(q["name"], q["version"], None if age == "none" else float(age))
+        ref = state.catalog.composer_push(
+            q["name"], q["version"], None if age == "none" else float(age), q.get("reference")
+        )
         return JSONResponse({"reference": ref})
 
     async def ctl_rubygems_yank(request: Request) -> Response:

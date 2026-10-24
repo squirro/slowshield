@@ -216,6 +216,21 @@ async def test_unknown_names_references_and_spellings_are_404(running: Running) 
     assert not [p for p in running.fake.hits("/packagist/") if "\n" in p or "%0A" in p.upper()]
 
 
+async def test_a_dist_is_judged_by_every_version_on_its_commit(start_app) -> None:
+    run = await start_app()
+    legacy = _ref(run, "fake/hello", "dev-legacy")  # a branch, 60 days old
+    run.fake.control("publish", ecosystem="composer", name="fake/hello", version="2.0.0", age_days="0")
+    run.fake.control("composer-push", name="fake/hello", version="2.0.0", age_days="0", reference=legacy)
+    # A new tag on the branch's commit: held as a tag, served as the branch (the same files).
+    assert "2.0.0" not in await _p2(run, "fake/hello")
+    assert (await run.client.get(f"/composer/dists/fake/hello/{legacy}.zip")).status_code == 200
+    # The branch blocked: the tag on its commit is refused too.
+    block = '[[blocks]]\necosystem = "composer"\npackage = "fake/hello"\nversion = "dev-legacy"\nreason = "bad"\n'
+    blocked = await start_app(block)
+    r = await blocked.client.get(f"/composer/dists/fake/hello/{legacy}.zip")
+    assert r.status_code == 451 and "fake/hello dev-legacy" in r.json()["warning"]
+
+
 async def test_a_dist_on_a_host_that_is_not_allowed_is_refused(running: Running) -> None:
     assert "1.0.0" in await _p2(running, "fake/elsewhere")
     r = await running.client.get(_dist(running, "fake/elsewhere", "1.0.0"))

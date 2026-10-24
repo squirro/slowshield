@@ -67,7 +67,7 @@ DOCS = HERE / "docs"
 DOCS_NAV = (
     ("", "Overview"), ("python", "Python"), ("javascript", "JavaScript"), ("go", "Go"), ("java", "Java"),
     ("rust", "Rust"), ("csharp", "C#"), ("containers", "Container images"), ("container-builds", "Building images"),
-    ("agents", "Agents"),
+    ("shieldwall", "Shield wall"), ("agents", "Agents"),
 )  # fmt: skip
 EXAMPLE = "https://slowshield.example.com"
 EXAMPLE_REGISTRIES = (

@@ -15,6 +15,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ Maven service (ecosystems/maven) ─┤
    │               ├─ Cargo service (ecosystems/cargo) ─┤
    │               ├─ NuGet service (ecosystems/nuget) ─┤
+   │               ├─ Composer      (ecosystems/composer)┤
    │               ├─ RubyGems service (ecosystems/rubygems)
    │               ├─ OCI service   (ecosystems/oci)   ─┤   container images at /v2/
    │               └─ UI            (ui/)               │
@@ -106,6 +107,24 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
    `Retry-After`, else the catalog leaf gives the `packageHash`, and the artifact server fetches the file from
    `<flat_container_url>`, checked against it and the first-seen fingerprint.
 
+## Request flow: Composer
+
+`/composer/packages.json` is written by SlowShield and points Composer at its p2 files
+([design/composer.md](design/composer.md)).
+
+1. Blocklist hit for the whole package → `451`.
+2. `p2/<vendor>/<package>.json` (tags) or `~dev.json` (branches): from memory, the shared metadata cache, or
+   `GET <repo_url>/p2/…` (`If-None-Match` / `If-Modified-Since` once known). Each version's `published-time`, set by
+   Packagist, is its publish time; the first plausible one is kept, and a version without one is timed from when
+   SlowShield first listed it.
+3. The file is expanded, the too-new and blocked versions are left out, every dist URL points at
+   `/composer/dists/<vendor>/<package>/<reference>.zip`, and it is minified again. `Last-Modified` is when this body
+   was first served, so it changes when a held version comes of age.
+4. `dists/…`: the versions whose dist is that reference decide: a block → `451`, none served (too new) → `425` with
+   `Retry-After`, else the artifact server fetches the version's dist (GitHub's API archives from
+   codeload.github.com), checked against `dist.shasum` if there is one and the first-seen fingerprint. GitHub builds
+   archives on request, so new bytes with the same files in them are taken as the same file.
+
 ## Request flow: RubyGems
 
 `/rubygems/` is a compact index that Bundler uses as a mirror of rubygems.org and `gem` as its source
@@ -143,8 +162,9 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 ## Integrity
 
 Artifacts are streamed to the client while sha256 (always), blake2b-256 (PyPI path), sha512 / sha1
-(npm `dist.integrity` / `shasum`, NuGet `packageHash`) are computed and the bytes are teed to `/data/cache/tmp`. A Go zip's `h1:` covers
-the files inside it, so it is computed from the temp file once the body is complete. The last
+(npm `dist.integrity` / `shasum`, NuGet `packageHash`, Composer `dist.shasum`) are computed and the bytes are teed to `/data/cache/tmp`. A Go zip's `h1:` covers
+the files inside it, so it is computed from the temp file once the body is complete; so is the same hash of a
+Composer zip, recorded with its first download. The last
 chunk is withheld until all digests match the registry's published values and the first-seen
 fingerprint; on a mismatch the response is aborted and the event recorded. Verified bodies are
 fsync'ed and renamed into the content-addressed cache.

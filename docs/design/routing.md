@@ -3,8 +3,8 @@
 Status: accepted (issue [#10](https://github.com/squirro/slowshield/issues/10)). The root contract, the
 deprecation of per-ecosystem hostnames and the new Setup page are implemented. Go is served at `/go/`
 ([go.md](go.md)), Maven at `/maven/` ([maven.md](maven.md)), Cargo at `/cargo/` ([cargo.md](cargo.md)), NuGet at
-`/nuget/` ([nuget.md](nuget.md)), RubyGems at `/rubygems/` ([rubygems.md](rubygems.md)) and container images at
-`/v2/` ([oci.md](oci.md)); the other ecosystems are planned.
+`/nuget/` ([nuget.md](nuget.md)), Composer at `/composer/` ([composer.md](composer.md)), RubyGems at `/rubygems/`
+([rubygems.md](rubygems.md)) and container images at `/v2/` ([oci.md](oci.md)); the other ecosystems are planned.
 
 SlowShield serves every ecosystem from **one host**, each under a path named after its **protocol**. No
 ecosystem gets its own hostname. This document is the contract for those paths, so that new ecosystems never
@@ -47,8 +47,8 @@ them is added.
 | `/favicon.ico` | redirect to `/ui/static/brand/favicon.ico` (browsers ask for it) |
 | `/v2/` | OCI distribution API (mandated at the root by the spec): container images, served today ([oci.md](oci.md)) |
 | `/.well-known/` | RFC 8615 (e.g. Terraform service discovery, if ever needed) |
-| `/pypi/`, `/npm/`, `/go/`, `/maven/`, `/cargo/`, `/nuget/`, `/rubygems/` | served today |
-| `/composer/`, `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
+| `/pypi/`, `/npm/`, `/go/`, `/maven/`, `/cargo/`, `/nuget/`, `/composer/`, `/rubygems/` | served today |
+| `/helm/`, `/terraform/`, `/huggingface/`, `/apt/`, `/rpm/`, `/apk/`, `/oci/`, `/homebrew/`, `/github/`, `/github-api/`, `/openvsx/`, `/jetbrains/` | reserved for the roadmap |
 | `/static/`, `/simple/`, `/packages/` | deprecated, removed in 0.1 |
 
 If two protocols ever need the same root path:
@@ -70,7 +70,7 @@ The internal host-routing code stays for that purpose after the PyPI and npm hos
 | Maven, Gradle | `/maven/<repo-id>/` (shipped, [maven.md](maven.md): all, central, google, gradle-plugins) | `settings.xml` mirror (`mirrorOf *` → `/maven/all/`); Gradle init script | regenerate checksums of filtered metadata; follow Plugin Portal 303s on the server | `Last-Modified` per file, or first listed | OSV Maven, GitHub maven |
 | NuGet | `/nuget/v3/index.json` (shipped, [nuget.md](nuget.md); `/nuget/<id>/` kept for other feeds) | `NuGet.Config` with `<clear/>` and one source named `nuget.org` | service index generated; registration and search URLs; held versions removed from the flat container, registration pages and search | registration `published`, never earlier than first seen; first listed for unlisted versions (`1900-01-01`) | OSV NuGet, GitHub nuget |
 | RubyGems | `/rubygems/` (shipped, [rubygems.md](rubygems.md); `/rubygems/<id>/` kept for other gem servers) | `bundle config set --global mirror.https://rubygems.org …`, `~/.gemrc` | none; `/versions` with every md5 written as zeros; held lines left out of `info/<gem>`; the full Marshal index and the dependency API not served | `created_at` per version and platform, never earlier than first seen | OSV RubyGems, GitHub rubygems |
-| Composer | `/composer/` | `composer config -g repos.packagist …` | metadata URLs; `dist` mirrors keep `composer.lock` proxy-free; re-minify | `published-time` | Packagist malware list |
+| Composer | `/composer/` (shipped, [composer.md](composer.md)) | `composer config -g repo.packagist false` and a repository at `/composer/` | `packages.json` generated; dist URLs rewritten, not mirrored (Composer falls back from a mirror to GitHub); re-minify; held versions removed | `published-time`, never earlier than first seen | OSV Packagist, GitHub composer; Packagist's malware list passed to Composer |
 | Helm | `/helm/<repo-id>/`; OCI charts via `/v2/` | `helm repo add` per upstream | chart `urls` | first-seen | none |
 | Terraform | `/terraform/providers/`; modules via `/terraform/<registry-host>/modules/v1/` | `~/.terraformrc` network mirror; modules via the CLI `host` block (undocumented) | `download_url`, `X-Terraform-Get` | first-seen | none |
 | Hugging Face | `/huggingface/` | `HF_ENDPOINT` | `Location`; strip the Xet headers, or clients bypass the proxy | first-seen per commit | HF scan status |

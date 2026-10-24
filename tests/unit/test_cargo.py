@@ -133,6 +133,7 @@ def test_cargo_setup_snippets() -> None:
         "https://h/maven",
         "http://localhost/cargo/",
         nuget="n",
+        composer="c",
         rubygems="r",
     )
     cargo = next(t for t in tool if t.name == "Cargo")
@@ -142,7 +143,7 @@ def test_cargo_setup_snippets() -> None:
     )
     assert command.startswith('mkdir -p "${CARGO_HOME:-$HOME/.cargo}" && printf ')
     with pytest.raises(ValueError, match="refusing"):
-        S.tools("a", "b", "c", "d", "https://h/cargo/'$(id)'", nuget="n", rubygems="r")
+        S.tools("a", "b", "c", "d", "https://h/cargo/'$(id)'", nuget="n", composer="c", rubygems="r")
 
 
 def test_rustsec_categories_are_read_at_either_level() -> None:

@@ -123,7 +123,7 @@ Clients set up with an instance's own name keep using it. To move them without b
 
 - its Setup page then gives new clients the Service URL, with a notice that the old name keeps working;
 - it still answers under `public_url`, and the URLs it hands out (npm tarballs, Cargo downloads, the NuGet service
-  index, shield wall invites) stay there.
+  index, Composer dists, shield wall invites) stay there.
 
 Instances that clients only reach through the Service can use the Service URL as `public_url` directly.
 

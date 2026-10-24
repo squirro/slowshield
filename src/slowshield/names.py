@@ -1,5 +1,5 @@
-"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet, RubyGems
-and OCI images."""
+"""Package-name validation and normalisation for PyPI (PEP 503/508), npm, Go modules, Maven, Cargo, NuGet, Composer,
+RubyGems and OCI images."""
 
 from __future__ import annotations
 
@@ -95,6 +95,21 @@ def normalize_nuget(name: str) -> str:
 
 def is_valid_nuget(name: str) -> bool:
     return 0 < len(name) <= NUGET_MAX_LEN and _NUGET_ID.match(name) is not None
+
+
+# Composer package names as Packagist accepts them (composer/composer's ValidatingArrayLoader): `vendor/package`, lower
+# case, runs of letters and digits joined by `_`, `.` or `-` (`--` too in the package part).
+_COMPOSER_NAME = re.compile(r"^[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*$")
+COMPOSER_MAX_LEN = 255
+
+
+def normalize_composer(name: str) -> str:
+    """Packagist's names are lower case; Composer lower-cases what it asks for too."""
+    return name.strip().lower()
+
+
+def is_valid_composer(name: str) -> bool:
+    return 0 < len(name) <= COMPOSER_MAX_LEN and _COMPOSER_NAME.match(name) is not None
 
 
 # Gem names as RubyGems accepts them (`Gem::Specification::VALID_NAME_PATTERN`): letters, digits, `.`, `-` and `_`.

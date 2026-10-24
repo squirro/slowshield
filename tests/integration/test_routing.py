@@ -171,6 +171,7 @@ async def test_setup_page_tool_finder(start_app) -> None:
         "Coursier",
         "Cargo",
         "NuGet",
+        "Composer",
         "Bundler",
         "gem",
         "containerd",

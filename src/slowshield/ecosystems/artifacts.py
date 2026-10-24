@@ -63,6 +63,11 @@ class ArtifactRequest:
     # A check that needs the whole body (the Go zip `h1:` hashes the files inside the zip): called with the
     # spooled temp file before the final chunk is released; returns a problem description, or None.
     check_file: Callable[[Path], str | None] | None = None
+    # A fingerprint of what is in the file rather than of its bytes, for files the registry builds on request
+    # (GitHub's zipballs, for Composer): called with the spooled temp file, None when it can't be read. It is recorded
+    # as `upstream_digest` with the first download, and later bytes with the same content are a new copy of the same
+    # file, not tampering. Without the cache (no spooled file) it isn't computed, and any change counts.
+    content_digest: Callable[[Path], str | None] | None = None
     upstream_digest: str | None = None  # recorded when `expected` carries no sha256/sha512
     error: Callable[..., Response] = field(default=error)  # error responses, in the format the client reads
     # Called once the upstream response has arrived, before anything is sent: may fill `expected` from its headers
@@ -333,7 +338,18 @@ class ArtifactServer:
                 problem = await asyncio.to_thread(req.check_file, tee.path)
                 if problem:
                     problems.append(problem)
-            if via is not None and verifier.tofu_mismatch():
+            content = None
+            if req.content_digest is not None and tee is not None and not problems:
+                content = await asyncio.to_thread(req.content_digest, tee.path)
+                if content is None:
+                    problems.append("the file can't be read as an archive")
+                req.upstream_digest = content
+            same_content = content is not None and rec is not None and rec.upstream_digest == content
+            if verifier.tofu_mismatch() and same_content and not problems:
+                await self._replace_fingerprint(
+                    req, verifier, "new bytes for a file whose content is unchanged: recording them"
+                )
+            elif via is not None and verifier.tofu_mismatch():
                 problems.append("the leader served different bytes than this instance saw first")
             elif verifier.tofu_mismatch():
                 independently_verified = not problems and bool(
@@ -341,7 +357,9 @@ class ArtifactServer:
                 )
                 if rec is not None and rec.legacy and independently_verified:
                     # Imported fingerprint from the Rust version may be an error page's hash.
-                    await self._correct_legacy(req, verifier)
+                    await self._replace_fingerprint(
+                        req, verifier, "replacing imported legacy checksum that disagrees with the registry digest"
+                    )
                 else:
                     await self._tamper(req, verifier.sha256, client_ip, problems)
                     raise IntegrityAbort(req.key, _tamper_response(req))
@@ -460,10 +478,9 @@ class ArtifactServer:
 
         return await self.db.writer.run(op)
 
-    async def _correct_legacy(self, req: ArtifactRequest, verifier: StreamVerifier) -> None:
+    async def _replace_fingerprint(self, req: ArtifactRequest, verifier: StreamVerifier, message: str) -> None:
         log.warning(
-            "replacing imported legacy checksum that disagrees with the registry digest",
-            extra={"artifact": req.key, "legacy_sha256": req.expected.tofu_sha256, "sha256": verifier.sha256},
+            message, extra={"artifact": req.key, "previous_sha256": req.expected.tofu_sha256, "sha256": verifier.sha256}
         )
         sha = verifier.sha256
         e = req.expected

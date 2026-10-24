@@ -37,6 +37,7 @@ C = {
     "maven": "#ed8b00",
     "cargo": "#dea584",
     "nuget": "#178600",
+    "composer": "#4f5d95",
     "rubygems": "#701516",
     "oci": "#1d63ed",
 }
@@ -474,7 +475,7 @@ def dashboard(
 
 
 INSTANCE_VAR = query_var("instance", "Instance", "label_values(slowshield_build_info, instance)")
-ECOSYSTEMS = ("pypi", "npm", "go", "maven", "cargo", "nuget", "rubygems", "oci")
+ECOSYSTEMS = ("pypi", "npm", "go", "maven", "cargo", "nuget", "composer", "rubygems", "oci")
 ECOSYSTEM_VAR = custom_var("ecosystem", "Ecosystem", list(ECOSYSTEMS))
 
 

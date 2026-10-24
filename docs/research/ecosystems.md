@@ -21,7 +21,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | CRAN | `options(repos=)` | `Published:` | MD5 only | medium | rewrite too-new to the Archive copy via `Path:` |
 | conda | `.condarc` `channel_alias` | repodata `timestamp` = build time (packager-set) | sha256 | medium | shards, `.jlap`, `current_repodata` |
 | Hugging Face | `HF_ENDPOINT` | commit `date`, `lastModified` | sha256 (`X-Linked-Etag`) | medium | Xet CAS redirects bypass the endpoint |
-| Composer | `repositories` + `packagist.org: false` | p2 `time` is **author-controlled** | `dist.shasum` often empty; GitHub zipballs | medium | needs first-seen ledger, URL rewriting |
+| Composer | `repo.packagist false` + a `composer` repository | p2 `published-time` (server, since 2026-06); `time` is **author-controlled** | `dist.shasum` empty for GitHub zipballs; first-seen fingerprint, and the files in the zip | **live** | dist URLs rewritten (Composer falls back from a mirror to GitHub); see [design/composer.md](../design/composer.md) |
 | Julia | `JULIA_PKG_SERVER` | none (git history) | tree SHA1 | medium | serve filtered registry under new hash |
 | Bazel (BCR) | `--registry` | none (git history) | SRI `integrity` | medium | sources live on GitHub |
 | dnf / yum | `.repo` `baseurl` | `<time build=>` (packager) | RPM GPG; repomd GPG if `repo_gpgcheck` | medium | regenerate repomd; re-sign only with `repo_gpgcheck=1` |
@@ -36,7 +36,8 @@ per-version publish time, and metadata it can filter without breaking a signatur
 ## Cross-cutting
 
 * **Who sets the timestamp matters more than whether there is one.** Server-set: PyPI, npm, crates, RubyGems,
-  NuGet, pub, JSR, Hex, CRAN, index.golang.org and proxy.golang.org's `Last-Modified`. Author/builder-set: Go `.info`, Packagist, conda, apk, RPM, OCI
+  NuGet, Packagist's `published-time`, pub, JSR, Hex, CRAN, index.golang.org and proxy.golang.org's `Last-Modified`.
+  Author/builder-set: Go `.info`, Packagist's `time`, conda, apk, RPM, OCI
   `created`, Helm, git. → build one **first-seen ledger** shared by all adapters.
 * **Signed metadata can't be filtered** (apt, apk, Homebrew, Hex, Nix, dnf with `repo_gpgcheck`): refuse at
   download (fail closed), opt-in re-signing with an org key, or rely on the client's own gate.
@@ -52,10 +53,11 @@ per-version publish time, and metadata it can filter without breaking a signatur
 ## Proposed phases
 
 1. **Shipped:** Go, Maven/Gradle, Cargo, OCI images (https://github.com/squirro/slowshield/issues/22), NuGet
-   (https://github.com/squirro/slowshield/issues/38) and RubyGems (https://github.com/squirro/slowshield/issues/17).
+   (https://github.com/squirro/slowshield/issues/38), Composer and RubyGems
+   (https://github.com/squirro/slowshield/issues/17).
 2. **Then:** Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains; compatibility tests for
    pnpm/Yarn/Bun.
-3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).
+3. **Later:** conda, CRAN, Hugging Face, Julia, Bazel (each needs a custom adapter).
 4. **Opt-in only:** apt/dnf/apk re-signing, Hex/Homebrew refuse-at-download, GitHub Releases forward proxy.
 
 Sources: go.dev/ref/mod · index.golang.org · rust-lang RFC 3923 (cargo min-publish-age) · rubygems.org/info ·

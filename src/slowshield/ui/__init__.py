@@ -652,6 +652,7 @@ class UI:
         maven_base = f"{base}/maven"
         cargo_index = f"{base}/cargo/"
         nuget_source = f"{base}/nuget/v3/index.json"
+        composer_repo = f"{base}/composer/"
         rubygems_mirror = f"{base}/rubygems"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
@@ -669,6 +670,7 @@ class UI:
                 "maven": f"{maven_base}/all/",
                 "cargo": cargo_index,
                 "nuget": nuget_source,
+                "composer": composer_repo,
                 "rubygems": rubygems_mirror,
             }
             pypi_index = f"{local}/pypi/simple/"
@@ -676,12 +678,14 @@ class UI:
             maven_base = f"{local}/maven"
             cargo_index = f"{local}/cargo/"
             nuget_source = f"{local}/nuget/v3/index.json"
+            composer_repo = f"{local}/composer/"
             rubygems_mirror = f"{local}/rubygems"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         age_days = S.client_age_days(raw.default_delay_days)
         images = S.oci_tools(local or base, tuple(sorted(raw.upstreams.oci.all_registries())), age_days=age_days)
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
+        urls = (pypi_index, npm_registry, go_proxy, maven_base, cargo_index)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
@@ -693,6 +697,7 @@ class UI:
             maven_repo=f"{maven_base}/all/",
             cargo_index=cargo_index,
             nuget_source=nuget_source,
+            composer_repo=composer_repo,
             rubygems_mirror=rubygems_mirror,
             legacy_hosts=legacy_hosts,
             setup_url=cfg.setup_base(),
@@ -702,26 +707,10 @@ class UI:
             docs=S.docs_url,
             docs_home=S.DOCS,
             tools=S.tools(
-                pypi_index,
-                npm_registry,
-                go_proxy,
-                maven_base,
-                cargo_index,
-                nuget=nuget_source,
-                rubygems=rubygems_mirror,
-                age_days=age_days,
+                *urls, nuget=nuget_source, composer=composer_repo, rubygems=rubygems_mirror, age_days=age_days
             )
             + images,
-            tools_plain=S.tools(
-                pypi_index,
-                npm_registry,
-                go_proxy,
-                maven_base,
-                cargo_index,
-                nuget=nuget_source,
-                rubygems=rubygems_mirror,
-                age_days=0,
-            )
+            tools_plain=S.tools(*urls, nuget=nuget_source, composer=composer_repo, rubygems=rubygems_mirror, age_days=0)
             + images,
             age_days=age_days,
             ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),

@@ -74,6 +74,14 @@ catalog_url = "https://api.nuget.org/v3/catalog0/"  # packageHash (SHA512) of ev
 vulnerability_url = "https://api.nuget.org/v3/vulnerabilities/index.json"  # for NuGetAudit
 search_url = "https://azuresearch-usnc.nuget.org/query"
 
+[upstreams.composer]                   # clients: <public_url>/composer/ as their only Composer repository,
+enabled = true                         # with packagist.org off (docs/design/composer.md)
+fail_open = false                      # brand-new packages are held too (typosquats, dependency confusion)
+repo_url = "https://repo.packagist.org"  # p2 metadata: Packagist's `published-time` is the publish time
+advisories_url = "https://packagist.org/api/security-advisories/"  # for composer audit
+# Hosts dists come from (GitHub's API archive URLs are fetched from codeload.github.com). A restart applies changes.
+download_hosts = ["codeload.github.com", "gitlab.com", "bitbucket.org"]
+
 [upstreams.rubygems]                   # clients: bundle config set --global mirror.https://rubygems.org
 enabled = true                         # <public_url>/rubygems; gem: that URL in ~/.gemrc (docs/design/rubygems.md)
 fail_open = false                      # brand-new gems are held too (typosquats)

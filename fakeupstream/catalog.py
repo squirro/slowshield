@@ -1,5 +1,5 @@
 """Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, nuget.org,
-rubygems.org, OCI images, OSV, GitHub advisories).
+Packagist, rubygems.org, OCI images, OSV, GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import random
+import re
 import tarfile
 import zipfile
 from collections.abc import Iterator
@@ -111,11 +112,11 @@ def _tamper(data: bytes) -> bytes:
 # ---- distribution builders -------------------------------------------------------------------------
 
 
-def _zip(files: dict[str, bytes]) -> bytes:
+def _zip(files: dict[str, bytes], date_time: tuple[int, int, int, int, int, int] = _ZIP_TIME) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name, content in files.items():
-            info = zipfile.ZipInfo(name, date_time=_ZIP_TIME)
+            info = zipfile.ZipInfo(name, date_time=date_time)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             zf.writestr(info, content)
@@ -255,6 +256,35 @@ def make_nupkg(pid: str, version: str, deps: tuple[tuple[str, str], ...] = (), *
     )
 
 
+def composer_reference(name: str, version: str) -> str:
+    """The commit a version's tag points at (a branch: its current commit)."""
+    return hashlib.sha1(f"{name}@{version}".encode(), usedforsecurity=False).hexdigest()
+
+
+def make_composer_zip(
+    name: str, version: str, reference: str, deps: tuple[tuple[str, str], ...] = (), *, archived: int = 0
+) -> bytes:
+    """A GitHub zipball Composer can install: `<owner>-<repo>-<commit>/` with composer.json and one class. `archived`
+    changes the bytes but not the files (GitHub archiving the same commit again)."""
+    vendor, package = name.split("/")
+    stem = f"{vendor}-{package}-{reference[:7]}"
+    manifest = {"name": name, "type": "library", "license": "MIT", "autoload": {"psr-4": {"Fake\\": "src/"}}}
+    if deps:
+        manifest["require"] = dict(deps)
+    cls = "".join(part.capitalize() for part in re.split(r"[^a-z0-9]", package) if part)
+    php = f"<?php\n\nnamespace Fake;\n\nfinal class {cls}\n{{\n    public const VERSION = '{version}';\n}}\n"
+    files = {f"{stem}/composer.json": json.dumps(manifest).encode(), f"{stem}/src/{cls}.php": php.encode()}
+    return _zip(files, (2020, 1, 1 + archived, 0, 0, 0))
+
+
+def _composer_normalized(version: str) -> str:
+    """Packagist's `version_normalized` for the plain versions the catalog uses: `v1.1.0` is `1.1.0.0`."""
+    if version.startswith("dev-"):
+        return version
+    parts = version.removeprefix("v").split(".")
+    return ".".join(parts + ["0"] * (4 - len(parts)))
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -388,6 +418,19 @@ class NugetVersion:
         return self.version.lower()
 
 
+@dataclass(slots=True)
+class ComposerVersion:
+    name: str  # vendor/package
+    version: str  # as tagged: `1.2.0`, `v1.1.0`, `dev-main`
+    published: float | None  # `published-time`, set by Packagist; None: left out
+    time: float  # `time`, the author's date
+    blob: Blob
+    reference: str
+    deps: tuple[tuple[str, str], ...] = ()
+    shasum: bool = False  # Packagist's dist.shasum (empty for GitHub dists)
+    dist_host: str | None = None  # a dist on another host than the fake GitHub
+
+
 NUGET_UNLISTED = "1900-01-01T00:00:00+00:00"
 # nuget.org: 64 versions per registration page, pages inlined up to 128 versions. Small here, so a few versions page.
 NUGET_PAGE_SIZE = 3
@@ -493,6 +536,7 @@ class Catalog:
         self.gems: dict[str, dict[str, GemLine]] = {}  # name -> key -> line, in push order
         self.gem_versions: list[bytes] = []  # /versions lines after the header: one per gem, then one per change
         self._nuget_commits = 0
+        self.composer: dict[str, dict[str, ComposerVersion]] = {}  # name -> version -> entry, newest first
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -778,6 +822,65 @@ class Catalog:
                                                                                      note=" Re-signed."))  # fmt: skip
         self.nuget_commit(nv)
 
+    def add_composer(
+        self,
+        name: str,
+        version: str,
+        age_days: float,
+        *,
+        published: bool = True,
+        time_days: float | None = None,
+        deps: tuple[tuple[str, str], ...] = (),
+        shasum: bool = False,
+        dist_host: str | None = None,
+    ) -> None:
+        """Tag `version` of `name` (or push a branch, `dev-…`), `age_days` ago. `time_days`: the author's `time`, if
+        it differs. Versions are kept newest first, as Packagist lists them, so add them oldest first."""
+        reference = composer_reference(name, version)
+        blob = Blob(key=f"{name}@{reference}.zip", data=make_composer_zip(name, version, reference, deps))
+        when = self.now - age_days * DAY
+        author = self.now - (age_days if time_days is None else time_days) * DAY
+        cv = ComposerVersion(
+            name, version, when if published else None, author, blob, reference, deps, shasum, dist_host
+        )
+        self.composer[name] = {version: cv, **{v: x for v, x in self.composer.get(name, {}).items() if v != version}}
+
+    def composer_rearchive(self, name: str, version: str) -> None:
+        """GitHub archives the commit again: other bytes, the same files."""
+        cv = self.composer[name][version]
+        data = make_composer_zip(name, cv.version, cv.reference, cv.deps, archived=1)
+        cv.blob = Blob(key=f"{name}@{cv.reference}.zip#rearchived", data=data)
+
+    def composer_entry(self, cv: ComposerVersion, base: str) -> dict[str, object]:
+        """The expanded p2 entry, in Packagist's key order. Dists are on the fake GitHub, `<base>/codeload/`."""
+        dist_url = (
+            f"https://{cv.dist_host}/{cv.name}/{cv.reference}.zip"
+            if cv.dist_host
+            else f"{base}/codeload/{cv.name}/legacy.zip/{cv.reference}"
+        )
+        entry: dict[str, object] = {
+            "name": cv.name,
+            "description": f"Fake package {cv.name} for SlowShield's tests",
+            "version": cv.version,
+            "version_normalized": _composer_normalized(cv.version),
+            "license": ["MIT"],
+            "source": {"url": f"https://github.com/{cv.name}.git", "type": "git", "reference": cv.reference},
+            "dist": {
+                "url": dist_url,
+                "type": "zip",
+                "shasum": hashlib.sha1(cv.blob.data or b"", usedforsecurity=False).hexdigest() if cv.shasum else "",
+                "reference": cv.reference,
+            },
+            "type": "library",
+            "time": iso_s(cv.time).replace("Z", "+00:00"),
+            "autoload": {"psr-4": {"Fake\\": "src/"}},
+        }
+        if cv.published is not None:
+            entry["published-time"] = iso_s(cv.published).replace("Z", "+00:00")
+        if cv.deps:
+            entry["require"] = dict(cv.deps)
+        return entry
+
     def add_oci(self, image: str, tag: str, version: str, age_days: float) -> str:
         """Push `version` of `image` (registry/path) and point `tag` at it, `age_days` ago. Returns the index digest."""
         registry, _, path = image.partition("/")
@@ -897,6 +1000,21 @@ class Catalog:
         self.add_nuget("Fake.Partly", "1.0.0", 90)
         self.add_nuget("Fake.Partly", "1.1.0", 60)
         self.add_nuget("Fake.Future", "1.0.0", -30)  # a `published` in the future isn't a publish time
+        # Packagist: `published-time` set by Packagist, `time` by the author (fake/hello 1.2.0 claims a year), dists
+        # on the fake GitHub with an empty shasum. Branches are in the ~dev file.
+        self.add_composer("fake/hello", "1.0.0", 100)
+        self.add_composer("fake/hello", "v1.1.0", 30)
+        self.add_composer("fake/hello", "1.2.0", 2, time_days=400)
+        self.add_composer("fake/hello", "dev-legacy", 60)
+        self.add_composer("fake/hello", "dev-main", 1)
+        self.add_composer("fake/deps", "1.0.0", 50, deps=(("fake/hello", "^1.0"),))
+        self.add_composer("fake/brand-new", "0.1.0", 1 / 24)
+        self.add_composer("fake/evil", "1.0.0", 40)
+        self.add_composer("fake/partly", "1.0.0", 90)
+        self.add_composer("fake/partly", "v1.1.0", 60)
+        self.add_composer("fake/untimed", "1.0.0", 300, published=False)
+        self.add_composer("fake/checked", "1.0.0", 30, shasum=True)
+        self.add_composer("fake/elsewhere", "1.0.0", 30, dist_host="downloads.example.org")
         # rubygems.org: info lines carry `created_at`, one line per version and platform; names are case-sensitive.
         self.add_gem("fake_hello", "1.0.0", 100)
         self.add_gem("fake_hello", "1.1.0", 30)
@@ -1150,6 +1268,24 @@ class Catalog:
             ),
             Advisory(
                 "osv",
+                "Packagist",
+                "MAL-2026-6001",
+                "fake/evil",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in fake/evil (Packagist)",
+            ),
+            Advisory(  # "v1.1" names v1.1.0: Composer versions match in their normalized form
+                "github",
+                "composer",
+                "GHSA-aaaa-0009-0009",
+                "fake/partly",
+                n - 3 * DAY,
+                gh_range="= v1.1",
+                summary="fake/partly 1.1.0 was compromised",
+            ),
+            Advisory(
+                "osv",
                 "RubyGems",
                 "MAL-2026-6001",
                 "evil_gem",
@@ -1190,6 +1326,8 @@ class Catalog:
             self.add_crate(name, version, age_days or 0.0)
         elif ecosystem == "nuget":
             self.add_nuget(name, version, age_days or 0.0)
+        elif ecosystem == "composer":
+            self.add_composer(name, version, age_days or 0.0)
         elif ecosystem == "rubygems":
             self.add_gem(name, version, age_days or 0.0)
         elif ecosystem == "oci":  # name: registry/path:tag

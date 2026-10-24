@@ -71,6 +71,10 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
             "https://www.nuget.org/packages/{name}", "NuGet Gallery",
         ),
         EcosystemInfo(
+            "composer", "PHP", names.normalize_composer, names.is_valid_composer, "Packagist", "composer",
+            "https://packagist.org/packages/{name}", "Packagist",
+        ),
+        EcosystemInfo(
             "rubygems", "Ruby", names.normalize_rubygems, names.is_valid_rubygems, "RubyGems", "rubygems",
             "https://rubygems.org/gems/{name}", "RubyGems.org",
         ),

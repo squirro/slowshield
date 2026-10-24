@@ -138,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="slowshield",
         description=(
-            "Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet, RubyGems and container images."
+            "Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet, Composer, RubyGems and"
+            " container images."
         ),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)

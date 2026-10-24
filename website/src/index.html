@@ -11,7 +11,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SlowShield">
 <meta property="og:title" content="SlowShield — safety through patience">
-<meta property="og:description" content="Known-bad is blocked. Brand-new is held back. A free, open-source supply-chain proxy for PyPI, npm, Go, Maven, crates.io, NuGet and container images — and soon everything that downloads.">
+<meta property="og:description" content="A free, open-source proxy for PyPI, npm, Go modules, Maven, crates.io, NuGet and container images. It blocks known malware, holds brand-new releases back for a few days and verifies every download.">
 <meta property="og:url" content="https://slowshield.org/">
 <meta property="og:image" content="https://slowshield.org/assets/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -75,8 +75,8 @@
     <p class="lead">SlowShield is a free, open-source proxy between your package managers and PyPI, npm, Go, Maven,
       crates.io and NuGet, and between your container runtimes and Docker Hub, GHCR and Quay. It holds
       brand-new releases back for a few days, blocks known malware the moment it is reported and verifies every
-      download. Made for developers and small teams who want supply-chain security that just works, without buying
-      and running an artifact repository manager.</p>
+      download. It is made for developers and small teams that want this protection without buying and running an
+      artifact repository manager.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="#get-started">Set it up for your team</a>
       <a class="btn btn-ghost" href="#how">See how it works ↓</a>
@@ -137,10 +137,10 @@
     <h2>Made for developers and small teams.</h2>
     <p class="lead">Large organisations put an artifact repository manager such as JFrog Artifactory or Sonatype Nexus
       between their builds and the internet, add a repository firewall to keep malware out, and pay people to run it.
-      Most teams can't justify that. SlowShield covers the part that keeps you safe, in one small container you start in
-      a minute, with near-zero&nbsp;upkeep.</p>
+      Most teams can't justify that. SlowShield covers the security part: one small container that starts in a minute
+      and needs little&nbsp;maintenance.</p>
     <ul class="fit">
-      <li><strong>Free and open source.</strong> Free as in free 🍺, and open source under the Apache-2.0 licence.</li>
+      <li><strong>Free and open source.</strong> No licence fees, and the source is open under the Apache-2.0 licence.</li>
       <li><strong>Nothing to administer.</strong> No database server, no repositories to configure, no admin team.</li>
       <li><strong>One policy for every tool.</strong> Per-tool settings such as npm's <code>min-release-age</code> help on one
         machine; SlowShield applies the same rules to every laptop, CI runner and package manager.</li>
@@ -148,8 +148,9 @@
   </div>
   <div class="cards">
     <article class="card reveal"><div class="ico ico-shield"></div><h3>Safe by default</h3>
-      <p>A seven-day delay, malware blocking and verification out of the box. Brand-new packages still install
-        (and are flagged) so nobody's day is ruined. Urgent fix? Release a single version early with one line of config.</p></article>
+      <p>A seven-day delay, malware blocking and verification by default. A package whose versions are all too new
+        still installs on PyPI and npm, and is recorded, so builds don't break. An urgent fix can be released early with
+        one line of configuration.</p></article>
     <article class="card reveal"><div class="ico ico-stream"></div><h3>Advisory streams built in</h3>
       <p>OSV / OpenSSF malicious-packages and the GitHub Advisory Database sync every hour. Feed health is monitored and
         alerted on. CVE-aware policies are next on the roadmap.</p></article>
@@ -160,12 +161,12 @@
       <p>A fast dashboard: installs and trends, newly introduced dependencies, versions waiting in line, and a security
         timeline down to the machine that tried to install malware.</p></article>
     <article class="card reveal"><div class="ico ico-leaf"></div><h3>Kind to public registries</h3>
-      <p>One verified download per artifact instead of one per laptop and per pipeline run — with HTTP/2, conditional
-        requests and a shared cache. Open-source infrastructure is a commons; treat it like one.</p></article>
+      <p>One verified download per artifact instead of one per laptop and per pipeline run, with HTTP/2, conditional
+        requests and a shared cache. That takes load off the community-run registries.</p></article>
     <article class="card reveal"><div class="ico ico-chart"></div><h3>Observable</h3>
       <p>OpenTelemetry metrics, logs and traces, with ready-made Grafana dashboards and alerts for blocked malware,
         tampering, stale feeds and errors.</p></article>
-    <article class="card reveal"><div class="ico ico-box"></div><h3>Hardened all the way down</h3>
+    <article class="card reveal"><div class="ico ico-box"></div><h3>Hardened images and builds</h3>
       <p>Distroless Amazon Linux 2023 images, non-root and read-only. TLS 1.3 with post-quantum key exchange and
         HTTP/3. Strict CSP. Pinned, audited CI. Every release load-tested against the last.</p></article>
     <article class="card reveal"><div class="ico ico-rocket"></div><h3>Deploys in minutes</h3>
@@ -178,9 +179,9 @@
 <section class="ecosystems" id="ecosystems">
   <div class="section-head reveal">
     <p class="eyebrow">Ecosystems &amp; roadmap</p>
-    <h2>Python, JavaScript, Go, Java, Rust, C# and containers today.<br>Everything under the sun tomorrow.</h2>
-    <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield grows one ecosystem at a time —
-      same policy, same dashboard, same guarantees.</p>
+    <h2>Supported today: Python, JavaScript, Go, Java, Rust, C# and container images.</h2>
+    <p class="lead">Anything that pulls artifacts from the internet is a way in. SlowShield adds one ecosystem at a time,
+      each with the same delay, malware blocking, checks and dashboard.</p>
   </div>
   <div class="sun" aria-hidden="true">
     <div class="sun-core"><svg class="mark" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><use href="#ss-mark"/></svg></div>
@@ -245,18 +246,18 @@
 
 <!-- ============================== WHY ============================== -->
 <section class="why reveal-group" id="why">
-  <h2 class="reveal">The newest version is the riskiest one you will ever install.</h2>
+  <h2 class="reveal">A release carries the most risk in its first days.</h2>
   <div class="why-grid">
     <p class="reveal big">Supply-chain attacks follow the same script: steal a maintainer's token, publish a poisoned
       release, collect secrets from everyone who installs it before anyone notices.
-      Detection takes hours or days. Your package manager takes milliseconds.</p>
+      Finding such a release takes hours or days, while a package manager installs it the moment it is published.</p>
     <div class="stats reveal">
       <div class="stat"><span class="num count" data-to="40">40</span><span class="unit">min</span>
         <p>that the backdoored LiteLLM releases were live on PyPI in March 2026 — long enough to land on thousands of machines.</p></div>
       <div class="stat"><span class="num count" data-to="7">7</span><span class="unit">days</span>
-        <p>SlowShield's default patience. Long enough for the community, the registries and the threat feeds to catch up.</p></div>
+        <p>SlowShield's default delay, long enough for the registries and the advisory feeds to catch most malicious releases.</p></div>
       <div class="stat"><span class="num">0</span><span class="unit">changes</span>
-        <p>to your code, commands or lockfiles. Same packages, one different URL.</p></div>
+        <p>to your code, commands or lockfiles. Only the index URL changes.</p></div>
     </div>
   </div>
 </section>
@@ -324,11 +325,11 @@
           <p>It is the newest version, so the same machines install it just as fast as 2.4.0, and run it.</p>
         </li>
         <li class="step" data-step="6">
-          <h3>Your secrets leave.</h3>
+          <h3>Your secrets are sent to the attacker.</h3>
           <p>The payload collects tokens, cloud keys and passwords from every machine and sends them to a server the attacker controls. Nobody on your side did anything wrong.</p>
         </li>
         <li class="step" data-step="7">
-          <h3>Then your users are next.</h3>
+          <h3>The attack spreads to your users.</h3>
           <p>With your publish tokens and keys, the attacker releases a poisoned version of your own package or app, as you, and your users install it. That is how the Shai-Hulud worm spread through hundreds of npm packages, in 2025 and again in 2026.</p>
         </li>
       </ol>
@@ -374,7 +375,7 @@
           <p>Point pip, uv, npm, pnpm, Yarn, Bun, go, Maven, Gradle, Cargo, dotnet, Docker, Podman and the rest at it. Same packages, same commands, same lockfiles.</p>
         </li>
         <li class="step" data-step="9">
-          <h3>2.4.1 waits.</h3>
+          <h3>2.4.1 is held back.</h3>
           <p>A release younger than the delay (7 days by default) isn't offered yet. A lockfile pinned to it gets a clear answer: <em>try again in 6 days</em>.</p>
         </li>
         <li class="step" data-step="10">
@@ -390,8 +391,8 @@
           <p>Say someone replaces the file behind 2.4.0. SlowShield checks every download against the registry's digest and the fingerprint it recorded the first time, cuts the transfer off and alerts your team.</p>
         </li>
         <li class="step" data-step="13">
-          <h3>Fetched once, served to everyone.</h3>
-          <p>One SlowShield serves every laptop, runner and build. Each file comes from the registry once and from the cache after that: faster installs, calm during outages, and one download instead of hundreds.</p>
+          <h3>Each file is downloaded once.</h3>
+          <p>One SlowShield serves every laptop, runner and build. Each file comes from the registry once and from the cache after that, so installs are faster, keep working while a registry is down, and cause one download instead of hundreds.</p>
         </li>
       </ol>
     </div>
@@ -402,7 +403,7 @@
 <section class="layers" id="layers">
   <div class="section-head reveal">
     <p class="eyebrow">Two layers</p>
-    <h2>Let your package manager wait, too.</h2>
+    <h2>Turn on the package manager's own release-age setting as well.</h2>
     <p class="lead">Most package managers can now refuse brand-new releases on their own. Turn that on as well, a
       little shorter than SlowShield: 7 days in SlowShield, 3 in the package manager. On a normal day only SlowShield
       holds anything back. When something gets past it, the package manager still waits.</p>
@@ -464,21 +465,31 @@
   <div class="section-head reveal">
     <p class="eyebrow">Keep your proxy close</p>
     <h2>Put one next to every team, server and build farm.</h2>
-    <p class="lead">SlowShield is also a verified, very fast cache. Each instance is one small container — no database
-      server, no coordination — so run a bunch of them: per office, per region, per CI cluster. Every artifact is
-      fetched from the public registry once, then served at local-network speed.</p>
+    <p class="lead">SlowShield is also a verified cache. Each instance is one small container with an embedded database,
+      so you can run one per office, region or CI cluster, and each serves its machines at local-network speed. The
+      instances can stand together as a shield wall: one leader holds the policy and shows the traffic of all of them,
+      and the others follow it. The followers fetch package files through the leader, so each file comes from the public
+      registry once for the whole wall, and a follower keeps working on its own while the leader is down.</p>
   </div>
   <div class="edge-map reveal" aria-hidden="true">
     <svg viewBox="0 0 900 360" class="edge-svg">
       <g class="edge-registry" transform="translate(390 20)">
         <rect width="120" height="56" rx="12"/><text x="60" y="34">public registries</text>
       </g>
-      <path class="trunk t1" d="M450 76 C450 130 150 130 150 190"/>
+      <!-- A shield wall: package files reach the followers through the leader; their indexes still come from the
+           registries. -->
+      <path class="trunk faint t1" d="M450 76 C450 130 150 130 150 190"/>
       <path class="trunk t2" d="M450 76 C450 140 450 140 450 190"/>
-      <path class="trunk t3" d="M450 76 C450 130 750 130 750 190"/>
-      <g class="edge-node n1" transform="translate(120 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="-18" y="46" class="en-label end" data-loc="office">Office · San Francisco</text></g>
-      <g class="edge-node n2" transform="translate(420 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="78" y="46" class="en-label start">GitHub runners</text></g>
-      <g class="edge-node n3" transform="translate(720 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="78" y="46" class="en-label start" data-loc="prod">Production · us-east-1</text></g>
+      <path class="trunk faint t3" d="M450 76 C450 130 750 130 750 190"/>
+      <text class="en-note" x="262" y="118">indexes</text>
+      <text class="en-note" x="638" y="118">indexes</text>
+      <path class="wall-link" d="M404 236 H198"/>
+      <path class="wall-link" d="M496 236 H702"/>
+      <text class="en-note en-files" x="301" y="254">package files</text>
+      <text class="en-note en-files" x="599" y="254">package files</text>
+      <g class="edge-node n1" transform="translate(120 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="-18" y="46" class="en-label end" data-loc="office">Office · San Francisco</text><text x="-18" y="64" class="en-role end">follower</text></g>
+      <g class="edge-node n2" transform="translate(420 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="78" y="10" class="en-label start">Head office</text><text x="78" y="28" class="en-role start">leader</text></g>
+      <g class="edge-node n3" transform="translate(720 190)"><use href="#ss-mark" class="en-mark" x="-14" y="-6" width="88" height="88"/><text x="78" y="46" class="en-label start" data-loc="prod">Production · us-east-1</text><text x="78" y="64" class="en-role start">follower</text></g>
       <g class="fan f1"><path d="M150 272 L80 330"/><path d="M150 272 L150 330"/><path d="M150 272 L220 330"/></g>
       <g class="fan f2"><path d="M450 272 L360 330"/><path d="M450 272 L410 330"/><path d="M450 272 L450 330"/><path d="M450 272 L490 330"/><path d="M450 272 L540 330"/></g>
       <g class="fan f3"><path d="M750 272 L690 330"/><path d="M750 272 L750 330"/><path d="M750 272 L810 330"/></g>
@@ -492,10 +503,11 @@
   </div>
   <div class="edge-benefits">
     <div class="benefit reveal"><span class="b-ico">⚡</span><h3>Faster builds</h3>
-      <p>Dependencies come from the rack next door instead of another continent. Cache hits are sent zero-copy straight
-        from disk.</p></div>
+      <p>Dependencies come from a nearby instance instead of a registry on another continent. Cache hits are sent
+        zero-copy from disk.</p></div>
     <div class="benefit reveal"><span class="b-ico">⇣</span><h3>Less bandwidth</h3>
-      <p>One upstream download per artifact per site — not one per laptop, per container build, per CI job.</p></div>
+      <p>One upstream download per artifact for a whole shield wall, instead of one per laptop, container build and
+        CI job.</p></div>
     <div class="benefit reveal"><span class="b-ico">♺</span><h3>Lower cost for everyone</h3>
       <p>Less egress and transit for you, less load on the community-run registries that the whole ecosystem relies on.</p></div>
   </div>
@@ -505,9 +517,9 @@
 <section class="team-setup" id="team-setup">
   <div class="section-head reveal">
     <p class="eyebrow">Best practice for teams</p>
-    <h2>Every machine goes through SlowShield. Nothing goes around it.</h2>
-    <p class="lead">Run one SlowShield for the team, point every laptop, server and CI runner at it, then close the side doors:
-      only SlowShield may reach the public registries. A forgotten setting or a script with its own index URL can no longer
+    <h2>Send every install through SlowShield and block direct access to the registries.</h2>
+    <p class="lead">Run one SlowShield for the team, point every laptop, server and CI runner at it, and let only
+      SlowShield reach the public registries. A forgotten setting or a script with its own index URL can no longer
       skip the delay or the malware check.</p>
   </div>
   <figure class="team-map reveal" aria-labelledby="team-map-cap">
@@ -550,7 +562,7 @@
       <p>The same three settings everywhere: in each developer's shell, as <code>ENV</code> in your base images, and on every CI job.</p>
     </li>
     <li class="reveal">
-      <h3><span>3</span> Close the side doors</h3>
+      <h3><span>3</span> Block direct access to the registries</h3>
       <p>At the firewall or proxy, allow outbound HTTPS to the registries only from SlowShield, or answer their names in
         your internal DNS for everyone else. SlowShield itself only needs the registries and its advisory feeds.</p>
     </li>
@@ -561,16 +573,18 @@
 <section class="tailscale" id="tailscale">
   <div class="section-head reveal">
     <p class="eyebrow">Works great with Tailscale</p>
-    <h2>Many SlowShields.<br>One name.</h2>
+    <h2>Several SlowShields behind one Tailscale name.</h2>
     <p class="lead">Run a SlowShield in every region or office and put them all behind one
       <a href="https://tailscale.com/docs/features/tailscale-services" rel="noopener noreferrer">Tailscale Service</a>.
       Laptops, servers and CI runners on your tailnet use a single URL, and Tailscale sends each of them to an instance
-      that's up. Nothing is exposed to the internet, Tailscale takes care of the HTTPS certificate, and there's no load
-      balancer to run.</p>
+      that is up. Nothing is exposed to the internet, Tailscale issues the HTTPS certificate, and there is no load
+      balancer to run. Make the instances a shield wall and every client gets the same policy, whichever instance it
+      reaches. We run SlowShield this way: a leader in Nuremberg and followers in Singapore and in a Kubernetes cluster
+      in Ohio serve one Tailscale Service.</p>
   </div>
   <figure class="team-map ts-map reveal" aria-labelledby="ts-map-cap">
     <svg viewBox="0 0 960 524" class="team-svg ts-svg" role="img" aria-labelledby="ts-map-t">
-      <title id="ts-map-t">Clients on the tailnet use one Tailscale Service name and reach a SlowShield instance, with regional routing the nearest one; each instance fetches from the public registries.</title>
+      <title id="ts-map-t">Clients on the tailnet use one Tailscale Service name and reach a SlowShield instance, with regional routing the nearest one. The instances form a shield wall: Frankfurt leads, Virginia and Singapore follow, and all of them fetch from the public registries.</title>
       <rect class="tm-zone" x="1" y="1" width="958" height="414" rx="22"/>
       <text class="tm-zone-label" x="26" y="34">Your tailnet</text>
       <path class="tm-link" d="M180 132 V248"/>
@@ -585,16 +599,16 @@
       <use href="#ss-mark" class="tm-mark" x="134" y="248" width="92" height="92"/>
       <use href="#ss-mark" class="tm-mark" x="434" y="248" width="92" height="92"/>
       <use href="#ss-mark" class="tm-mark" x="734" y="248" width="92" height="92"/>
-      <text class="tm-label" x="180" y="362">Frankfurt</text><text class="tm-sub" x="180" y="381">eu-central-1</text>
-      <text class="tm-label" x="480" y="362">Virginia</text><text class="tm-sub" x="480" y="381">us-east-1</text>
-      <text class="tm-label" x="780" y="362">Singapore</text><text class="tm-sub" x="780" y="381">ap-southeast-1</text>
+      <text class="tm-label" x="180" y="362">Frankfurt</text><text class="tm-sub" x="180" y="381">eu-central-1 · leader</text>
+      <text class="tm-label" x="480" y="362">Virginia</text><text class="tm-sub" x="480" y="381">us-east-1 · follower</text>
+      <text class="tm-label" x="780" y="362">Singapore</text><text class="tm-sub" x="780" y="381">ap-southeast-1 · follower</text>
       <path class="tm-out" d="M180 394 C180 432 480 420 480 456"/>
       <path class="tm-out" d="M480 394 V456"/>
       <path class="tm-out" d="M780 394 C780 432 480 420 480 456"/>
       <g class="tm-reg" transform="translate(370 456)"><rect width="220" height="66" rx="16"/><text x="110" y="30" class="tm-title tm-c">Public registries</text>
         <text x="110" y="52" class="tm-host">pypi.org · registry.npmjs.org</text></g>
     </svg>
-    <figcaption id="ts-map-cap" class="sr-only">Every client uses the same Tailscale Service name and reaches a SlowShield instance, with regional routing the nearest one, which fetches from the public registries.</figcaption>
+    <figcaption id="ts-map-cap" class="sr-only">Every client uses the same Tailscale Service name and reaches a SlowShield instance, with regional routing the nearest one. Frankfurt is the shield wall's leader; Virginia and Singapore follow it. Each instance fetches from the public registries.</figcaption>
   </figure>
   <ol class="quick-steps ts-steps">
     <li class="qbox reveal">
@@ -603,8 +617,11 @@
   -v slowshield:/data \
   -e SLOWSHIELD_PUBLIC_URL=https://slowshield.your-tailnet.ts.net \
   ghcr.io/squirro/slowshield:{{release}}</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
-      <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache; they
-        never need to talk to each other.</p>
+      <p class="muted small">One per region or office, on a small VM or server. Each keeps its own verified cache and
+        works on its own. For one policy and one dashboard, start one with <code>SLOWSHIELD_SHIELDWALL_ROLE=leader</code>
+        and the others with a join string from its <code>slowshield wall invite</code> (<a
+        href="https://github.com/squirro/slowshield/blob/main/docs/design/shieldwall.md" rel="noopener noreferrer">shield
+        wall</a>).</p>
     </li>
     <li class="qbox reveal">
       <h3><span>2</span> Put them behind one service</h3>
@@ -642,8 +659,8 @@ sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code><
 <section class="agents" id="agents">
   <div class="section-head reveal">
     <p class="eyebrow">Agent sandboxes</p>
-    <h2>Good for humans and agents.</h2>
-    <p class="lead">Don't let your autonomous agents trip into supply-chain attacks. Coding agents run
+    <h2>Use it for coding agents too.</h2>
+    <p class="lead">Coding agents run
       <code>pip install</code>, <code>npm install</code>, <code>npx</code> and <code>uvx</code> on their own, and nobody
       reads the output. Give their sandboxes the same SlowShield as your laptops.</p>
   </div>
@@ -691,12 +708,12 @@ slowshield.example.com
 <section class="start" id="get-started">
   <div class="section-head reveal">
     <p class="eyebrow">Get started</p>
-    <h2>Up and running before your coffee is cold.</h2>
+    <h2>Set it up in three steps.</h2>
   </div>
   <h3 class="start-sub">Run it for your team</h3>
   <p class="muted start-images">Images: <code>ghcr.io/squirro/slowshield</code> and <code>ghcr.io/squirro/slowshield-caddy</code>,
     for amd64 and arm64, each with an SBOM and build provenance attached. Pin a release (<code>:{{release}}</code>) or a digest
-    in production.</p>
+    in production. The <a href="/changelog/">changelog</a> lists what changed in each release.</p>
   <ol class="start-steps">
     <li class="reveal">
       <h3><span>1</span> Run it</h3>
@@ -737,7 +754,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     <li class="reveal">
       <h3><span>3</span> Watch it work</h3>
       <p>Open the dashboard to see what your organisation installs, which versions are waiting and what was blocked.
-        Add a GitHub token to enable the second advisory stream — SlowShield tells you how, right in the UI.</p>
+        Add a GitHub token to enable the second advisory feed; the dashboard explains how.</p>
     </li>
   </ol>
 </section>
@@ -746,12 +763,12 @@ helm install slowshield slowshield/deploy/helm/slowshield \
 <section class="pricing" id="pricing">
   <div class="section-head reveal">
     <p class="eyebrow">Pricing</p>
-    <h2>One plan.</h2>
+    <h2>Free for everyone.</h2>
   </div>
   <article class="plan-card reveal">
     <header>
       <h3>Free &amp; open source</h3>
-      <p class="price"><span class="amount">$0</span><span class="per">forever, for everyone</span></p>
+      <p class="price"><span class="amount">$0</span><span class="per">for every team and every use</span></p>
     </header>
     <ul class="plan">
       <li>Every feature: release delay, malware blocking, integrity checks, verified cache, dashboard</li>
@@ -779,7 +796,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     </figure>
     <div class="author-story">
       <p class="eyebrow">The story</p>
-      <h2>Built overnight, because we needed it.</h2>
+      <h2>Why we built SlowShield</h2>
       <p>In March 2026 the TeamPCP campaign turned trusted security tooling into a delivery mechanism: a compromised
         Trivy release leaked CI credentials, and within days backdoored packages were landing on PyPI. Mere
         minutes after one went live, one of our build servers pulled it. We caught it quickly and contained it before any
@@ -828,7 +845,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
 
 <!-- ============================== CLOSING CTA ============================== -->
 <section class="closing reveal">
-  <h2>Give every release a week to prove itself.</h2>
+  <h2>Hold new releases back for a week before they reach your machines.</h2>
   <p class="lead">Free and open source under the Apache 2.0 license.</p>
   <div class="cta-row">
     <a class="btn btn-primary" href="#get-started">Get started</a>
@@ -844,6 +861,7 @@ helm install slowshield slowshield/deploy/helm/slowshield \
     <a href="https://x.com/SlowShieldProxy" rel="noopener noreferrer">X</a>
     <a href="https://github.com/squirro/slowshield/pkgs/container/slowshield" rel="noopener noreferrer">Images</a>
     <a href="/docs/">Docs</a>
+    <a href="/changelog/">Changelog</a>
     <a href="https://github.com/squirro/slowshield/security/policy" rel="noopener noreferrer">Security</a>
     <a href="/brand/">Brand</a>
     <a href="https://github.com/squirro/slowshield/blob/main/LICENSE" rel="noopener noreferrer">Apache-2.0</a>

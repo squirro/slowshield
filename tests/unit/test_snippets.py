@@ -118,7 +118,7 @@ def test_ruby_tools_mirror_rubygems_org_and_make_slowshield_gems_only_source() -
     assert not any("fallback" in code for _, code in bundler.snippets)
     assert gem.snippets[0][1] == "---\n:sources:\n- https://h/rubygems/"
     assert gem.snippets[1][1] == "printf -- '---\\n:sources:\\n- %s\\n' https://h/rubygems/ > ~/.gemrc"
-    assert "Bundler has, from 4.0.13" in gem.age
+    assert gem.age == S.NO_AGE_DEFAULT
     assert S.docs_url("rubygems", "Bundler") == f"{S.DOCS}ruby/#bundler"
     with pytest.raises(ValueError, match="refusing"):
         S.tools(*urls, nuget="n", rubygems="https://h/rubygems'$(id)'")

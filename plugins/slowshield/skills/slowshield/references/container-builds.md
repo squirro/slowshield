@@ -32,6 +32,7 @@ A build container doesn't read your shell profile or your `~/.m2`. Give each sta
 | Java (Gradle) | the init script in `/root/.gradle/init.d/` ([Java](https://slowshield.org/docs/java/#gradle)) |
 | Rust | Cargo's `config.toml`, written in a `RUN` step ([Rust](https://slowshield.org/docs/rust/#docker)) |
 | C# (NuGet) | a `NuGet.Config` with SlowShield as the only source, written in a `RUN` step ([C#](https://slowshield.org/docs/csharp/#docker)) |
+| Ruby (Bundler, gem) | Bundler's mirror and `~/.gemrc`, set in a `RUN` step ([Ruby](https://slowshield.org/docs/ruby/#docker)) |
 
 A complete example, a Go service on a distroless base:
 

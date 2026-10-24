@@ -142,7 +142,6 @@ AGE_SUPPORT = {
 }
 NO_AGE = {
     "Cargo": "Cargo's own setting (min-publish-age) isn't stable yet: SlowShield is the only layer.",
-    "gem": "gem has no release-age setting of its own (Bundler has, from 4.0.13): SlowShield is the only layer.",
 }
 NO_AGE_DEFAULT = "No release-age setting of its own: SlowShield is the only layer."
 

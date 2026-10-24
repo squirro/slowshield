@@ -66,7 +66,7 @@ SITE_URLS = {
 DOCS = HERE / "docs"
 DOCS_NAV = (
     ("", "Overview"), ("python", "Python"), ("javascript", "JavaScript"), ("go", "Go"), ("java", "Java"),
-    ("rust", "Rust"), ("csharp", "C#"), ("containers", "Container images"), ("container-builds", "Building images"),
+    ("rust", "Rust"), ("csharp", "C#"), ("ruby", "Ruby"), ("containers", "Container images"), ("container-builds", "Building images"),
     ("shieldwall", "Shield wall"), ("agents", "Agents"),
 )  # fmt: skip
 EXAMPLE = "https://slowshield.example.com"
@@ -76,7 +76,9 @@ EXAMPLE_REGISTRIES = (
 DOCS_MARKER = re.compile(r"<!-- @(tools|example) ([a-z.-]+) -->")
 # The Agent Skill: SKILL.md is written by hand, its references are the guide's pages as Markdown.
 SKILL = HERE.parent / "plugins" / "slowshield" / "skills" / "slowshield"
-SKILL_PAGES = ("python", "javascript", "go", "java", "rust", "csharp", "containers", "container-builds", "agents")
+SKILL_PAGES = (
+    "python", "javascript", "go", "java", "rust", "csharp", "ruby", "containers", "container-builds", "agents",
+)  # fmt: skip
 # The release the site's commands run. CI passes the latest published GitHub Release (`--release`): the release
 # workflow creates it only once the images are tagged, then redeploys the site (docs/releasing.md). Local builds
 # default to pyproject.toml's version.

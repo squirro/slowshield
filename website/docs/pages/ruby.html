@@ -1,0 +1,81 @@
+<!-- title: Ruby | description: Use SlowShield as a mirror of rubygems.org for Bundler and as the source for gem: setup, held versions and platform gems, Gemfile.lock, 425 Too Early, and Docker builds. -->
+<h1>Ruby</h1>
+<p class="lead">SlowShield serves rubygems.org at <code>https://slowshield.example.com/rubygems</code>. Bundler uses it
+  as a mirror of rubygems.org, so Gemfiles and <code>Gemfile.lock</code> keep naming rubygems.org; <code>gem</code>
+  uses it as its only source.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>Both settings live in your home directory and cover every project on the machine:</p>
+<!-- @tools ruby -->
+<ul>
+  <li><strong>A mirror, not a new <code>source</code>.</strong> Gemfiles keep <code>source "https://rubygems.org"</code>,
+    and <code>Gemfile.lock</code> keeps <code>remote: https://rubygems.org/</code> and its checksums, so a project builds
+    the same with or without SlowShield.</li>
+  <li><strong>No <code>fallback_timeout</code>.</strong> With
+    <code>mirror.https://rubygems.org.fallback_timeout</code> set, Bundler goes to rubygems.org when SlowShield doesn't
+    answer in time.</li>
+  <li><strong>The mirror covers <code>https://rubygems.org</code> only.</strong> Other gem servers, <code>git:</code>
+    and <code>github:</code> gems, and a Gemfile that says <code>source "http://rubygems.org"</code> go around it.</li>
+  <li><strong>Leave rubygems.org out of <code>~/.gemrc</code>.</strong> <code>gem</code> asks every source it lists.
+    <code>gem sources</code> shows them.</li>
+</ul>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is the <code>created_at</code> rubygems.org writes for every version in its
+    index. The first one SlowShield sees is kept, so it can't move earlier.</li>
+  <li><strong>Held versions are left out</strong> of the index Bundler and <code>gem install</code> read, so
+    <code>bundle update</code>, <code>bundle add</code> and <code>gem install</code> pick the newest version that is old
+    enough.</li>
+  <li><strong>Platform gems wait on their own.</strong> Every platform gem (<code>nokogiri-1.19.4-x86_64-linux-gnu</code>)
+    is pushed separately, with its own time. One pushed today for a version that is a year old waits like a new version,
+    and Bundler installs the plain gem of that version, or an older version, meanwhile.</li>
+  <li><strong>A <code>Gemfile.lock</code> that pins a held version</strong> fails, because Bundler can't find it in the
+    index:
+    <div class="code"><pre><code>Your bundle is locked to rubocop (1.92.1) from rubygems repository https://rubygems.org/ or installed locally, but that version can no longer be found in that source.</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+    Bundler says the author removed it; here it means the version is younger than the delay.
+    <code>bundle update rubocop</code> picks the newest version that is old enough.</li>
+  <li><strong>Asking for the gem file itself</strong> gets <code>425 Too Early</code> with <code>Retry-After</code>;
+    Bundler and <code>gem</code> show only the status line, curl the message.</li>
+  <li><strong>Brand-new gems</strong> none of whose versions is old enough are held too: RubyGems doesn't fail open,
+    because brand-new gems are the realistic attack (typosquats). Bundler and <code>gem</code> say they can't find the
+    gem.</li>
+  <li><strong>Malware</strong> from OSV and GitHub is refused: left out of the index, and <code>451</code> for the
+    file. Every <code>.gem</code> is checked against the sha256 in rubygems.org's index and the fingerprint SlowShield
+    recorded the first time, and never changed, so <code>Gemfile.lock</code> <code>CHECKSUMS</code> keep matching.</li>
+</ul>
+
+<h2 id="two-layers">The second layer</h2>
+<p>Bundler 4.0.13 and later have a release age of their own, <code>cooldown</code>, in days. It reads the same
+  <code>created_at</code>, which SlowShield passes on unchanged. <code>gem</code> has none: there, SlowShield is the only
+  layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>Run the commands in the build stage, before <code>bundle install</code>. With a build argument, the same Dockerfile
+  still builds without SlowShield when the argument is empty:</p>
+<div class="code"><pre><code>FROM ruby:3.4
+ARG RUBYGEMS_MIRROR=https://slowshield.example.com/rubygems
+RUN if [ -n "$RUBYGEMS_MIRROR" ]; then \
+      bundle config set --global mirror.https://rubygems.org "$RUBYGEMS_MIRROR" &amp;&amp; \
+      printf -- '---\n:sources:\n- %s/\n' "$RUBYGEMS_MIRROR" &gt; ~/.gemrc; fi
+WORKDIR /app
+COPY Gemfile Gemfile.lock ./
+RUN bundle install
+COPY . .</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>In CI, run the Setup page's commands before <code>bundle install</code>. <code>ruby/setup-ruby</code> with
+  <code>bundler-cache: true</code> installs the gems within its own step, before any command of yours can run: leave
+  it off and run <code>bundle install</code> after the commands. <a href="/docs/container-builds/">Building images</a> covers the base
+  image too, and how to check that nothing in a build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li><code>gem search</code>, <code>gem list --remote</code>, <code>gem outdated</code> and <code>gem update</code> need
+    rubygems.org's full index, which lists every gem without times and so can't be filtered: they find nothing through
+    SlowShield, and <code>gem update --system</code> fails. <code>bundle outdated</code> and <code>bundle update</code>
+    work.</li>
+  <li>Checked with Bundler 2.4, 2.6 and 4.0 and RubyGems 3.6.</li>
+  <li>Not served: publishing (<code>gem push</code>, <code>yank</code> and <code>owner</code> go to rubygems.org), and
+    other gem servers.</li>
+  <li>Gems already installed, or in Bundler's cache, are used without asking SlowShield.</li>
+  <li>Block rubygems.org and index.rubygems.org at the firewall for machines that should only use SlowShield.</li>
+</ul>

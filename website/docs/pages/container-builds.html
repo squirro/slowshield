@@ -36,6 +36,7 @@
     <tr><td>Java (Gradle)</td><td>the init script in <code>/root/.gradle/init.d/</code> (<a href="/docs/java/#gradle">Java</a>)</td></tr>
     <tr><td>Rust</td><td>Cargo's <code>config.toml</code>, written in a <code>RUN</code> step (<a href="/docs/rust/#docker">Rust</a>)</td></tr>
     <tr><td>C# (NuGet)</td><td>a <code>NuGet.Config</code> with SlowShield as the only source, written in a <code>RUN</code> step (<a href="/docs/csharp/#docker">C#</a>)</td></tr>
+    <tr><td>Ruby (Bundler, gem)</td><td>Bundler's mirror and <code>~/.gemrc</code>, set in a <code>RUN</code> step (<a href="/docs/ruby/#docker">Ruby</a>)</td></tr>
   </tbody>
 </table></div>
 <p>A complete example, a Go service on a distroless base:</p>

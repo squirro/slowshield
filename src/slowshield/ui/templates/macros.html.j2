@@ -19,7 +19,7 @@
 {% macro scope_select(current, choices) -%}
 <label class="scope"><span class="sr-only">Instances</span><select name="in" data-autosubmit>
   <option value="">Whole shield wall</option>
-  <option value="self"{% if current == "self" %} selected{% endif %}>This instance</option>
+  <option value="self"{% if current == "self" %} selected{% endif %}>This instance{% if choices.self %} · {{ choices.self }} (leader){% endif %}</option>
   {% for group, label in (("members", "Followers"), ("locations", "Locations"), ("labels", "Labels")) %}
   {% if choices[group] %}<optgroup label="{{ label }}">{% for value, text in choices[group] %}<option value="{{ value }}"{% if current == value %} selected{% endif %}>{{ text }}</option>{% endfor %}</optgroup>{% endif %}
   {% endfor %}

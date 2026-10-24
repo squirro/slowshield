@@ -14,12 +14,20 @@
     <p class="muted">This instance leads {{ members|length }} follower{{ "s" if members|length != 1 }}. They take its policy and blocks, send their statistics and events here, and fetch package files through it. Each keeps working on its own when this instance is down.</p></div>
 </div>
 <section class="card">
-  <header class="card-head"><h2>Followers</h2><a href="/ui/{{ qs({}) }}">Whole shield wall on the overview →</a></header>
-  {% if members %}
+  <header class="card-head"><h2>Instances</h2><a href="/ui/{{ qs({}) }}">Whole shield wall on the overview →</a></header>
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Name</th><th>Location</th><th>Labels</th><th>Version</th><th>Last seen</th><th class="num">Served (24h)</th><th class="num">Queued</th></tr></thead>
+    <thead><tr><th>Name</th><th>Location</th><th>Labels</th><th>Version</th><th>Last seen</th><th class="num">Queued</th></tr></thead>
     <tbody>
+      <tr>
+        <td><a href="/ui/{{ qs({'in': 'self'}) }}">{{ leader_node.name }}</a> <span class="badge">leader</span>
+          <div class="muted small mono">{{ leader_node.id }}</div></td>
+        <td>{% if leader_node.location %}<a href="/ui/{{ qs({'in': 'loc:' ~ leader_node.location}) }}">{{ leader_node.location }}</a>{% else %}—{% endif %}</td>
+        <td>{% for k, v in leader_node.labels.items() %}<a class="badge" href="/ui/{{ qs({'in': 'label:' ~ k ~ '=' ~ v}) }}">{{ k }}={{ v }}</a> {% else %}—{% endfor %}</td>
+        <td><code>{{ leader_node.version }}</code></td>
+        <td>this instance</td>
+        <td class="num">—</td>
+      </tr>
     {% for f in members %}
       {% set stale = not f.last_seen or now - f.last_seen > 300 %}
       <tr>
@@ -29,14 +37,36 @@
         <td>{% for k, v in f.labels.items() %}<a class="badge" href="/ui/{{ qs({'in': 'label:' ~ k ~ '=' ~ v}) }}">{{ k }}={{ v }}</a> {% else %}—{% endfor %}</td>
         <td><code>{{ f.version or "—" }}</code></td>
         <td{% if stale and f.state == "active" %} class="warn-text"{% endif %}>{{ ago(f.last_seen) }}</td>
-        <td class="num">{{ f.serves|num }}</td>
         <td class="num">{{ f.status.get("outbox_lag", 0)|num }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
-  {% else %}<p class="empty">No followers yet.</p>{% endif %}
+  {% if not members %}<p class="empty">No followers yet.</p>{% endif %}
+</section>
+<section class="card">
+  <header class="card-head"><h2>Traffic per instance, last 24 hours</h2></header>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Instance</th><th class="num">Installs</th><th class="num">Packages</th><th class="num">Data served</th>
+      <th class="num">From its cache</th><th class="num">Through the leader</th><th class="num">From the registries</th></tr></thead>
+    <tbody>
+    {% for name, id, t in traffic_rows %}
+      <tr>
+        <td><a href="/ui/{{ qs({'in': id}) }}">{{ name }}</a>{% if id == "self" %} <span class="badge">leader</span>{% endif %}</td>
+        <td class="num">{{ t.serves|num }}</td>
+        <td class="num">{{ t.packages|num }}</td>
+        <td class="num">{{ t.bytes|bytes }}</td>
+        <td class="num">{{ t.cache_bytes|bytes }}</td>
+        <td class="num">{% if id == "self" %}—{% else %}{{ t.leader_bytes|bytes }}{% endif %}</td>
+        <td class="num">{{ t.upstream_bytes|bytes }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Data served by each instance to its clients, and where it got those bytes: its own verified cache, the leader's cache (a follower fetches package files through the leader), or the registries.</p>
 </section>
 <section class="card">
   <header class="card-head"><h2>Add a follower</h2>{% if invitations %}<span class="badge">{{ invitations }} open invitation{{ "s" if invitations != 1 }}</span>{% endif %}</header>

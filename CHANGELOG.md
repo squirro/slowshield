@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Shield wall: the leader's Shield wall page lists the leader with its followers, and each instance's traffic
+  in the last 24 hours: installs, packages, data served, and how much of it came from the instance's own
+  cache, through the leader, or from the registries.
 - Shield wall: several instances standing together, one leader and many followers
   ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
   - Pairing: `slowshield wall invite` on the leader prints a join string (single use, 10 minutes); a follower
@@ -39,6 +42,9 @@ All notable changes to this project are documented here. The format is based on
   stored and no longer needs the join string; one that hasn't joined yet still does.
 
 ### Fixed
+- Shield wall: a leader's instance picker offers the leader itself, by name, with its location and labels next to
+  the followers'. Narrowing by a location or label the leader carries includes its own traffic
+  (https://github.com/squirro/slowshield/issues/56).
 - Shield wall: the instance picker on a leader's pages matches the segmented controls next to it.
 - Shield wall: the Join button on a follower's Shield wall page works in a browser. The UI's `Referrer-Policy:
   no-referrer` makes browsers send `Origin: null` with the form, which the same-site check refused; it now takes

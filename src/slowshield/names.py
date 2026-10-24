@@ -98,8 +98,10 @@ def is_valid_nuget(name: str) -> bool:
 
 
 # Composer package names as Packagist accepts them (composer/composer's ValidatingArrayLoader): `vendor/package`, lower
-# case, runs of letters and digits joined by `_`, `.` or `-` (`--` too in the package part).
-_COMPOSER_NAME = re.compile(r"^[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*$")
+# case, runs of letters and digits joined by `_`, `.` or `-` (`--` too in the package part). Packagist writes the
+# separators as optional, which backtracks exponentially on a name that fails at the end: here every separator is
+# followed by a run, and the quantifiers are possessive, so a match takes linear time.
+_COMPOSER_NAME = re.compile(r"[a-z0-9]++(?:[_.-][a-z0-9]++)*+/[a-z0-9]++(?:(?:[_.]|--?+)[a-z0-9]++)*+")
 COMPOSER_MAX_LEN = 255
 
 
@@ -109,7 +111,7 @@ def normalize_composer(name: str) -> str:
 
 
 def is_valid_composer(name: str) -> bool:
-    return 0 < len(name) <= COMPOSER_MAX_LEN and _COMPOSER_NAME.match(name) is not None
+    return 0 < len(name) <= COMPOSER_MAX_LEN and _COMPOSER_NAME.fullmatch(name) is not None
 
 
 # Gem names as RubyGems accepts them (`Gem::Specification::VALID_NAME_PATTERN`): letters, digits, `.`, `-` and `_`.

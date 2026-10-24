@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import io
+import itertools
 import json
+import re
+import time
 import zipfile
 from pathlib import Path
 
@@ -84,6 +87,24 @@ def test_names_are_packagists() -> None:
     for bad in ("Monolog/Monolog", "monolog", "a/b/c", "-a/b", "a/b-", "a//b", "", "a/" + "b" * 300):
         assert not names.is_valid_composer(bad), bad
     assert names.normalize_composer(" Monolog/Monolog ") == "monolog/monolog"
+
+
+def test_names_accept_what_packagists_pattern_accepts() -> None:
+    # composer/composer's ValidatingArrayLoader pattern, as Packagist writes it: every string of up to 6 characters
+    # from its alphabet gets the same answer.
+    packagist = re.compile(r"^[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*\Z")
+    for n in range(1, 7):
+        for chars in itertools.product("a1_.-/", repeat=n):
+            name = "".join(chars)
+            assert names.is_valid_composer(name) == (packagist.match(name) is not None), name
+
+
+def test_names_that_fail_at_the_end_are_refused_in_linear_time() -> None:
+    # Packagist's pattern takes seconds for `"a" * 30 + "/x!"`, and four times as long for every 2 more characters.
+    start = time.perf_counter()
+    for bad in ("a" * 200 + "/x!", "a/" + "b" * 200 + "!", "a-" * 100 + "/x!", "a/" + "b--" * 66 + "!"):
+        assert not names.is_valid_composer(bad)
+    assert time.perf_counter() - start < 0.05
 
 
 # ---- the minified format ------------------------------------------------------------------------------------------

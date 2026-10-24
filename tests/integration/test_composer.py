@@ -223,6 +223,14 @@ async def test_a_dist_on_a_host_that_is_not_allowed_is_refused(running: Running)
     assert "upstreams.composer.download_hosts" in r.json()["warning"]
 
 
+async def test_a_dist_over_plain_http_is_refused(start_app) -> None:
+    run = await start_app('[upstreams.composer]\ndownload_hosts = ["downloads.example.org"]\n')
+    r = await run.client.get(_dist(run, "fake/plain", "1.0.0"))
+    assert r.status_code == 502 and "over plain HTTP" in r.json()["warning"]
+    # The repository's own host may be plain HTTP (the administrator chose it): the fake's dists are.
+    assert (await run.client.get(_dist(run, "fake/hello", "1.0.0"))).status_code == 200
+
+
 # ---- publish times -----------------------------------------------------------------------------------------------
 
 

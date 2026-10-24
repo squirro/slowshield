@@ -622,11 +622,10 @@ class ComposerService:
                 return self._too_new(request, p2, v, hits[0].version)
             served = hits
         info = served[0]
-        upstream = M.fetch_url(info.dist_url or "")  # every servable version has one
-        host = (urlsplit(upstream).hostname or "").lower()
-        allowed = {h.lower() for h in self.settings.download_hosts} | {
-            (urlsplit(self.settings.repo_url).hostname or "").lower()
-        }
+        upstream = info.fetch_url or ""  # every servable version has one
+        parts, repo = urlsplit(upstream), urlsplit(self.settings.repo_url)
+        host, repo_host = (parts.hostname or "").lower(), (repo.hostname or "").lower()
+        allowed = {h.lower() for h in self.settings.download_hosts} | {repo_host}
         if host not in allowed:
             ctx.recorder.decision(ECO, "artifact", "upstream_error")
             return warning(
@@ -634,6 +633,10 @@ class ComposerService:
                 f"slowshield: {name} {info.version} is downloaded from {host}, which is not in "
                 "upstreams.composer.download_hosts. Ask your SlowShield administrator to add it.",
             )
+        # Over HTTPS only, unless it comes from the repository itself, which the administrator set up that way.
+        if parts.scheme != "https" and (parts.scheme, host) != (repo.scheme, repo_host):
+            ctx.recorder.decision(ECO, "artifact", "upstream_error")
+            return warning(502, f"slowshield: {name} {info.version} would be downloaded over plain HTTP: refused.")
         art = ArtifactRequest(
             ecosystem=ECO,
             key=f"/{name}/{info.filename}",

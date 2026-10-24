@@ -146,8 +146,11 @@ then the branches): it is refused when one of them is blocked, and served when o
 holds the same files whatever the version is called. SlowShield fetches it from the version's own dist URL, except
 that `https://api.github.com/repos/<owner>/<repo>/zipball/<ref>` (and `tarball`) is fetched from
 `https://codeload.github.com/<owner>/<repo>/legacy.zip/<ref>`, where api.github.com redirects to: that skips
-api.github.com's limit of 60 requests an hour. Other hosts must be in `download_hosts`; a dist on another host gets
-`502` with a warning that names the host and the setting.
+api.github.com's limit of 60 requests an hour. Such a GitHub URL must name the version's own `dist.reference`: the
+dist is cached and fingerprinted under the reference, so an archive of another commit would be served for it. A
+version whose URL names another commit is left out. Other hosts must be in `download_hosts`; a dist on another host
+gets `502` with a warning that names the host and the setting. Dists are fetched over HTTPS only (`502` otherwise),
+except from the host of `repo_url` itself when the administrator set that up over plain HTTP.
 
 ## Publish time
 

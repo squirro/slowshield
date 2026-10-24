@@ -44,8 +44,13 @@ class Version:
 
     @property
     def servable(self) -> bool:
-        """Whether SlowShield can serve this version's dist: a URL, a usable reference and type."""
-        return bool(self.dist_url and self.reference and self.dist_type)
+        """Whether SlowShield can serve this version's dist: a URL, a usable reference and type, and a GitHub archive
+        URL that names that reference."""
+        return bool(self.dist_url and self.reference and self.dist_type) and self.fetch_url is not None
+
+    @property
+    def fetch_url(self) -> str | None:
+        return fetch_url(self.dist_url, self.reference) if self.dist_url and self.reference else None
 
     @property
     def filename(self) -> str:
@@ -205,10 +210,14 @@ def parse_advisories(body: bytes) -> bool:
     return isinstance(doc, dict) and isinstance(doc.get("advisories"), (dict, list))
 
 
-def fetch_url(dist_url: str) -> str:
-    """Where SlowShield fetches a dist: GitHub API archive URLs go to codeload.github.com, where they redirect."""
+def fetch_url(dist_url: str, reference: str) -> str | None:
+    """Where SlowShield fetches a dist: GitHub API archive URLs go to codeload.github.com, where they redirect. None
+    when a GitHub archive URL names another commit than `reference`: the dist is cached and fingerprinted under the
+    reference, so it must be that commit's archive."""
     m = _GITHUB_API.fullmatch(dist_url)
     if m is None:
         return dist_url
     owner, repo, kind, ref = m.groups()
+    if ref != reference:
+        return None
     return f"https://codeload.github.com/{owner}/{repo}/{'legacy.zip' if kind == 'zipball' else 'legacy.tar.gz'}/{ref}"

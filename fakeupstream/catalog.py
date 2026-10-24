@@ -428,7 +428,7 @@ class ComposerVersion:
     reference: str
     deps: tuple[tuple[str, str], ...] = ()
     shasum: bool = False  # Packagist's dist.shasum (empty for GitHub dists)
-    dist_host: str | None = None  # a dist on another host than the fake GitHub
+    dist_host: str | None = None  # a dist on another host than the fake GitHub (https, unless it names a scheme)
 
 
 NUGET_UNLISTED = "1900-01-01T00:00:00+00:00"
@@ -866,7 +866,7 @@ class Catalog:
     def composer_entry(self, cv: ComposerVersion, base: str) -> dict[str, object]:
         """The expanded p2 entry, in Packagist's key order. Dists are on the fake GitHub, `<base>/codeload/`."""
         dist_url = (
-            f"https://{cv.dist_host}/{cv.name}/{cv.reference}.zip"
+            f"{cv.dist_host if '://' in cv.dist_host else 'https://' + cv.dist_host}/{cv.name}/{cv.reference}.zip"
             if cv.dist_host
             else f"{base}/codeload/{cv.name}/legacy.zip/{cv.reference}"
         )
@@ -1027,6 +1027,7 @@ class Catalog:
         self.add_composer("fake/untimed", "1.0.0", 300, published=False)
         self.add_composer("fake/checked", "1.0.0", 30, shasum=True)
         self.add_composer("fake/elsewhere", "1.0.0", 30, dist_host="downloads.example.org")
+        self.add_composer("fake/plain", "1.0.0", 30, dist_host="http://downloads.example.org")
         # rubygems.org: info lines carry `created_at`, one line per version and platform; names are case-sensitive.
         self.add_gem("fake_hello", "1.0.0", 100)
         self.add_gem("fake_hello", "1.1.0", 30)

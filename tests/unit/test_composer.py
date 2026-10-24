@@ -193,13 +193,23 @@ def test_render_drops_versions_rewrites_dists_and_strips_mirrors() -> None:
 
 def test_github_api_archives_are_fetched_from_codeload() -> None:
     ref = "d7059e4c691d05ea1222b5124bed0f961be46e15"
-    assert M.fetch_url(f"https://api.github.com/repos/Seldaek/monolog/zipball/{ref}") == (
+    assert M.fetch_url(f"https://api.github.com/repos/Seldaek/monolog/zipball/{ref}", ref) == (
         f"https://codeload.github.com/Seldaek/monolog/legacy.zip/{ref}"
     )
-    assert M.fetch_url(f"https://api.github.com/repos/o/r/tarball/{ref}").endswith(f"/o/r/legacy.tar.gz/{ref}")
+    assert (M.fetch_url(f"https://api.github.com/repos/o/r/tarball/{ref}", ref) or "").endswith(
+        f"/o/r/legacy.tar.gz/{ref}"
+    )
     for other in (f"https://gitlab.com/api/v4/projects/1/repository/archive.zip?sha={ref}",
                   f"https://api.github.com/repos/o/r/zipball/{ref}/../x"):  # fmt: skip
-        assert M.fetch_url(other) == other
+        assert M.fetch_url(other, ref) == other
+
+
+def test_a_github_archive_must_be_of_the_reference() -> None:
+    # The dist is cached and fingerprinted as `<reference>.zip`: an archive of another commit would be served for it.
+    other = "e" * 40
+    assert M.fetch_url(f"https://api.github.com/repos/o/r/zipball/{other}", "d" * 40) is None
+    p2 = _p2([_entry("1.0.0", "d" * 40, url=f"https://api.github.com/repos/v/p/zipball/{other}")])
+    assert not p2.versions["1.0.0"].servable
 
 
 def test_zip_content_ignores_how_the_zip_was_written(tmp_path: Path) -> None:

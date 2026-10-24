@@ -636,7 +636,10 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         elif rest.startswith("quick/Marshal.4.8/") and rest.endswith(".gemspec.rz"):
             g = gem_lookup(rest[18:-11])
             if g is not None:
-                return Response(g.spec_rz, media_type="application/octet-stream")
+                spec = g.spec_rz
+                if request.url.path in state.tampered:
+                    spec = spec[:-1] + bytes([spec[-1] ^ 1])
+                return Response(spec, media_type="application/octet-stream")
         return PlainTextResponse("not found", status_code=404)
 
     # ---- nuget.org --------------------------------------------------------------------------------------

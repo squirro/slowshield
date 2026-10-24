@@ -139,7 +139,7 @@ Google Maven's groups to Google and the rest to Central. Paths outside the layou
 3. `gems/<file>.gem`: the gem and line are found by reading the file name against the gem's info file; a block →
    `451`, too new → `425` with `Retry-After`, else the artifact server fetches `<download_url>/gems/<file>`, checked
    against the line's `checksum` and the first-seen fingerprint. `quick/Marshal.4.8/<file>.gemspec.rz` is judged the
-   same way and fetched once.
+   same way and checked against its first-seen fingerprint (it has no `checksum`).
 4. The full Marshal index (`specs.4.8.gz` and the others) and `api/` → `404` with the reason.
 
 ## Request flow: container images

@@ -232,8 +232,9 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
   name are tampering.
 - **Bytes are never changed**, so the gem's own signature (rarely used, `gem cert`) and Bundler's checksum checks
   work as with rubygems.org.
-- **`.gemspec.rz`** files have no published digest. They are fetched once and kept; the `.gem` that follows is
-  checked, and RubyGems installs from the specification inside the `.gem`.
+- **`.gemspec.rz`** files have no published digest. Their first download is their fingerprint, as for any file
+  without one: other bytes under the same name later are tampering (`451`). RubyGems 3.4 runs `Marshal.load` on
+  the file; it installs from the specification inside the `.gem`, which is checked against the index.
 - **Shield wall.** A follower fetches `.gem` files through its leader (they have a sha256) and reads the index
   itself; `first_listed` times travel like Cargo's and NuGet's.
 

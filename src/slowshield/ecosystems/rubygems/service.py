@@ -48,7 +48,6 @@ KEEP_STALE = 7 * DAY  # stored info files outlive their TTL for revalidation and
 # `created_at` is not a usable publish time.
 EARLIEST = datetime(2004, 1, 1, tzinfo=UTC).timestamp()
 CLOCK_SKEW = 300.0
-MAX_SPEC_BYTES = 8 << 20
 MAX_NAMES_BYTES = 64 << 20
 SPEC_DIR = "quick/Marshal.4.8/"
 # Caddy (and other proxies) must not compress these: a compressed body gets another ETag, which Bundler 2.4 and
@@ -517,17 +516,17 @@ class RubygemsService:
             return self._blocked(request, name, line.key, v.blocked[line.key], kind="artifact")
         if ctx.cfg.raw.enforce_age_on_download and line.key in v.held:
             return self._too_new(request, name, v, line)
-        if spec:
-            return await self._spec(request, stem)
-        file = f"{stem}.gem"
+        # A specification (`.gemspec.rz`) has no published digest: its first download is its fingerprint, as for
+        # any file without one, so other bytes later are tampering (RubyGems 3.4 runs Marshal.load on it).
+        path = f"{SPEC_DIR}{stem}.gemspec.rz" if spec else f"gems/{stem}.gem"
         art = ArtifactRequest(
             ecosystem=ECO,
-            key=f"/gems/{file}",
+            key=f"/{path}",
             package=name,
             version=line.key,
-            filename=file,
-            upstream_url=f"{self.settings.download_url.rstrip('/')}/gems/{file}",
-            expected=Expected(sha256=line.sha256),
+            filename=path.rsplit("/", 1)[-1],
+            upstream_url=f"{self.settings.download_url.rstrip('/')}/{path}",
+            expected=Expected() if spec else Expected(sha256=line.sha256),
             error=rubygems_error,
             published=v.published.get(line.key),
         )
@@ -536,33 +535,6 @@ class RubygemsService:
             method=request.method,
             headers_in=dict(request.headers),
             client_ip=client_ip(request.scope, ctx.cfg.trusted_networks),
-        )
-
-    async def _spec(self, request: Request, stem: str) -> Response:
-        """A gem's specification (`.gemspec.rz`), as rubygems.org has it. It has no published digest; it is fetched
-        once and kept, and the .gem that follows is checked."""
-        ctx = self.ctx
-        skey = f"rubygems:spec:{stem}"
-        now = ctx.clock.now()
-        stored = await ctx.metadata_store.aget(skey)
-        if stored is not None:
-            body = stored.value
-        else:
-            url = f"{self.settings.download_url.rstrip('/')}/{SPEC_DIR}{stem}.gemspec.rz"
-            try:
-                res = await ctx.upstream.fetch(url, max_bytes=MAX_SPEC_BYTES)
-            except UpstreamError as exc:
-                return text_error(503, f"slowshield: rubygems.org is unavailable: {exc.detail}", headers=RETRY_SOON)
-            if res.status in (404, 410):
-                return text_error(404, "not found")
-            if res.status != 200:
-                return text_error(503, f"slowshield: rubygems.org returned {res.status}", headers=RETRY_SOON)
-            body = res.body
-            await ctx.metadata_store.aput(skey, body, expires=now + 30 * DAY, keep_until=now + 60 * DAY)
-        return Response(
-            b"" if request.method == "HEAD" else body,
-            media_type="application/octet-stream",
-            headers={"Cache-Control": "public, max-age=86400", "Content-Length": str(len(body))},
         )
 
     # ---- refusals -----------------------------------------------------------------------------------------

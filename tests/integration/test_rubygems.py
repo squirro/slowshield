@@ -40,6 +40,10 @@ async def _upstream(run: Running, path: str) -> bytes:
         return (await client.get(f"{run.fake.url}{path}")).content
 
 
+def _hex(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
+
+
 def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -190,10 +194,28 @@ async def test_gem_specifications_are_served_once_fetched(running: Running) -> N
     assert r.status_code == 200 and r.content == await _upstream(
         running, "/rubygems-dl/quick/Marshal.4.8/fake_deps-0.1.0.gemspec.rz"
     )
-    assert (await running.client.get(path)).content == r.content
+    await running.drain()
+    hit = await running.client.get(path)
+    assert hit.content == r.content and hit.headers["x-slowshield-cache"] == "hit"
     # One request from SlowShield, one from this test.
     assert running.fake.hits("/rubygems-dl/quick/") == {"/rubygems-dl/quick/Marshal.4.8/fake_deps-0.1.0.gemspec.rz": 2}
     assert (await running.client.get("/rubygems/quick/Marshal.4.8/fake_deps-9.9.gemspec.rz")).status_code == 404
+
+
+async def test_gem_specifications_that_change_after_the_first_download_are_tampering(running: Running) -> None:
+    path = "/rubygems/quick/Marshal.4.8/fake_deps-0.1.0.gemspec.rz"
+    first = await running.client.get(path)
+    assert first.status_code == 200
+    await running.drain()
+    # No published digest: the first download is the fingerprint (RubyGems 3.4 runs Marshal.load on the file).
+    rows = running.rows("SELECT path, package, version, sha256 FROM artifacts")
+    assert rows == [("/quick/Marshal.4.8/fake_deps-0.1.0.gemspec.rz", "fake_deps", "0.1.0", _hex(first.content))]
+    running.ctx.artifact_cache.enabled = False  # force the next request upstream
+    running.fake.control("tamper", path="/rubygems-dl/quick/Marshal.4.8/fake_deps-0.1.0.gemspec.rz")
+    res = await asgi_get(running.app, path)
+    assert res.status == 451 and b"changed upstream" in res.body
+    await running.drain()
+    assert ("tampered", "fake_deps", "0.1.0") in running.rows("SELECT type, package, version FROM events")
 
 
 async def test_file_names_are_read_against_the_index(running: Running) -> None:

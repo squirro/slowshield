@@ -1,7 +1,7 @@
 # Integrity & tamper detection
 
 Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`, `.nupkg`,
-Composer dist, `.gem`, container image manifest and blob) is checked on the way through:
+Composer dist, `.gem` and `.gemspec.rz`, container image manifest and blob) is checked on the way through:
 
 | Check | PyPI | npm | Go | Maven | Cargo | NuGet | Composer | RubyGems |
 |---|---|---|---|---|---|---|---|---|

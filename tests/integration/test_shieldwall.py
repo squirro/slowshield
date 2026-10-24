@@ -23,6 +23,7 @@ from slowshield.shieldwall.follower import FollowerService
 from slowshield.shieldwall.identity import key_hash
 from slowshield.shieldwall.join import JoinString, new_token
 from slowshield.shieldwall.transport import Reply, TransportError
+from slowshield.ui import queries as Q
 from tests.conftest import NOW, Running, stop
 
 LEADER_URL = "https://leader.test"
@@ -135,6 +136,7 @@ default_delay_days = 3
 role = "leader"
 name = "hq"
 location = "hq"
+labels = { team = "ops" }
 [[blocks]]
 ecosystem = "npm"
 package = "evil-pkg"
@@ -607,3 +609,34 @@ async def test_pending_follower_restarted_without_join_waits_for_one(pair: Pair,
     assert follower.rows("SELECT state, last_error FROM shieldwall_leader") == [("pending", follower_mod.NO_JOIN)]
     page = await follower.client.get("/ui/shieldwall")
     assert page.status_code == 200 and "Join hq?" not in page.text and "SLOWSHIELD_JOIN" in page.text
+
+
+async def test_the_leader_shows_itself_and_each_instance_traffic(pair: Pair) -> None:
+    p = pair
+    await _join(p)
+    member = p.follower.app._identity.id  # type: ignore[union-attr]
+    # One download on each side: the leader's own, and the follower's (reported up on the next sync).
+    assert (await p.leader.client.get(f"/pypi{_wheel(p.leader)}")).status_code == 200
+    assert (await p.follower.client.get(f"/pypi{_wheel(p.follower, version='1.1.0')}")).status_code == 200
+    await p.leader.drain()
+    await p.sync()
+    await p.sync()
+    # The picker offers the leader by name, and its location and label next to the followers'.
+    page = (await p.leader.client.get("/ui/")).text
+    assert "This instance · hq (leader)" in page
+    assert 'value="loc:hq"' in page and 'value="loc:zurich"' in page
+    assert 'value="label:team=ops"' in page and 'value="label:env=prod"' in page
+    # A label or location narrows to the leader's own traffic too.
+    conn = p.leader.ctx.db.readers.get()
+    assert Q.scope_instances(conn, "label:team=ops", "hq", {"team": "ops"}) == ("",)
+    assert Q.scope_instances(conn, "loc:hq", "hq", {"team": "ops"}) == ("",)
+    assert Q.scope_instances(conn, "label:env=prod", "hq", {"team": "ops"}) == (member,)
+    # The Shield wall page lists the leader first, and what every instance served.
+    page = (await p.leader.client.get("/ui/shieldwall")).text
+    assert "<h2>Instances</h2>" in page and 'hq</a> <span class="badge">leader</span>' in page
+    assert "Traffic per instance, last 24 hours" in page and "zurich-1" in page
+    traffic = Q.node_traffic(conn, NOW - Q.DAY)
+    assert traffic[""]["serves"] >= 1 and traffic[member]["serves"] >= 1
+    assert traffic[member]["bytes"] == (
+        traffic[member]["cache_bytes"] + traffic[member]["leader_bytes"] + traffic[member]["upstream_bytes"]
+    )

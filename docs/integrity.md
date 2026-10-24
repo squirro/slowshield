@@ -1,14 +1,14 @@
 # Integrity & tamper detection
 
 Every artifact (wheel, sdist, PEP 658 `.metadata`, npm tarball, Go `.mod` and `.zip`, Maven file, `.crate`, `.nupkg`,
-container image manifest and blob) is checked on the way through:
+Composer dist, container image manifest and blob) is checked on the way through:
 
-| Check | PyPI | npm | Go | Maven | Cargo | NuGet |
-|---|---|---|---|---|---|---|
-| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) | Central's `x-checksum-sha1` header; the `.sha1` file (Google, operator repositories); the sha256 in the Plugin Portal's redirect path | the index line's `cksum` (sha256) | the catalog leaf's `packageHash` (base64 sha512), the leaf the registration names |
-| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — | — | — | — |
-| Size | `size` from the index | `Content-Length` | `Content-Length` | `Content-Length` | `Content-Length` | the catalog's `packageSize` |
-| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same | same | same | same |
+| Check | PyPI | npm | Go | Maven | Cargo | NuGet | Composer |
+|---|---|---|---|---|---|---|---|
+| Registry digest | `hashes.sha256` from the PEP 691 index (and `core-metadata` sha256 for `.metadata`) | `dist.integrity` (sha512); `dist.shasum` (sha1) for old versions without integrity | `h1:` from the `sum.golang.org` lookup: of the go.mod, and of the files inside the zip (computed on the spooled file before the final chunk is released) | Central's `x-checksum-sha1` header; the `.sha1` file (Google, operator repositories); the sha256 in the Plugin Portal's redirect path | the index line's `cksum` (sha256) | the catalog leaf's `packageHash` (base64 sha512), the leaf the registration names | `dist.shasum` (sha1) when Packagist has one; never for GitHub's archives |
+| Path digest | the `/packages/aa/bb/<60 hex>/` path is the file's blake2b-256 | — | — | — | — | — | — |
+| Size | `size` from the index | `Content-Length` | `Content-Length` | `Content-Length` | `Content-Length` | the catalog's `packageSize` | `Content-Length` |
+| Trust on first use | sha256 of the bytes first served, stored per artifact path | same | same | same | same | same | same, and the `h1:` of the files in the zip |
 
 The Go checksum lookup is cached and answers the go command's own lookup of the same version, so it costs no
 extra request. It also protects clients that set `GOSUMDB=off`.
@@ -29,6 +29,10 @@ install fails), the temp file is discarded and an event is recorded:
   A NuGet package that nuget.org signs again counts too: its new bytes match the new `packageHash`, but not the
   first fingerprint. SlowShield never changes a `.nupkg`, so its repository signature stays valid
   ([design/nuget.md](design/nuget.md)).
+  A Composer dist is a GitHub archive built on request: new bytes whose files are the same as the first time (the
+  zip's `h1:`, as Go computes it) are recorded as the dist's new fingerprint, with a warning in the log. Other
+  files are `tampered`. Without the artifact cache there is no spooled file to compare, so any new bytes are
+  ([design/composer.md](design/composer.md)).
 * A registry digest that changed since the first download (npm's `dist.integrity`, NuGet's `packageHash`, the
   sha256 on PyPI and crates.io) is `tampered` too, before anything is fetched, and the cached copy of the first
   bytes isn't served.

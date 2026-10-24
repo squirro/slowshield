@@ -187,7 +187,7 @@ everything that exists. A follower asks for changes after its cursor, up to 500 
 | Takedowns (`oci_digests.gone`) | the earliest wins | tightens |
 | Tamper flags (`artifacts.tampered`) | set on the follower, with a `tampered` event; never cleared by the leader | tightens |
 | OCI tag history (`oci_tags`) | `first_seen` = the earlier of the follower's and the credited time | loosens |
-| Maven, Cargo and NuGet `first_listed` | the earlier of the follower's and the credited time | loosens |
+| Maven, Cargo, NuGet and Composer `first_listed` | the earlier of the follower's and the credited time | loosens |
 | `oci_since` | at pairing only: the earlier of both, so a new follower skips the fail-open window the leader is past | loosens (bootstrap) |
 | Registry times (PyPI, npm, Go, Maven files, OCI `registry_time`) | not sent: the follower reads them from the registry itself | |
 

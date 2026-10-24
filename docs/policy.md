@@ -11,7 +11,9 @@ metadata, whichever is earlier ([design/maven.md](design/maven.md)). Cargo uses 
 crates.io index; the first one SlowShield sees is kept, so a rewritten index can't move it earlier
 ([design/cargo.md](design/cargo.md)). NuGet uses each version's `published` in the nuget.org registration, kept the
 same way; an unlisted version says 1900-01-01 there, so one that never had a real date is timed from when
-SlowShield first listed it ([design/nuget.md](design/nuget.md)). Container images are judged per digest: a tag's digest by when the tag got it
+SlowShield first listed it ([design/nuget.md](design/nuget.md)). Composer uses each version's `published-time`, which
+Packagist sets, kept the same way; the `time` in the metadata is the author's and never used
+([design/composer.md](design/composer.md)). Container images are judged per digest: a tag's digest by when the tag got it
 (the registry's time where it has one, else SlowShield's first sight), a pinned digest by when a tag first pointed
 to it ([design/oci.md](design/oci.md)).
 
@@ -27,6 +29,9 @@ to it ([design/oci.md](design/oci.md)).
   search; a download of one gets `425 Too Early` (dotnet shows only the status line). A `PackageReference` to a
   held version resolves the next version up, with warning `NU1603`; make the build fail on it
   (`TreatWarningsAsErrors`, or `NU1603` in `WarningsAsErrors`).
+* **Composer is evaluated per version.** Too-new versions are left out of the p2 metadata, so Composer resolves to
+  an older one; a composer.lock that pins one gets `425 Too Early` with a warning Composer prints, naming the version
+  to use instead. Branches count from their last push.
 * **Container tags lag behind.** A tag resolves to the newest digest it has pointed to for the delay, so
   `nginx:latest` keeps working about a week behind; a pinned digest that is too new gets `403`.
 * A file or version **without a publish time is treated as too new.**
@@ -52,8 +57,8 @@ to it ([design/oci.md](design/oci.md)).
 If **no** non-blocked file/version of a package is old enough (a brand-new package), SlowShield serves
 all non-blocked ones instead of failing the install, adds `X-SlowShield-Fail-Open: 1`, and records a
 `fail_open` event. Blocked versions are never served, even when failing open. Disable with
-`fail_open = false` for strict environments, or per ecosystem with `upstreams.<ecosystem>.fail_open`. Maven, Cargo
-and NuGet default to off: there, brand-new packages are the realistic attack (typosquats, impersonations, dependency
+`fail_open = false` for strict environments, or per ecosystem with `upstreams.<ecosystem>.fail_open`. Maven, Cargo,
+NuGet and Composer default to off: there, brand-new packages are the realistic attack (typosquats, impersonations, dependency
 confusion). For container images, fail-open only applies during the instance's first `default_delay_days`, to tags
 it has no history for yet: after that, a tag with nothing old enough is refused.
 

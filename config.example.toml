@@ -74,6 +74,14 @@ catalog_url = "https://api.nuget.org/v3/catalog0/"  # packageHash (SHA512) of ev
 vulnerability_url = "https://api.nuget.org/v3/vulnerabilities/index.json"  # for NuGetAudit
 search_url = "https://azuresearch-usnc.nuget.org/query"
 
+[upstreams.composer]                   # clients: <public_url>/composer/ as their only Composer repository,
+enabled = true                         # with packagist.org off (docs/design/composer.md)
+fail_open = false                      # brand-new packages are held too (typosquats, dependency confusion)
+repo_url = "https://repo.packagist.org"  # p2 metadata: Packagist's `published-time` is the publish time
+advisories_url = "https://packagist.org/api/security-advisories/"  # for composer audit
+# Hosts dists come from (GitHub's API archive URLs are fetched from codeload.github.com). A restart applies changes.
+download_hosts = ["codeload.github.com", "gitlab.com", "bitbucket.org"]
+
 [upstreams.oci]                        # container images at /v2/ (docs/design/oci.md)
 enabled = true
 # fail_open = true                     # unset: the top-level fail_open, and only ever during this instance's

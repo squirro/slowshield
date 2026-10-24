@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from fakeupstream import FakeUpstream
+
 from slowshield.ecosystems.pypi.project import HTML_V1, JSON_V1
 from tests.conftest import DAY, NOW, Running
 
@@ -330,3 +332,10 @@ async def test_upload_time_missing_is_too_new(running: Running) -> None:
     assert proj.files[0].upload_time is None
     assert proj.versions == ["1.0.0"]
     assert NOW  # keep import used
+
+
+async def test_upstream_metadata_is_never_asked_for_brotli(running: Running, upstream: FakeUpstream) -> None:
+    await _index(running, "alpha")
+    sent = upstream.headers("/pypi/simple/alpha/")
+    codings = [c.strip() for c in sent["accept-encoding"].split(",")]
+    assert "gzip" in codings and "br" not in codings

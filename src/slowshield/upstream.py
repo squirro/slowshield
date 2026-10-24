@@ -1,6 +1,6 @@
 """Upstream HTTP access (pyreqwest: Rust reqwest/hyper, HTTP/2).
 
-Two clients: one for metadata (transparent gzip/br/zstd, bounded body size) and one for artifacts
+Two clients: one for metadata (transparent gzip/zstd/deflate, bounded body size) and one for artifacts
 (identity encoding so we hash exactly the bytes the registry serves). Redirects are never followed
 automatically; they are only followed within the configured upstream hosts (exact names, or `*` patterns for
 CDNs such as `*.data.mcr.microsoft.com`), so this can never be turned into an open proxy. A redirect to another
@@ -138,7 +138,9 @@ class Upstream:
                 .https_only(False)
             )
 
-        self.meta: Client = base().gzip(True).brotli(True).zstd(True).deflate(True).build()
+        # No Brotli: registries all serve gzip, and a Brotli decoder is attack surface for a response SlowShield
+        # hasn't checked yet (CVE-2026-111497 was in the C decoder; pyreqwest's is a Rust port, never named).
+        self.meta: Client = base().gzip(True).brotli(False).zstd(True).deflate(True).build()
         self.raw: Client = base().gzip(False).brotli(False).zstd(False).deflate(False).build()
 
     async def close(self) -> None:
@@ -206,6 +208,7 @@ class Upstream:
                             url, headers = redirected(url, hdrs["location"], headers)
                             continue
                         body = b"" if method == "HEAD" else await _read_limited(resp, max_bytes, url)
+                        _check_coding(url, hdrs, body)
                         span.set_attribute("http.response.status_code", status_code)
                         span.set_attribute("network.protocol.version", resp.version)
                         if status_code >= 500:
@@ -288,9 +291,18 @@ class Upstream:
             req = self.meta.post(url).headers(headers or {}).body_bytes(body).build_streamed()
             async with req as resp:
                 data = await _read_limited(resp, max_bytes, url)
-                return FetchResult(resp.status, _headers(resp), data, url, resp.version)
+                hdrs = _headers(resp)
+                _check_coding(url, hdrs, data)
+                return FetchResult(resp.status, hdrs, data, url, resp.version)
         except PyreqwestError as exc:
             raise UpstreamError(url, type(exc).__name__) from exc
+
+
+def _check_coding(url: str, hdrs: dict[str, str], body: bytes) -> None:
+    """The client drops the codings it decoded. One left over (Brotli, which it never asks for) would reach the
+    parsers, or an npm client after an audit, as bytes they can't read."""
+    if body and (coding := hdrs.get("content-encoding", "identity").strip().lower()) != "identity":
+        raise UpstreamError(url, f"unrequested Content-Encoding: {coding}")
 
 
 async def _read_limited(resp: Any, max_bytes: int, url: str) -> bytes:

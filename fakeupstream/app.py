@@ -999,6 +999,9 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         prefix = request.query_params.get("prefix", "")
         return JSONResponse({p: n for p, n in state.hits.items() if p.startswith(prefix)})
 
+    async def ctl_headers(request: Request) -> Response:
+        return JSONResponse(state.last_headers.get(request.query_params["path"], {}))
+
     async def ctl_info(request: Request) -> Response:
         cat = state.catalog
         return JSONResponse(
@@ -1082,12 +1085,18 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/_control/advisory", ctl_advisory, methods=["POST"]),
         Route("/_control/clock", ctl_clock, methods=["POST"]),
         Route("/_control/hits", ctl_hits),
+        Route("/_control/headers", ctl_headers),
         Route("/_control/info", ctl_info),
         Route("/healthz", lambda r: PlainTextResponse("ok")),
         Route("/redirect", lambda r: Response(status_code=302, headers={"Location": r.query_params["to"]})),
         Route(
             "/blob",
-            lambda r: Response(b"x" * int(r.query_params.get("n", "10")), media_type="application/octet-stream"),
+            lambda r: Response(
+                b"x" * int(r.query_params.get("n", "10")),
+                media_type="application/octet-stream",
+                headers={"Content-Encoding": c} if (c := r.query_params.get("coding")) else None,
+            ),
+            methods=["GET", "POST"],
         ),
     ]
     app = Starlette(routes=routes)

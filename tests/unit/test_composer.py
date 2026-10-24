@@ -126,6 +126,22 @@ def test_minify_and_expand_round_trip() -> None:
     assert M.expand([]) == [] and M.minify([]) == []
 
 
+def test_minify_keeps_types_and_key_order() -> None:
+    # `1 == True == 1.0` in Python, and dicts compare without their order: each must still reach Composer as sent.
+    entries = [
+        {"version": "4", "x": 1, "extra": {"a": 1, "b": 2}},
+        {"version": "3", "x": True, "extra": {"b": 2, "a": 1}},
+        {"version": "2", "x": 1.0, "extra": {"b": 2, "a": 1}},
+        {"version": "1", "x": 1.0, "extra": {"b": 2, "a": 1}},
+    ]
+    small = M.minify(entries)
+    assert (
+        msgspec.json.encode(small[1:])
+        == b'[{"version":"3","x":true,"extra":{"b":2,"a":1}},{"version":"2","x":1.0},{"version":"1"}]'
+    )
+    assert msgspec.json.encode(M.expand(small)) == msgspec.json.encode(entries)
+
+
 def _p2(entries: list[dict], **extra: object) -> M.P2File:
     body = json.dumps({"minified": "composer/2.0", "packages": {"v/p": M.minify(entries)}, **extra}).encode()
     p2 = M.parse("v/p", False, body)

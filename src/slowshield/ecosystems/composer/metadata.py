@@ -92,19 +92,19 @@ def expand(entries: list[Any]) -> list[dict[str, Any]]:
 
 
 def minify(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each entry as the keys that differ from the entry before. Values are compared as JSON, exactly: Python's `==`
+    would take `1`, `true` and `1.0`, or two objects with their keys in another order, for the same."""
     out: list[dict[str, Any]] = []
-    last: dict[str, Any] | None = None
+    last: dict[str, bytes] | None = None  # the entry before, its values encoded
     for entry in entries:
+        encoded = {k: _encoder.encode(v) for k, v in entry.items()}
         if last is None:
-            last = dict(entry)
             out.append(entry)
-            continue
-        diff = {k: v for k, v in entry.items() if k not in last or last[k] != v}
-        last.update(diff)
-        for key in [k for k in last if k not in entry]:
-            diff[key] = UNSET
-            del last[key]
-        out.append(diff)
+        else:
+            diff = {k: v for k, v in entry.items() if last.get(k) != encoded[k]}
+            diff.update({k: UNSET for k in last if k not in entry})
+            out.append(diff)
+        last = encoded
     return out
 
 

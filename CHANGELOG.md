@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Helm: `hostAliases` for the pod. A shield wall follower whose leader only resolves on a tailnet maps the leader's
+  name to an in-cluster egress proxy (a Tailscale egress Service, say), so it keeps the leader's URL and certificate.
 - Shield wall: several instances standing together, one leader and many followers
   ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
   - Pairing: `slowshield wall invite` on the leader prints a join string (single use, 10 minutes); a follower

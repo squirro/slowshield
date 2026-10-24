@@ -35,3 +35,11 @@ def test_a_follower_must_say_how_it_trusts_its_leader() -> None:
     # Not a follower: nothing to trust.
     assert _render().returncode == 0
     assert _render("shieldwall.role=leader").returncode == 0
+
+
+def test_host_aliases_reach_the_pod() -> None:
+    # A follower whose leader only resolves on a tailnet maps the leader's name to an in-cluster egress proxy.
+    r = _render("hostAliases[0].ip=172.20.31.7", "hostAliases[0].hostnames[0]=slowshield.example.com")
+    assert r.returncode == 0, r.stderr
+    assert "hostAliases:" in r.stdout and "ip: 172.20.31.7" in r.stdout and "- slowshield.example.com" in r.stdout
+    assert "hostAliases" not in _render().stdout

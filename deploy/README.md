@@ -52,7 +52,7 @@ npm config set registry https://slowshield.example.com/npm/
 ```
 
 The UI's **Setup** page shows the exact snippets for your hostnames (pip, uv, Poetry, PDM, Pipenv,
-npm, pnpm, Yarn, Bun).
+npm, pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, NuGet, Composer, Bundler, gem and container runtimes).
 
 ## Building the images
 

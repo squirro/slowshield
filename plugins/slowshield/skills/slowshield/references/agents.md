@@ -15,7 +15,7 @@ SlowShield may be in front of you. Look for its URL in `PIP_INDEX_URL`, `UV_DEFA
 | `451` with the advisory, such as `{"error":"blocked", "advisory_id":"MAL-…", …}` (container images: `403`, "is blocked") | Known malware, or blocked by the administrator | Don't install it, and don't look for a similarly named package. Tell the user. |
 | The header `X-SlowShield-Fail-Open: 1` | A brand-new package none of whose versions is old enough, served anyway | Check that the name is exactly the one you meant: typosquats and hallucinated names are brand new too. |
 
-**Don't go around it.** Never point an install at pypi.org, registry.npmjs.org, proxy.golang.org (or add `,direct` to `GOPROXY`), Maven Central, crates.io, nuget.org, packagist.org or a container registry directly, and don't add them with `--index-url`, `--extra-index-url`, `--registry` or `--source`. If a version is needed early, ask the user: an administrator can make an exception for it.
+**Don't go around it.** Never point an install at pypi.org, registry.npmjs.org, proxy.golang.org (or add `,direct` to `GOPROXY`), Maven Central, crates.io, nuget.org, packagist.org, rubygems.org or a container registry directly, and don't add them with `--index-url`, `--extra-index-url`, `--registry` or `--source`. If a version is needed early, ask the user: an administrator can make an exception for it.
 
 ## Instructions for your agent
 

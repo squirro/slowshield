@@ -16,7 +16,7 @@ client ──▶│  reverse_proxy → slowshield:8080 (X-Forwarded-*)       │
    │               ├─ Cargo service (ecosystems/cargo) ─┤
    │               ├─ NuGet service (ecosystems/nuget) ─┤
    │               ├─ Composer      (ecosystems/composer)┤
-   │               ├─ RubyGems service (ecosystems/rubygems)
+   │               ├─ RubyGems      (ecosystems/rubygems)┤
    │               ├─ OCI service   (ecosystems/oci)   ─┤   container images at /v2/
    │               └─ UI            (ui/)               │
    ├── metadata LRU (cache/metadata.py, bytes-weighted, single-flight, ETag revalidation)

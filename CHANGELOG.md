@@ -42,6 +42,8 @@ All notable changes to this project are documented here. The format is based on
 - Shield wall: the Join button on a follower's Shield wall page works in a browser. The UI's `Referrer-Policy:
   no-referrer` makes browsers send `Origin: null` with the form, which the same-site check refused; it now takes
   `Origin: null` when `Sec-Fetch-Site: same-origin` vouches for the request.
+- UI: the shield wall instance picker and the filter dropdowns match the design (the picker was an unstyled native
+  dropdown next to the segmented controls), in light and dark mode.
 
 ## [0.0.10] - 2026-10-24
 

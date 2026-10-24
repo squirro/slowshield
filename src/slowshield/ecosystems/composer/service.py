@@ -3,8 +3,9 @@ with every dist pointing at SlowShield, and age-gated dist downloads checked aga
 
 A version's publish time is its `published-time`, which Packagist sets when the version is published; `time` is the
 author's and never used. The first one SlowShield sees is kept, so a file that later moves a version's time earlier
-can't age it in advance. A version without a plausible `published-time` is timed from when SlowShield first listed it.
-See docs/design/composer.md.
+can't age it in advance. A version without a `published-time` is timed from when SlowShield first listed it; one in
+the future counts as now. The kept times belong to the version's commit (dist.reference): a branch, or a moved tag,
+is timed afresh. See docs/design/composer.md.
 
 Refusals are JSON with a `warning`, which Composer prints: 425 (too new; a 403 would make Composer ask for
 credentials) and 451 (blocked, tampered). Upstream failures are 503 with Retry-After, which Composer retries.
@@ -58,6 +59,11 @@ MAX_ADVISORY_REQUEST = 256 << 10  # Composer asks about up to 500 packages at a 
 MAX_ADVISORY_PACKAGES = 1000
 MAX_ADVISORY_BYTES = 32 << 20
 _PACKAGES_FIELD = re.compile(r"packages\[[0-9]*\]")
+# The stored row's times belong to another commit than the version now names: they start again.
+_MOVED = (
+    "(excluded.reference IS NOT NULL AND package_versions.reference IS NOT NULL "
+    "AND excluded.reference != package_versions.reference)"
+)
 _NOT_FOUND = object()
 
 
@@ -114,6 +120,12 @@ def plausible(published: float | None, now: float) -> float | None:
     return published if published is not None and EARLIEST <= published <= now + CLOCK_SKEW else None
 
 
+def current(published: float | None, now: float) -> float | None:
+    """The clock a `published-time` gives now: a future one counts as now (it can't be older than that), one from
+    before Packagist as none."""
+    return None if published is None or published < EARLIEST else min(published, now)
+
+
 def zip_content(path: Path) -> str | None:
     """The `h1:` hash of the files in a zip (Go's dirhash), or None if it isn't a readable zip. GitHub builds zipballs
     on request; their bytes may change while the files in them don't (docs/design/composer.md)."""
@@ -121,6 +133,11 @@ def zip_content(path: Path) -> str | None:
         return dirhash.hash_zip(path)
     except zipfile.BadZipFile, ValueError, OSError, EOFError, NotImplementedError:
         return None
+
+
+def _moved(known: list[Any], v: M.Version) -> bool:
+    """Whether the times kept for a version belong to another commit than the one it names now."""
+    return bool(v.reference and known[2] and known[2] != v.reference)
 
 
 def _http_date(ts: float) -> str:
@@ -284,26 +301,27 @@ class ComposerService:
 
     # ---- publish times -----------------------------------------------------------------------------------
 
-    def _times(self, name: str) -> dict[str, list[float | None]]:
-        """version -> [first plausible `published-time` seen, first listed], shared by all workers through the
-        database."""
+    def _times(self, name: str) -> dict[str, list[Any]]:
+        """version -> [first plausible `published-time` seen, first listed, the reference they belong to], shared by
+        all workers through the database."""
         key = ("composer:times", name)
         now = self.ctx.clock.now()
         hit = self.ctx.metadata_cache.get(key, now)
         if hit is not None:
             return hit
         rows = self.ctx.db.readers.query(
-            "SELECT version, published, first_listed FROM package_versions WHERE ecosystem = ? AND name = ? "
+            "SELECT version, published, first_listed, reference FROM package_versions WHERE ecosystem = ? AND name = ? "
             "AND (published IS NOT NULL OR first_listed IS NOT NULL)",
             (ECO, name),
         )
-        times = {r[0]: [r[1], r[2]] for r in rows}
+        times = {r[0]: [r[1], r[2], r[3]] for r in rows}
         self.ctx.metadata_cache.put(key, times, 256 + 96 * len(times), now + 300)
         return times
 
     def _record(self, p2: M.P2File) -> None:
         """Keep each version's first plausible `published-time`, or, for a version that never had one, when it was
-        first listed (as on NuGet: a time that goes missing later doesn't start the clock again)."""
+        first listed (as on NuGet: a time that goes missing later doesn't start the clock again). Both belong to the
+        version's reference: when it changes, they start again."""
         ctx = self.ctx
         now = ctx.clock.now()
         times = self._times(p2.name)
@@ -311,7 +329,10 @@ class ComposerService:
         untimed = 0
         for v in p2.versions.values():
             pub = plausible(v.published, now)
-            known = times.setdefault(v.version, [None, None])
+            known: list[Any] | None = times.get(v.version)
+            if known is None or _moved(known, v):
+                known = times[v.version] = [None, None, v.reference]
+            known[2] = known[2] or v.reference
             listed_now = None
             if pub is not None:
                 known[0] = known[0] or pub
@@ -319,7 +340,7 @@ class ComposerService:
                 untimed += 1
                 known[1] = known[1] or now
                 listed_now = now
-            rows.append((ECO, p2.name, v.version, pub, listed_now, 0))
+            rows.append((ECO, p2.name, v.version, pub, listed_now, 0, v.reference))
         if untimed:
             log.warning(
                 "Composer versions without a usable published-time", extra={"package": p2.name, "versions": untimed}
@@ -327,11 +348,14 @@ class ComposerService:
 
         def op(conn: Any) -> None:
             conn.executemany(
-                "INSERT INTO package_versions (ecosystem, name, version, published, first_listed, yanked) "
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
-                "published = coalesce(package_versions.published, excluded.published), "
-                "first_listed = coalesce(package_versions.first_listed, "
-                "CASE WHEN package_versions.published IS NULL THEN excluded.first_listed END)",
+                "INSERT INTO package_versions (ecosystem, name, version, published, first_listed, yanked, reference) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
+                f"published = CASE WHEN {_MOVED} THEN excluded.published "
+                "ELSE coalesce(package_versions.published, excluded.published) END, "
+                f"first_listed = CASE WHEN {_MOVED} THEN excluded.first_listed "
+                "ELSE coalesce(package_versions.first_listed, "
+                "CASE WHEN package_versions.published IS NULL THEN excluded.first_listed END) END, "
+                "reference = coalesce(excluded.reference, package_versions.reference)",
                 rows,
             )
 
@@ -339,10 +363,13 @@ class ComposerService:
         ctx.db.writer.enqueue(op)
 
     @staticmethod
-    def _published(v: M.Version, times: dict[str, list[float | None]], now: float) -> float:
-        """The latest of the clocks known for `v`: its `published-time` now, the first one seen, and when it was first
-        listed without one. Each is no earlier than the real publish time, so the latest is the safest."""
-        clocks = [c for c in (plausible(v.published, now), *times.get(v.version, ())) if c is not None]
+    def _published(v: M.Version, times: dict[str, list[Any]], now: float) -> float:
+        """The latest of the clocks known for `v`: its `published-time` now (a future one is now), the first one seen,
+        and when it was first listed without one, the last two only for the same reference. Each is no earlier than
+        the real publish time, so the latest is the safest."""
+        known = times.get(v.version)
+        stored = known[:2] if known is not None and not _moved(known, v) else ()
+        clocks = [c for c in (current(v.published, now), *stored) if c is not None]
         return max(clocks) if clocks else now
 
     # ---- policy -------------------------------------------------------------------------------------------

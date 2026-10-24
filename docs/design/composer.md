@@ -154,11 +154,16 @@ api.github.com's limit of 60 requests an hour. Other hosts must be in `download_
 1. **Publish time = `published-time`,** which Packagist sets. `time` is never used: the author controls it.
 2. **It never moves earlier.** The first plausible `published-time` seen for a version is kept in
    `package_versions`; when the file later states a different one, the later one counts.
-3. **Without a plausible `published-time`** (missing, before 2011, or in the future), the clock starts when
-   SlowShield first sees the version (`first_listed`), and a warning is logged. As on NuGet, `first_listed` is
-   recorded only for a version that has never had a plausible time.
+3. **Without a `published-time`** (missing, or before 2011), the clock starts when SlowShield first sees the version
+   (`first_listed`), and a warning is logged. As on NuGet, `first_listed` is recorded only for a version that has
+   never had a plausible time. **A `published-time` in the future counts as now:** the version is held, and it isn't
+   stored.
 4. **The latest clock wins:** the current `published-time`, the first one stored, and `first_listed`.
-5. **Branches** count from their last update, which is what `published-time` says for them: a branch pushed
+5. **The stored times belong to a commit.** `package_versions` keeps the version's `dist.reference` with them; when a
+   version names another commit, they start again. A branch's new commit, or a tag moved on a repository that allows
+   it (a mirror, Satis), is timed by its own `published-time`, or from when SlowShield first sees it, never by the
+   old commit's time. For an unchanged reference, the time never moves earlier.
+6. **Branches** count from their last update, which is what `published-time` says for them: a branch pushed
    yesterday is held. Composer's own cooldown skips dev versions; SlowShield doesn't.
 
 ## Policy
@@ -206,7 +211,9 @@ unless told otherwise, from the IDs inline in the p2 files.
 ## Shield wall
 
 Followers take the leader's policy and `first_listed` times, as for every ecosystem; with `published-time` on every
-version, `first_listed` is rarely used. A follower fetches a dist through the leader only once it has a fingerprint
+version, `first_listed` is rarely used. The leader sends a `first_listed` per version name, not per commit: a
+follower that already sees a newer commit of a branch than the leader does takes the leader's earlier time for it.
+A follower fetches a dist through the leader only once it has a fingerprint
 of its own (a dist has no registry digest to address it by), so each instance's first download of a reference comes
 from GitHub. The leader compares the instances' first fingerprints byte for byte: two instances that got differently
 archived bytes of the same commit show up as a mismatch.

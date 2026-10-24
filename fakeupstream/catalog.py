@@ -18,7 +18,7 @@ import re
 import tarfile
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from fakeupstream import gems
@@ -844,6 +844,18 @@ class Catalog:
             name, version, when if published else None, author, blob, reference, deps, shasum, dist_host
         )
         self.composer[name] = {version: cv, **{v: x for v, x in self.composer.get(name, {}).items() if v != version}}
+
+    def composer_push(self, name: str, version: str, age_days: float | None) -> str:
+        """A new commit under `version` (a branch push, or a tag moved on a repository that allows it), with a
+        `published-time` `age_days` ago (negative: in the future) or none. Returns the new reference."""
+        old = self.composer[name][version]
+        reference = composer_reference(name, f"{version}@{old.reference}")
+        when = None if age_days is None else self.now - age_days * DAY
+        data = make_composer_zip(name, version, reference, old.deps)
+        self.composer[name][version] = replace(
+            old, published=when, time=self.now, blob=Blob(key=f"{name}@{reference}.zip", data=data), reference=reference
+        )  # the commit's `time` is now: the file's Last-Modified moves
+        return reference
 
     def composer_rearchive(self, name: str, version: str) -> None:
         """GitHub archives the commit again: other bytes, the same files."""

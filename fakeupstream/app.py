@@ -1110,6 +1110,13 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         state.catalog.composer_rearchive(request.query_params["name"], request.query_params["version"])
         return JSONResponse({"ok": True})
 
+    async def ctl_composer_push(request: Request) -> Response:
+        """A new commit under a version's name: `age_days` for its `published-time`, `none` for none."""
+        q = request.query_params
+        age = q.get("age_days", "none")
+        ref = state.catalog.composer_push(q["name"], q["version"], None if age == "none" else float(age))
+        return JSONResponse({"reference": ref})
+
     async def ctl_rubygems_yank(request: Request) -> Response:
         """rubygems.org yanks a version: the line leaves the info file and /versions gets `-<key>`."""
         state.catalog.yank_gem(request.query_params["name"], request.query_params["key"])
@@ -1247,6 +1254,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/packagist/lists/all/summary.json", packagist_summary, methods=["GET", "HEAD"]),
         Route("/codeload/{owner}/{repo}/legacy.zip/{ref}", codeload, methods=["GET", "HEAD"]),
         Route("/_control/composer-rearchive", ctl_composer_rearchive, methods=["POST"]),
+        Route("/_control/composer-push", ctl_composer_push, methods=["POST"]),
         Route("/_control/composer-advisories", ctl_composer_advisories, methods=["POST"]),
         Route("/packagist-api/security-advisories/", packagist_advisories, methods=["POST"]),
         Route("/oci/token", oci_token),

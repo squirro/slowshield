@@ -202,7 +202,7 @@ def test_split_sql() -> None:
 async def test_writer_isolates_failures(tmp_path: Path) -> None:
     path = tmp_path / "w.db"
     migrate(path)
-    assert migrate(path) == 6  # idempotent
+    assert migrate(path) == 7  # idempotent
     db = Database(path)
     db.open()
     try:

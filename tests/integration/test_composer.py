@@ -248,6 +248,48 @@ async def test_a_publish_time_never_moves_earlier(running: Running) -> None:
     assert rows == [(NOW - 2 * DAY,)]
 
 
+async def test_a_published_time_in_the_future_counts_as_now(running: Running) -> None:
+    assert "v1.1.0" in await _p2(running, "fake/hello")
+    await running.drain()
+    # The same commit, but the file now says it was published in a month: held, not timed from the stored time.
+    running.fake.control("publish", ecosystem="composer", name="fake/hello", version="v1.1.0", age_days="-30")
+    running.clock.advance(7 * 3600)
+    assert "v1.1.0" not in await _p2(running, "fake/hello")
+    assert (await running.client.get(_dist(running, "fake/hello", "v1.1.0"))).status_code == 425
+    await running.drain()
+    row = "SELECT published, first_listed FROM package_versions WHERE name = 'fake/hello' AND version = 'v1.1.0'"
+    assert running.rows(row) == [(NOW - 30 * DAY, None)]  # kept for the commit; the future time isn't stored
+
+
+async def test_a_new_commit_under_a_known_name_is_timed_afresh(running: Running) -> None:
+    """A repository without `published-time` (a mirror, Satis): a branch's new commit, or a moved tag, is timed from
+    when SlowShield first sees it, not from the first commit's time."""
+    old = _ref(running, "fake/hello", "dev-legacy")
+    assert "dev-legacy" in await _p2(running, "fake/hello", dev=True)  # 60 days old
+    await running.drain()
+    new = running.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    running.clock.advance(7 * 3600)  # past the metadata TTL
+    assert "dev-legacy" not in await _p2(running, "fake/hello", dev=True)
+    r = await running.client.get(f"/composer/dists/fake/hello/{new}.zip")
+    assert r.status_code == 425 and "fake/hello dev-legacy is too new" in r.json()["warning"]
+    assert (await running.client.get(f"/composer/dists/fake/hello/{old}.zip")).status_code == 404
+    await running.drain()
+    row = "SELECT published, first_listed, reference FROM package_versions WHERE name = 'fake/hello' AND version = ?"
+    assert running.rows(row, ("dev-legacy",)) == [(None, NOW + 7 * 3600, new)]
+    # Pushed again, with a `published-time` 10 days ahead: held from now, not from when the last commit was seen.
+    newer = running.fake.control("composer-push", name="fake/hello", version="dev-legacy", age_days="-10")
+    path = f"/composer/dists/fake/hello/{newer['reference']}.zip"
+    running.clock.advance(6 * DAY)
+    assert (await running.client.get(path)).status_code == 425
+    await running.drain()
+    assert running.rows(row, ("dev-legacy",)) == [(None, NOW + 6 * DAY + 7 * 3600, newer["reference"])]
+    # A week later the `published-time` has passed: it counts, and is 3 days old.
+    running.clock.advance(7 * DAY)
+    assert (await running.client.get(path)).status_code == 425
+    running.clock.advance(4 * DAY)
+    assert (await running.client.get(path)).status_code == 200
+
+
 # ---- malware and blocks ------------------------------------------------------------------------------------------
 
 

@@ -3,11 +3,8 @@ const root = document.documentElement;
 root.classList.remove("no-js");
 root.classList.add("js");
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 // Headline: a random variant first, then the others in a random order (each shown once before any repeats),
-// fading every six seconds. Without JavaScript the first one shows. With reduced motion it is a plain fade,
-// without the slide (see site.css).
+// fading every six seconds. Without JavaScript the first one shows.
 const headlines = [...document.querySelectorAll("[data-hl]")];
 if (headlines.length > 1) {
   const rand = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
@@ -39,7 +36,7 @@ if (headlines.length > 1) {
 const scrollDriven = CSS.supports("animation-timeline: view()");
 
 // Fallback reveal for browsers without CSS scroll-driven animations.
-if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
+if (!scrollDriven && "IntersectionObserver" in window) {
   root.classList.add("no-sda");
   const io = new IntersectionObserver(
     (entries) => {
@@ -58,7 +55,7 @@ if (!scrollDriven && !reduceMotion && "IntersectionObserver" in window) {
 // Scrollytelling: each chapter of How it works has its own pinned diagram, driven by the step at the reading line.
 // data-step picks that step's layers and --p (0 to 1: how far the reading line is through the step) plays it, so the
 // diagram follows the scroll in both directions. Before a chapter's first step its diagram rests (data-rest, --p 0);
-// after its last it keeps that step's end. With reduced motion, --p stays 1 and every step shows how it ends.
+// after its last it keeps that step's end.
 const chapters = [...document.querySelectorAll(".chapter")].map((chapter) => ({
   figure: chapter.querySelector(".story-figure"),
   steps: [...chapter.querySelectorAll(".step")],
@@ -91,7 +88,7 @@ if (chapters.length) {
         progress = Math.min(1, (line - r.top) / r.height);
       }
       figure.dataset.step = step;
-      figure.style.setProperty("--p", reduceMotion ? "1" : progress.toFixed(3));
+      figure.style.setProperty("--p", progress.toFixed(3));
       if (narrow.matches) continue;
       // Wide screens: below the reading line, a step's text fades in and rises as it comes within 0.5 to 0.2
       // viewport heights of it; above, it fades out over the last 80 px before its top reaches the pinned title.
@@ -101,7 +98,7 @@ if (chapters.length) {
         const below = d > 0 ? clamp((0.5 - d) / 0.3) : 1;
         const above = clamp((s.firstElementChild.getBoundingClientRect().top - pinnedTop) / 80);
         s.style.setProperty("--in", (below * above).toFixed(3));
-        s.style.setProperty("--rise", reduceMotion ? "0" : (1 - below).toFixed(3));
+        s.style.setProperty("--rise", (1 - below).toFixed(3));
       }
     }
   };

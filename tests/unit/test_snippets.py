@@ -119,7 +119,7 @@ def test_nuget_config_clears_the_other_sources_and_keeps_the_name_nuget_org() ->
 
 def test_ruby_tools_mirror_rubygems_org_and_make_slowshield_gems_only_source() -> None:
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
-    tools = {t.name: t for t in S.tools(*urls, nuget="n", rubygems="https://h/rubygems")}
+    tools = {t.name: t for t in S.tools(*urls, nuget="n", composer="c", rubygems="https://h/rubygems")}
     bundler, gem = tools["Bundler"], tools["gem"]
     assert bundler.ecosystem == gem.ecosystem == "rubygems"
     # A mirror, so Gemfiles and Gemfile.lock keep rubygems.org; never a fallback_timeout, which goes around it.
@@ -130,7 +130,7 @@ def test_ruby_tools_mirror_rubygems_org_and_make_slowshield_gems_only_source() -
     assert gem.age == S.NO_AGE_DEFAULT
     assert S.docs_url("rubygems", "Bundler") == f"{S.DOCS}ruby/#bundler"
     with pytest.raises(ValueError, match="refusing"):
-        S.tools(*urls, nuget="n", rubygems="https://h/rubygems'$(id)'")
+        S.tools(*urls, nuget="n", composer="c", rubygems="https://h/rubygems'$(id)'")
 
 
 def test_tools_name_the_version_their_release_age_needs() -> None:
@@ -178,7 +178,7 @@ def test_ci_and_dockerfile_snippets() -> None:
 
 def test_composer_replaces_packagist_org() -> None:
     urls = ("https://h/pypi/simple/", "https://h/npm/", "https://h/go", "https://h/maven", "https://h/cargo/")
-    tool = {t.name: t for t in S.tools(*urls, nuget="n", composer="https://h/composer/")}["Composer"]
+    tool = {t.name: t for t in S.tools(*urls, nuget="n", composer="https://h/composer/", rubygems="r")}["Composer"]
     assert tool.ecosystem == "composer" and S.docs_url("composer", "Composer") == f"{S.DOCS}php/#composer"
     command, project, relock = (code for _, code in tool.snippets)
     # packagist.org off: a repository named packagist is added next to it, not in its place.
@@ -193,8 +193,10 @@ def test_composer_replaces_packagist_org() -> None:
     assert relock.startswith("php -r '") and relock.endswith("'") and relock.count("'") == 2
     assert '"https://h/composer/dists/{$p["name"]}/{$p["dist"]["reference"]}.{$p["dist"]["type"]}"' in relock
     # Plain HTTP on localhost needs secure-http off.
-    local = {t.name: t for t in S.tools(*urls, nuget="n", composer="http://localhost/composer/")}["Composer"]
+    local = {t.name: t for t in S.tools(*urls, nuget="n", composer="http://localhost/composer/", rubygems="r")}[
+        "Composer"
+    ]
     assert local.snippets[0][1].endswith(" && composer config -g secure-http false")
     assert json.loads(local.snippets[1][1])["config"] == {"secure-http": False}
     with pytest.raises(ValueError, match="refusing"):
-        S.tools(*urls, nuget="n", composer="https://h/composer/'$(id)'")
+        S.tools(*urls, nuget="n", composer="https://h/composer/'$(id)'", rubygems="r")

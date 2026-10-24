@@ -1,4 +1,4 @@
-"""SlowShield: supply-chain defence proxy for PyPI, npm, Go modules, Maven and Cargo."""
+"""SlowShield: supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet and Composer."""
 
 from __future__ import annotations
 

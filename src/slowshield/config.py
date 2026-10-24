@@ -27,8 +27,8 @@ from slowshield.ecosystems import normalize
 
 log = logging.getLogger(__name__)
 
-Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "nuget", "oci"]
-ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "nuget", "oci")
+Ecosystem = Literal["pypi", "npm", "go", "maven", "cargo", "nuget", "composer", "oci"]
+ECOSYSTEMS: tuple[Ecosystem, ...] = ("pypi", "npm", "go", "maven", "cargo", "nuget", "composer", "oci")
 
 DEFAULT_TRUSTED_PROXIES = [
     "127.0.0.0/8",
@@ -183,6 +183,25 @@ class NugetUpstream(msgspec.Struct, forbid_unknown_fields=True):
         }
 
 
+class ComposerUpstream(msgspec.Struct, forbid_unknown_fields=True):
+    enabled: bool = True
+    # A package none of whose versions is old enough is held too, as on Maven, Cargo and NuGet: brand-new packages
+    # are the realistic attack (typosquats, dependency confusion) (docs/design/composer.md).
+    fail_open: bool | None = False
+    # Packagist's Composer repository: p2/<vendor>/<package>.json, whose `published-time` Packagist sets, and the
+    # malware list at lists/all/summary.json. SlowShield writes its own packages.json and never reads Packagist's.
+    repo_url: str = "https://repo.packagist.org"
+    # Packagist's security advisory API, for `composer audit`: SlowShield passes on the package names Composer asks
+    # about (as npm's audit), so the advisories come with titles and links, not only the IDs in the p2 files.
+    advisories_url: str = "https://packagist.org/api/security-advisories/"
+    # Hosts dists may come from, and their redirects go to. GitHub's API zipball URLs are fetched from
+    # codeload.github.com directly, past api.github.com's rate limit. Every dist is checked against its first
+    # download wherever it comes from.
+    download_hosts: list[str] = msgspec.field(
+        default_factory=lambda: ["codeload.github.com", "gitlab.com", "bitbucket.org"]
+    )
+
+
 OciTimes = Literal["hub", "quay", "gcr", "mcr", "none"]
 
 
@@ -263,6 +282,7 @@ class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     maven: MavenUpstream = msgspec.field(default_factory=MavenUpstream)
     cargo: CargoUpstream = msgspec.field(default_factory=CargoUpstream)
     nuget: NugetUpstream = msgspec.field(default_factory=NugetUpstream)
+    composer: ComposerUpstream = msgspec.field(default_factory=ComposerUpstream)
     oci: OciUpstream = msgspec.field(default_factory=OciUpstream)
 
 
@@ -517,6 +537,7 @@ def _apply_env(cfg: Config) -> set[str]:
         ("SLOWSHIELD_MAVEN_ENABLED", lambda b: setattr(cfg.upstreams.maven, "enabled", b)),
         ("SLOWSHIELD_CARGO_ENABLED", lambda b: setattr(cfg.upstreams.cargo, "enabled", b)),
         ("SLOWSHIELD_NUGET_ENABLED", lambda b: setattr(cfg.upstreams.nuget, "enabled", b)),
+        ("SLOWSHIELD_COMPOSER_ENABLED", lambda b: setattr(cfg.upstreams.composer, "enabled", b)),
         ("SLOWSHIELD_OCI_ENABLED", lambda b: setattr(cfg.upstreams.oci, "enabled", b)),
         ("SLOWSHIELD_ENFORCE_AGE_ON_DOWNLOAD", lambda b: setattr(cfg, "enforce_age_on_download", b)),
         ("SLOWSHIELD_FAIL_OPEN", lambda b: setattr(cfg, "fail_open", b)),
@@ -699,6 +720,13 @@ def _validate(cfg: Config) -> None:
         # The three bases are prefixes (<base><id>/...), and only documents under them are followed.
         if name in ("flat_container_url", "registration_url", "catalog_url") and not url.endswith("/"):
             raise ConfigError(f"upstreams.nuget.{name} must end with /, got {url!r}")
+    composer = cfg.upstreams.composer
+    for name, url in (("repo_url", composer.repo_url), ("advisories_url", composer.advisories_url)):
+        if not url.startswith(("https://", "http://")):
+            raise ConfigError(f"upstreams.composer.{name} must be an http(s) URL, got {url!r}")
+    for host in composer.download_hosts:
+        if not _HOSTNAME.fullmatch(host):
+            raise ConfigError(f"upstreams.composer.download_hosts entries must be host names, got {host!r}")
     oci = cfg.upstreams.oci
     if oci.layer_cache_gb < 0:
         raise ConfigError("upstreams.oci.layer_cache_gb must be >= 0")
@@ -765,6 +793,8 @@ def rule_tables(
                 version = "v" + version  # Go versions always carry the `v`; accept "1.2.3" as well
             if rule.ecosystem == "nuget":
                 version = versions.canonical("nuget", version)  # 1.0 and 1.0.0.0 name 1.0.0, as in NuGet
+            if rule.ecosystem == "composer":
+                version = versions.canonical("composer", version)  # v1.2 and 1.2.0 name 1.2.0.0, as in Composer
             ver_rules.setdefault((rule.ecosystem, name, version), rule.delay_days)
         else:
             pkg_rules.setdefault((rule.ecosystem, name), rule.delay_days)
@@ -912,6 +942,11 @@ def restart_only_changes(old: Config, new: Config) -> list[str]:
     old_nuget, new_nuget = old.upstreams.nuget.urls(), new.upstreams.nuget.urls()
     changed.extend(  # these decide which upstream hosts the client may reach
         f"upstreams.nuget.{name}" for name in old_nuget if old_nuget[name] != new_nuget[name]
+    )
+    changed.extend(  # these decide which upstream hosts the client may reach
+        f"upstreams.composer.{name}"
+        for name in ("repo_url", "advisories_url", "download_hosts")
+        if getattr(old.upstreams.composer, name) != getattr(new.upstreams.composer, name)
     )
     if old.cache.artifacts_enabled != new.cache.artifacts_enabled:
         changed.append("cache.artifacts_enabled")

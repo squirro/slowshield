@@ -1,5 +1,5 @@
 """Version parsing/ordering for PyPI (PEP 440), npm, Go and Cargo (SemVer 2.0), Maven (ComparableVersion), NuGet
-(NuGet.Versioning), plus advisory range matching.
+(NuGet.Versioning), Composer (composer/semver and PHP's version_compare), plus advisory range matching.
 
 Ranges use the comma-separated comparator form shared by GitHub advisories and our blocklist table,
 e.g. ``">= 1.0.0, < 1.4.2"`` or ``"= 0.30.4"``. Each comma part must hold (logical AND).
@@ -14,6 +14,7 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
+from slowshield.ecosystems.composer import version as composer
 from slowshield.ecosystems.maven import version as maven
 from slowshield.ecosystems.nuget import version as nuget
 
@@ -89,6 +90,9 @@ def canonical(ecosystem: str, version: str) -> str:
     if ecosystem == "nuget":
         # NuGet's normalized form, lower case: 1.0, 1.0.0.0 and 1.0.0+abc are 1.0.0, and 1.0.0-BETA is 1.0.0-beta.
         return nuget.canonical(version) or version.strip().lower()
+    if ecosystem == "composer":
+        # Composer's normalized form: v1.2 and 1.2.0 are 1.2.0.0, 1.0-rc1 is 1.0.0.0-RC1.
+        return composer.canonical(version) or version.strip()
     if not parse_semver(version):
         return version.strip()
     out = version.strip().removeprefix("v")
@@ -108,6 +112,8 @@ def sort_key(ecosystem: str, version: str) -> tuple[int, Any]:
     if ecosystem == "nuget":
         n = nuget.parse(version)
         return (1, n.key) if n is not None else (0, version)
+    if ecosystem == "composer":
+        return (1, composer.key(version))  # version_compare orders any string
     s = parse_semver(version)
     return (1, s.key) if s is not None else (0, version)
 
@@ -121,6 +127,8 @@ def is_prerelease(ecosystem: str, version: str) -> bool:
     if ecosystem == "nuget":
         n = nuget.parse(version)
         return bool(n and n.is_prerelease)
+    if ecosystem == "composer":
+        return composer.is_prerelease(version)
     s = parse_semver(version)
     return bool(s and s.is_prerelease)
 
@@ -135,6 +143,10 @@ def _cmp(ecosystem: str, a: str, b: str) -> int | None:
         return maven.compare(a, b)
     if ecosystem == "nuget":
         return nuget.compare(a, b)
+    if ecosystem == "composer":
+        if composer.normalize(a) is None or composer.normalize(b) is None:
+            return None
+        return composer.compare(a, b)
     sa, sb = parse_semver(a), parse_semver(b)
     if sa is None or sb is None:
         return None

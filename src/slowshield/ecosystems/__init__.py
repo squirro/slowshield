@@ -70,6 +70,10 @@ ECOSYSTEMS: dict[str, EcosystemInfo] = {
             "nuget", "C#", names.normalize_nuget, names.is_valid_nuget, "NuGet", "nuget",
             "https://www.nuget.org/packages/{name}", "NuGet Gallery",
         ),
+        EcosystemInfo(
+            "composer", "PHP", names.normalize_composer, names.is_valid_composer, "Packagist", "composer",
+            "https://packagist.org/packages/{name}", "Packagist",
+        ),
         # No advisory database covers container images: OCI has no OSV or GitHub ecosystem name.
         EcosystemInfo(
             "oci", "Containers", names.normalize_oci, names.is_valid_oci, "", "", "https://{name}",

@@ -456,3 +456,75 @@ def test_nuget_restores_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
     assert added.returncode == 0 and 'Include="Fake.Hello" Version="1.1.0"' in added.stdout, added.stdout[-3000:]
     status, headers, body = stack.get("/nuget/v3/flatcontainer/fake.hello/1.2.0/fake.hello.1.2.0.nupkg")
     assert status == 425 and "retry-after" in headers and b"is too new" in body
+
+
+# The official Composer image (2.10.3, PHP 8.5); a client image, as the Maven, Gradle, Rust and .NET ones.
+COMPOSER_IMAGE = "composer:2.10@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc"
+
+
+def _composer_lock(name: str, version: str, url: str, reference: str) -> str:
+    """A composer.lock that pins one version (Composer warns that it doesn't match composer.json's hash, and
+    installs it)."""
+    package = {
+        "name": name,
+        "version": version,
+        "dist": {"type": "zip", "url": url, "reference": reference, "shasum": ""},
+        "type": "library",
+        "autoload": {"psr-4": {"Fake\\": "src/"}},
+    }
+    return json.dumps(
+        {
+            "content-hash": "0" * 32,
+            "packages": [package],
+            "packages-dev": [],
+            "aliases": [],
+            "minimum-stability": "stable",
+            "stability-flags": {},
+            "prefer-stable": False,
+            "prefer-lowest": False,
+            "platform": {},
+            "platform-dev": {},
+            "plugin-api-version": "2.6.0",
+        },
+        indent=4,
+    )
+
+
+def test_composer_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> None:
+    """Real Composer with the Setup page's command. fake/deps needs fake/hello ^1.0: 1.2.0 is two days old, so it is
+    left out of the metadata and Composer locks v1.1.0, downloaded through SlowShield. A composer.lock that pins
+    1.2.0 gets 425 and the warning that names the version to use."""
+    base = "http://localhost:8080/composer"
+    (tmp_path / "deps").mkdir()
+    (tmp_path / "deps" / "composer.json").write_text('{"name": "demo/app", "require": {"fake/deps": "^1.0"}}\n')
+    (tmp_path / "held").mkdir()
+    (tmp_path / "held" / "composer.json").write_text('{"name": "demo/held", "require": {"fake/hello": "1.2.0"}}\n')
+    ref = stack.fake_info()["composer"]["fake/hello"]["1.2.0"]["reference"]
+    (tmp_path / "held" / "composer.lock").write_text(
+        _composer_lock("fake/hello", "1.2.0", f"{base}/dists/fake/hello/{ref}.zip", ref)
+    )
+    setup = snippets.composer_command(f"{base}/")
+
+    def composer(script: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "run", "--rm", "--network", f"container:{stack.container_id('slowshield')}",
+             "-e", "COMPOSER_HOME=/tmp/composer", "-e", "COMPOSER_NO_INTERACTION=1",
+             "-v", f"{tmp_path}:/w:ro", "--entrypoint", "sh", COMPOSER_IMAGE, "-c", f"{setup} && {script}"],
+            capture_output=True, text=True, timeout=600, check=False,
+        )  # fmt: skip
+
+    ok = composer(
+        "cp -r /w/deps /tmp/p && cd /tmp/p && composer install -v && cat composer.lock"
+        ' && php -r \'require "vendor/autoload.php"; echo "hello=", Fake\\Hello::VERSION, "\\n";\''
+    )
+    assert ok.returncode == 0, ok.stdout[-3000:] + ok.stderr[-3000:]
+    lock = json.loads(ok.stdout[ok.stdout.index("{") : ok.stdout.rindex("}") + 1])
+    assert {p["name"]: p["version"] for p in lock["packages"]} == {"fake/deps": "1.0.0", "fake/hello": "v1.1.0"}
+    assert all(p["dist"]["url"].startswith(f"{base}/dists/") for p in lock["packages"])
+    assert "hello=v1.1.0" in ok.stdout
+    held = composer("cp -r /w/held /tmp/p && cd /tmp/p && composer install")
+    assert held.returncode != 0
+    out = held.stdout + held.stderr
+    assert "Warning from localhost:8080: slowshield: fake/hello 1.2.0 is too new" in out, out[-3000:]
+    assert "(HTTP/1.1 425 Too Earl" in out  # Composer wraps its error box
+    assert "--with fake/hello:v1.1.0" in out

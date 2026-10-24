@@ -1,6 +1,7 @@
 """Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), Maven, crates.io
 (sparse index and static downloads), nuget.org (flat container, registration, catalog, search, vulnerability data),
-OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub endpoints, plus control hooks."""
+Packagist (p2 metadata, the malware list) with GitHub's codeload archives, OCI registries (with Docker Hub- and
+Quay-style time APIs), OSV and GitHub endpoints, plus control hooks."""
 
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Iterator
 from html import escape
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -59,6 +60,7 @@ class State:
         self.failures: dict[str, int] = {}
         self.hits: Counter[str] = Counter()
         self.last_headers: dict[str, dict[str, str]] = {}
+        self.composer_advisories_asked: list[str] = []
         self.clock_offset = 0.0  # added to the catalog's `now` when the Go mirror stores a version
 
 
@@ -497,6 +499,92 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
         return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
 
+    # ---- Packagist and GitHub ------------------------------------------------------------------------
+    # /packagist/p2/<vendor>/<package>.json (tags) and ~dev.json (branches), minified as Packagist sends them, with
+    # Last-Modified and If-Modified-Since; /packagist/lists/all/summary.json; dists at /codeload/ (GitHub's archives).
+
+    def composer_minify(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        last: dict[str, Any] | None = None
+        for entry in entries:
+            if last is None:
+                out.append(entry)
+                last = dict(entry)
+                continue
+            diff = {k: v for k, v in entry.items() if k not in last or last[k] != v}
+            diff.update({k: "__unset" for k in last if k not in entry})
+            out.append(diff)
+            last = dict(entry)
+        return out
+
+    def last_modified(request: Request, body: bytes, when: float, media_type: str = "application/json") -> Response:
+        stamp = email.utils.formatdate(when, usegmt=True)
+        h = {"Last-Modified": stamp, "ETag": _etag(body), "Cache-Control": "public, max-age=900"}
+        since = request.headers.get("if-modified-since")
+        if since and email.utils.parsedate_to_datetime(since).timestamp() >= int(when):
+            return Response(status_code=304, headers=h)
+        if request.headers.get("if-none-match") == h["ETag"]:
+            return Response(status_code=304, headers=h)
+        return Response(body, media_type=media_type, headers=h)
+
+    async def packagist_p2(request: Request) -> Response:
+        vendor, file = request.path_params["vendor"], request.path_params["file"]
+        stem = file.removesuffix(".json")
+        dev = stem.endswith("~dev")
+        name = f"{vendor}/{stem.removesuffix('~dev')}"
+        pkg = state.catalog.composer.get(name)
+        if pkg is None or not file.endswith(".json"):
+            return JSONResponse("404 not found, no packages here", status_code=404)
+        entries = [
+            state.catalog.composer_entry(cv, base(request))
+            for cv in pkg.values()
+            if cv.version.startswith("dev-") == dev
+        ]
+        body = json.dumps(
+            {
+                "minified": "composer/2.0",
+                "packages": {name: composer_minify(entries)},
+                "security-advisories": [{"advisoryId": "PKSA-fake-0001", "affectedVersions": "<1.0.0"}],
+            }
+        ).encode()
+        when = max([cv.published or cv.time for cv in pkg.values()] + [state.catalog.now - 400 * DAY])
+        return last_modified(request, body, when)
+
+    async def packagist_summary(request: Request) -> Response:
+        body = json.dumps({"filter": {"malware": {"fake/evil": "*", "fake/gone": "1.0.0|v1.0.1"}}}).encode()
+        return last_modified(request, body, state.catalog.now - 3 * DAY)
+
+    async def packagist_advisories(request: Request) -> Response:
+        """packagist.org/api/security-advisories/: a POST form of `packages[]` (or `packages[<n>]`)."""
+        form = parse_qsl((await request.body()).decode())
+        asked = sorted(v for k, v in form if k.startswith("packages["))
+        state.composer_advisories_asked = asked
+        found = {
+            n: [
+                {
+                    "advisoryId": "PKSA-fake-0001",
+                    "packageName": n,
+                    "title": "Fake advisory",
+                    "affectedVersions": "<1.0.0",
+                }
+            ]
+            for n in asked
+            if n in state.catalog.composer
+        }
+        return JSONResponse({"advisories": found})
+
+    async def ctl_composer_advisories(request: Request) -> Response:
+        return JSONResponse({"asked": state.composer_advisories_asked})
+
+    async def codeload(request: Request) -> Response:
+        """codeload.github.com: `/<owner>/<repo>/legacy.zip/<commit>`; 404 for anything else."""
+        name = f"{request.path_params['owner']}/{request.path_params['repo']}"
+        ref = request.path_params["ref"]
+        hit = next((cv for cv in state.catalog.composer.get(name, {}).values() if cv.reference == ref), None)
+        if hit is None:
+            return PlainTextResponse("404: Not Found", status_code=404)
+        return _stream(hit.blob, tampered=request.url.path in state.tampered, media_type="application/zip")
+
     # ---- nuget.org --------------------------------------------------------------------------------------
     # /nuget-flat/ (flat container), /nuget-reg/ (a gzipped SemVer 2 registration hive), /nuget-catalog/ (catalog
     # leaves with packageHash), /nuget-search/query, /nuget-vuln/index.json and its files. Lower-case paths only.
@@ -923,7 +1011,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/")):
+        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/", "/codeload/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -959,6 +1047,11 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
     async def ctl_nuget_resign(request: Request) -> Response:
         """nuget.org re-signs a package: new bytes, and a catalog commit whose packageHash matches them."""
         state.catalog.nuget_resign(request.query_params["id"], request.query_params["version"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_composer_rearchive(request: Request) -> Response:
+        """GitHub archives a commit again: other bytes, the same files."""
+        state.catalog.composer_rearchive(request.query_params["name"], request.query_params["version"])
         return JSONResponse({"ok": True})
 
     async def ctl_oci_remove(request: Request) -> Response:
@@ -1027,6 +1120,17 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     }
                     for name, crate in cat.crates.items()
                 },
+                "composer": {
+                    name: {
+                        v: {
+                            "reference": cv.reference,
+                            "published": cv.published,
+                            "sha256": cv.blob.digests()["sha256"],
+                        }
+                        for v, cv in pkg.items()
+                    }
+                    for name, pkg in cat.composer.items()
+                },
                 "nuget": {
                     lid: {
                         lv: {
@@ -1063,6 +1167,12 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/nuget-vuln-data/{rest:path}", nuget_vuln_file),
         Route("/_control/nuget-list", ctl_nuget_list, methods=["POST"]),
         Route("/_control/nuget-resign", ctl_nuget_resign, methods=["POST"]),
+        Route("/packagist/p2/{vendor}/{file}", packagist_p2, methods=["GET", "HEAD"]),
+        Route("/packagist/lists/all/summary.json", packagist_summary, methods=["GET", "HEAD"]),
+        Route("/codeload/{owner}/{repo}/legacy.zip/{ref}", codeload, methods=["GET", "HEAD"]),
+        Route("/_control/composer-rearchive", ctl_composer_rearchive, methods=["POST"]),
+        Route("/_control/composer-advisories", ctl_composer_advisories, methods=["POST"]),
+        Route("/packagist-api/security-advisories/", packagist_advisories, methods=["POST"]),
         Route("/oci/token", oci_token),
         Route("/oci/{registry}/v2/{rest:path}", oci, methods=["GET", "HEAD"]),
         Route("/oci/{registry}/v2", oci, methods=["GET", "HEAD"]),

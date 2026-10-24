@@ -34,6 +34,7 @@ from slowshield.db import Database
 from slowshield.ecosystems import normalize
 from slowshield.ecosystems.artifacts import ArtifactServer
 from slowshield.ecosystems.cargo.service import CargoService
+from slowshield.ecosystems.composer.service import ComposerService
 from slowshield.ecosystems.go.service import GoService
 from slowshield.ecosystems.maven.service import MavenService
 from slowshield.ecosystems.npm.service import NpmService
@@ -79,6 +80,8 @@ def build_context(cfg: LoadedConfig, clock: Clock) -> AppContext:
     cargo = raw.upstreams.cargo
     allowed |= _hosts([cargo.index_url, cargo.download_url]) | {h.lower() for h in cargo.download_hosts}
     allowed |= _hosts(list(raw.upstreams.nuget.urls().values()))
+    composer = raw.upstreams.composer
+    allowed |= _hosts([composer.repo_url, composer.advisories_url]) | {h.lower() for h in composer.download_hosts}
     if raw.upstreams.oci.enabled:
         for reg in raw.upstreams.oci.all_registries().values():
             allowed |= _hosts([reg.url, reg.times_url or ""]) | {h.lower() for h in reg.download_hosts}
@@ -187,6 +190,7 @@ class SlowShield:
         maven = MavenService(ctx) if self.cfg.raw.upstreams.maven.enabled else None
         cargo = CargoService(ctx) if self.cfg.raw.upstreams.cargo.enabled else None
         nuget = NugetService(ctx) if self.cfg.raw.upstreams.nuget.enabled else None
+        composer = ComposerService(ctx) if self.cfg.raw.upstreams.composer.enabled else None
         oci = OciService(ctx) if self.cfg.raw.upstreams.oci.enabled else None
         from slowshield.ui import UI
 
@@ -194,7 +198,9 @@ class SlowShield:
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
-            self._router(ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, nuget=nuget, oci=oci, ui=ui)
+            self._router(
+                ctx, pypi=pypi, npm=npm, go=go, maven=maven, cargo=cargo, nuget=nuget, composer=composer, oci=oci, ui=ui
+            )
         )
         if self.background:
             self._spawn(ctx.recorder.run(), "recorder")
@@ -214,6 +220,7 @@ class SlowShield:
                 "maven": bool(maven),
                 "cargo": bool(cargo),
                 "nuget": bool(nuget),
+                "composer": bool(composer),
                 "oci": bool(oci),
                 "db": str(self.cfg.db_path),
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
@@ -417,6 +424,7 @@ class SlowShield:
         maven: MavenService | None,
         cargo: CargoService | None,
         nuget: NugetService | None,
+        composer: ComposerService | None,
         oci: OciService | None,
         ui: Any,
     ) -> ASGIApp:
@@ -439,6 +447,8 @@ class SlowShield:
             main.append(Mount("/cargo", app=cargo))
         if nuget is not None:
             main.append(Mount("/nuget", app=nuget))
+        if composer is not None:
+            main.append(Mount("/composer", app=composer))
         if oci is not None:
             main.append(Mount("/v2", app=oci))  # the OCI distribution API is mandated at the root
         if raw.shieldwall.role == "leader" and self._identity is not None:
@@ -632,6 +642,13 @@ def _route_label(path: str) -> str:
         return "/cargo/config.json" if path == "/cargo/config.json" else "/cargo/{index_file}"
     if path.startswith("/nuget/"):
         return _nuget_label(path)
+    if path.startswith("/composer/"):
+        if path.startswith("/composer/dists/"):
+            return "/composer/dists/{package}/{file}"
+        if path.startswith("/composer/p2/"):
+            return "/composer/p2/{package}~dev.json" if path.endswith("~dev.json") else "/composer/p2/{package}.json"
+        known = ("/composer/packages.json", "/composer/lists/all/summary.json", "/composer/api/security-advisories/")
+        return path if path in known else "/composer/{path}"
     if path.startswith("/go/"):
         if path.endswith("/@v/list"):
             return "/go/{module}/@v/list"

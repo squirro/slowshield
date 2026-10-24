@@ -652,6 +652,7 @@ class UI:
         maven_base = f"{base}/maven"
         cargo_index = f"{base}/cargo/"
         nuget_source = f"{base}/nuget/v3/index.json"
+        composer_repo = f"{base}/composer/"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
@@ -668,17 +669,20 @@ class UI:
                 "maven": f"{maven_base}/all/",
                 "cargo": cargo_index,
                 "nuget": nuget_source,
+                "composer": composer_repo,
             }
             pypi_index = f"{local}/pypi/simple/"
             go_proxy = f"{local}/go"
             maven_base = f"{local}/maven"
             cargo_index = f"{local}/cargo/"
             nuget_source = f"{local}/nuget/v3/index.json"
+            composer_repo = f"{local}/composer/"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         age_days = S.client_age_days(raw.default_delay_days)
         images = S.oci_tools(local or base, tuple(sorted(raw.upstreams.oci.all_registries())), age_days=age_days)
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
+        urls = (pypi_index, npm_registry, go_proxy, maven_base, cargo_index)
         os_name = _client_os(request)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
@@ -690,6 +694,7 @@ class UI:
             maven_repo=f"{maven_base}/all/",
             cargo_index=cargo_index,
             nuget_source=nuget_source,
+            composer_repo=composer_repo,
             legacy_hosts=legacy_hosts,
             setup_url=cfg.setup_base(),
             also_at=cfg.public_base() if raw.setup_url and cfg.setup_base() != cfg.public_base() else None,
@@ -697,14 +702,8 @@ class UI:
             snippets=snippets,
             docs=S.docs_url,
             docs_home=S.DOCS,
-            tools=S.tools(
-                pypi_index, npm_registry, go_proxy, maven_base, cargo_index, nuget=nuget_source, age_days=age_days
-            )
-            + images,
-            tools_plain=S.tools(
-                pypi_index, npm_registry, go_proxy, maven_base, cargo_index, nuget=nuget_source, age_days=0
-            )
-            + images,
+            tools=S.tools(*urls, nuget=nuget_source, composer=composer_repo, age_days=age_days) + images,
+            tools_plain=S.tools(*urls, nuget=nuget_source, composer=composer_repo, age_days=0) + images,
             age_days=age_days,
             ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
             ci_plain=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=0),

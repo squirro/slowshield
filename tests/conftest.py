@@ -70,6 +70,10 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
                 "vulnerability_url": f"{fake_url}/nuget-vuln/index.json",
                 "search_url": f"{fake_url}/nuget-search/query",
             },
+            "composer": {
+                "repo_url": f"{fake_url}/packagist",
+                "advisories_url": f"{fake_url}/packagist-api/security-advisories/",
+            },
             "oci": {"registries": fake_oci_registries(fake_url)},
         },
         "feeds": {"osv_base_url": f"{fake_url}/osv", "github_api_url": f"{fake_url}/github"},

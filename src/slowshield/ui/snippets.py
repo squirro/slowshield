@@ -21,7 +21,7 @@ CLIENT_AGE_DAYS = 3
 DOCS = "https://slowshield.org/docs/"
 DOCS_PAGES = {
     "pypi": "python", "npm": "javascript", "go": "go", "maven": "java", "cargo": "rust", "nuget": "csharp",
-    "oci": "containers",
+    "composer": "php", "oci": "containers",
 }  # fmt: skip
 _AGE_VARS = ("PIP_UPLOADED_PRIOR_TO", "npm_config_min_release_age")
 
@@ -141,27 +141,40 @@ AGE_SUPPORT = {
 }
 NO_AGE = {
     "Cargo": "Cargo's own setting (min-publish-age) isn't stable yet: SlowShield is the only layer.",
+    "Composer": "Composer 2.11 adds its own (config.policy.cooldown.period, measured from Packagist's published-time, "
+    "which SlowShield passes on). Composer 2.10 and older have none: SlowShield is the only layer.",
 }
 NO_AGE_DEFAULT = "No release-age setting of its own: SlowShield is the only layer."
 
 
 def tools(
-    pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int = CLIENT_AGE_DAYS
+    pypi: str,
+    npm: str,
+    go: str,
+    maven: str,
+    cargo: str,
+    *,
+    nuget: str,
+    composer: str,
+    age_days: int = CLIENT_AGE_DAYS,
 ) -> tuple[Tool, ...]:
     """Per-tool setup (Setup page only), with this instance's URLs and, unless `age_days` is 0, each tool's own
     release age. `maven` is the base of the Maven repositories (`<public_url>/maven`), `cargo` the sparse index
-    (`<public_url>/cargo/`), `nuget` the service index (`<public_url>/nuget/v3/index.json`)."""
+    (`<public_url>/cargo/`), `nuget` the service index (`<public_url>/nuget/v3/index.json`), `composer` the Composer
+    repository (`<public_url>/composer/`)."""
     urls = (safe(pypi), safe(npm), safe(go), safe(maven), safe(cargo))
     if age_days <= 0:
-        return _tools(*urls, nuget=safe(nuget), age_days=0)
-    aged = _tools(*urls, nuget=safe(nuget), age_days=age_days)
+        return _tools(*urls, nuget=safe(nuget), composer=safe(composer), age_days=0)
+    aged = _tools(*urls, nuget=safe(nuget), composer=safe(composer), age_days=age_days)
     return tuple(
         Tool(t.name, t.ecosystem, t.keywords, t.snippets, AGE_SUPPORT.get(t.name) or NO_AGE.get(t.name, NO_AGE_DEFAULT))
         for t in aged
     )
 
 
-def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, age_days: int) -> tuple[Tool, ...]:
+def _tools(
+    pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, composer: str, age_days: int
+) -> tuple[Tool, ...]:
     # Units differ per tool: npm's min-release-age and Poetry's solver.min-release-age count days (npm 11.10 to 12.1:
     # `before = now - 86400000 * min-release-age`), pnpm's minimumReleaseAge minutes, Bun's seconds; pip, uv, Yarn and
     # PDM take a duration (P3D, 3d).
@@ -322,6 +335,18 @@ def _tools(pypi: str, npm: str, go: str, maven: str, cargo: str, *, nuget: str, 
                  NUGET_FAIL_ON_SKIPPED),
             ),
         ),
+        Tool(
+            "Composer",
+            "composer",
+            "composer php packagist composer.json composer.lock laravel symfony",
+            (
+                ("every project ($COMPOSER_HOME/config.json): packagist.org off, SlowShield on",
+                 composer_command(composer)),
+                ("one project's composer.json", composer_json(composer)),
+                ("a composer.lock written against packagist.org: point its dists at SlowShield (run next to it)",
+                 composer_relock(composer)),
+            ),
+        ),
     )  # fmt: skip
 
 
@@ -454,6 +479,42 @@ def nuget_command(nuget: str) -> str:
         "mkdir -p \"$HOME/.nuget/NuGet\" && printf '%s\\n' "
         + " ".join(f"'{line}'" for line in _nuget_lines(nuget))
         + ' > "$HOME/.nuget/NuGet/NuGet.Config"'
+    )
+
+
+def composer_command(composer: str) -> str:
+    """packagist.org off and SlowShield on, for every project. Both are needed: a repository named `packagist` is
+    added next to packagist.org, not in its place (Composer 2.10). Plain HTTP needs `secure-http` off."""
+    cmd = f"composer config -g repo.packagist false && composer config -g repos.slowshield composer {composer}"
+    return cmd + " && composer config -g secure-http false" if composer.startswith("http://") else cmd
+
+
+def composer_json(composer: str) -> str:
+    """The repositories of one project's composer.json: SlowShield, and packagist.org off (Composer asks every
+    repository, and packagist.org is one unless it is switched off)."""
+    insecure = ',\n  "config": {"secure-http": false}' if composer.startswith("http://") else ""
+    return (
+        '{\n  "repositories": [\n'
+        f'    {{"type": "composer", "url": "{composer}"}},\n'
+        '    {"packagist.org": false}\n'
+        f"  ]{insecure}\n}}"
+    )
+
+
+def composer_relock(composer: str) -> str:
+    """Point a composer.lock's dist URLs at SlowShield, keeping every version: a lock written against packagist.org
+    names api.github.com, which goes around SlowShield, and `composer update --lock` only writes GitHub, GitLab and
+    Bitbucket URLs into a lock. The download notification URL (packagist.org) goes too. PHP, as Composer needs it."""
+    base = composer.rstrip("/")
+    return (
+        f'php -r \'$l = json_decode(file_get_contents("composer.lock"), true); '
+        'foreach (["packages", "packages-dev"] as $k) foreach ($l[$k] ?? [] as $i => $p) '
+        'if (isset($p["dist"]["reference"])) { '
+        f'$l[$k][$i]["dist"]["url"] = "{base}/dists/'
+        '{$p["name"]}/{$p["dist"]["reference"]}.{$p["dist"]["type"]}"; '
+        'unset($l[$k][$i]["notification-url"]); } '
+        'file_put_contents("composer.lock", json_encode($l, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | '
+        'JSON_UNESCAPED_UNICODE) . "\\n");\''
     )
 
 

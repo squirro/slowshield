@@ -12,7 +12,7 @@
 {% set days = cfg.default_delay_days|round(1)|replace(".0", "") %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm, go, Maven, Gradle, Cargo, NuGet and container runtimes at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
+  <div><h1>Client setup</h1><p class="muted">Point pip, uv, npm, go, Maven, Gradle, Cargo, NuGet, Composer and container runtimes at SlowShield. New releases become installable {{ days }} days after publication.</p></div>
 </div>
 {% if also_at %}
 <section class="card" role="note">
@@ -34,7 +34,7 @@
   <p><strong>Plain HTTP on localhost.</strong> These URLs work without trusting a certificate; traffic stays on this
     machine. HTTPS works too once your clients trust Caddy's root CA: <code>{{ secure.pypi }}</code>,
     <code>{{ secure.npm }}</code>, <code>{{ secure.go }}</code>, <code>{{ secure.maven }}</code>,
-    <code>{{ secure.cargo }}</code> and <code>{{ secure.nuget }}</code>.</p>
+    <code>{{ secure.cargo }}</code>, <code>{{ secure.nuget }}</code> and <code>{{ secure.composer }}</code>.</p>
 </section>
 {% endif %}
 {% if age_days %}
@@ -83,7 +83,7 @@
   <p class="muted">For a single tool or project instead. Index URL <code>{{ pypi_index }}</code>, registry URL
     <code>{{ npm_registry }}</code>, Go module proxy <code>{{ go_proxy }}</code>, Maven repository
     <code>{{ maven_repo }}</code>, Cargo index <code>sparse+{{ cargo_index }}</code>, NuGet source
-    <code>{{ nuget_source }}</code>.</p>
+    <code>{{ nuget_source }}</code>, Composer repository <code>{{ composer_repo }}</code>.</p>
   <label class="tool-search"><span>Find your tool</span>
     <input type="search" list="tool-names" placeholder="e.g. poetry, yarn, pnpm" autocomplete="off" spellcheck="false"
       data-tool-input></label>
@@ -96,7 +96,8 @@
     {%- endfor %}
   </div>
   <p class="muted small" role="status" data-tool-empty hidden>No tool matches. Try pip, uv, Poetry, PDM, Pipenv, npm,
-    pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, NuGet, containerd, Docker, Podman or BuildKit.</p>
+    pnpm, Yarn, Bun, Go, Maven, Gradle, sbt, Coursier, Cargo, NuGet, Composer, containerd, Docker, Podman or
+    BuildKit.</p>
   <div class="tool-results">
     {%- for t in tools %}
     {%- set plain = tools_plain[loop.index0] %}
@@ -125,11 +126,12 @@
   <p class="muted small">Builds and runners need a URL they can reach: inside a container, <code>localhost</code> is
     the container itself. Block direct access to pypi.org, files.pythonhosted.org, registry.npmjs.org,
     proxy.golang.org, sum.golang.org, repo1.maven.org, repo.maven.apache.org, dl.google.com, plugins.gradle.org,
-    index.crates.io, static.crates.io, api.nuget.org and the container registries (registry-1.docker.io, ghcr.io, quay.io,
+    index.crates.io, static.crates.io, api.nuget.org, repo.packagist.org, api.github.com, codeload.github.com and the
+    container registries (registry-1.docker.io, ghcr.io, quay.io,
     registry.k8s.io, ...) at the firewall so nothing bypasses SlowShield (the go command reaches the checksum
     database through SlowShield too; BuildKit and Docker's classic image store go to the registry after a
-    refusal). For Maven, Gradle, Cargo and NuGet in CI and images, copy the
-    <code>settings.xml</code>, the init script, the Cargo command or the NuGet command from Per tool.</p>
+    refusal). For Maven, Gradle, Cargo, NuGet and Composer in CI and images, copy the
+    <code>settings.xml</code>, the init script, or the Cargo, NuGet or Composer command from Per tool.</p>
 </section>
 <section class="card">
   <header class="card-head"><h2>What to expect</h2></header>
@@ -160,6 +162,12 @@
       <code>NU1603</code> in <code>WarningsAsErrors</code> (the <code>Directory.Build.props</code> under Per tool). Packages none of
       whose versions is old enough are held too. Keep <code>&lt;clear/&gt;</code> in <code>NuGet.Config</code>:
       without it, nuget.org stays a source and goes around SlowShield.</li>
+    <li><strong>Composer:</strong> versions that are too new or blocked are left out of the metadata, so Composer
+      resolves to an older one. A <code>composer.lock</code> that pins one fails with <code>425 Too Early</code> or
+      <code>451</code> and a warning that names the version to use instead. Packages none of whose versions is old
+      enough are held too. Needs Composer 2.10 or later: older versions clone a refused version from GitHub instead.
+      Lock files written through SlowShield name it in their dist URLs; <code>composer update --lock</code> points an
+      older lock file at it. <code>composer search</code> needs packagist.org.</li>
     <li><strong>Containers:</strong> a tag resolves to the newest image it has pointed to for {{ days }} days, so
       <code>nginx:latest</code> stays about {{ days }} days behind. A digest that is too new, and a blocked image, fail
       with <code>403</code>: Docker, Podman, BuildKit, skopeo and crane print the reason, containerd 2.2 and older only

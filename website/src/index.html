@@ -570,7 +570,7 @@
   </div>
   <figure class="team-map ts-map reveal" aria-labelledby="ts-map-cap">
     <svg viewBox="0 0 960 524" class="team-svg ts-svg" role="img" aria-labelledby="ts-map-t">
-      <title id="ts-map-t">Clients on the tailnet use one Tailscale Service name and reach their nearest SlowShield instance; each instance fetches from the public registries.</title>
+      <title id="ts-map-t">Clients on the tailnet use one Tailscale Service name and reach a SlowShield instance, with regional routing the nearest one; each instance fetches from the public registries.</title>
       <rect class="tm-zone" x="1" y="1" width="958" height="414" rx="22"/>
       <text class="tm-zone-label" x="26" y="34">Your tailnet</text>
       <path class="tm-link" d="M180 132 V248"/>
@@ -594,7 +594,7 @@
       <g class="tm-reg" transform="translate(370 456)"><rect width="220" height="66" rx="16"/><text x="110" y="30" class="tm-title tm-c">Public registries</text>
         <text x="110" y="52" class="tm-host">pypi.org · registry.npmjs.org</text></g>
     </svg>
-    <figcaption id="ts-map-cap" class="sr-only">Every client uses the same Tailscale Service name and reaches the nearest SlowShield instance, which fetches from the public registries.</figcaption>
+    <figcaption id="ts-map-cap" class="sr-only">Every client uses the same Tailscale Service name and reaches a SlowShield instance, with regional routing the nearest one, which fetches from the public registries.</figcaption>
   </figure>
   <ol class="quick-steps ts-steps">
     <li class="qbox reveal">
@@ -612,7 +612,7 @@
 sudo tailscale up --advertise-tags=tag:slowshield
 sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
       <p class="muted small">Hosts need a tag and Tailscale 1.86 or later. Before upgrading a host, drain it with
-        <code>tailscale serve drain</code>; the others take over.</p>
+        <code>tailscale serve drain svc:slowshield</code>; the others take over.</p>
     </li>
     <li class="qbox reveal">
       <h3><span>3</span> Let your tailnet in</h3>
@@ -632,9 +632,10 @@ sudo tailscale serve --service=svc:slowshield --https=443 127.0.0.1:8080</code><
         URL. GitHub-hosted runners join for one job with the Tailscale GitHub Action.</p>
     </li>
   </ol>
-  <p class="ts-fine muted small reveal">Tailscale Services is available on every Tailscale plan. Sending each client to
-    its nearest instance uses Tailscale's regional routing (Premium and Enterprise plans, switched on in the admin
-    console). Without it, all clients use one instance and move to another if that one goes away.</p>
+  <p class="ts-fine muted small reveal">Sending each client to its nearest instance takes Tailscale's
+    <a href="https://tailscale.com/pricing" rel="noopener noreferrer">regional routing</a> (Premium and Enterprise
+    plans) or MagicRoute (beta), set for the whole tailnet. Without either, all clients use one instance
+    and move to another if that one goes away.</p>
 </section>
 
 <!-- ============================== AGENTS ============================== -->

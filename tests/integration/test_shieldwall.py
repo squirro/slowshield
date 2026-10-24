@@ -162,8 +162,12 @@ async def _join(p: Pair) -> None:
     other_scheme = {**form, "Origin": "https://slowshield.test"}  # this UI is served over http here
     r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=other_scheme)
     assert r.status_code == 403
-    same = {**form, "Origin": "http://slowshield.test", "Sec-Fetch-Site": "same-origin"}
-    r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=same)
+    for refused in ({**form, "Origin": "null"}, {**form, "Origin": "null", "Sec-Fetch-Site": "cross-site"}):
+        r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=refused)
+        assert r.status_code == 403
+    # What a browser sends: the page's `Referrer-Policy: no-referrer` turns the form POST's Origin into "null".
+    browser = {**form, "Origin": "null", "Sec-Fetch-Site": "same-origin"}
+    r = await p.follower.client.post("/ui/shieldwall/join", content=f"leader={leader_id}", headers=browser)
     assert r.status_code == 303
     await p.service.step()  # join
     assert p.follower.rows("SELECT state, confirmed_by FROM shieldwall_leader") == [("active", "ui")]

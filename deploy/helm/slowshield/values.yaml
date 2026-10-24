@@ -219,6 +219,11 @@ podLabels: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# /etc/hosts entries for the pod. For a shield wall leader the cluster can't resolve (one only on a tailnet), the
+# leader's name pointed at an in-cluster proxy keeps its URL and certificate, e.g. a Tailscale egress Service:
+#   - ip: 172.20.31.7
+#     hostnames: [slowshield.example.com]
+hostAliases: []
 priorityClassName: ""
 terminationGracePeriodSeconds: 45
 

@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `setup_url` (`SLOWSHIELD_SETUP_URL`): the URL the Setup page gives clients, when it isn't `public_url`. Moving
+  clients to a new name (a Tailscale Service, say), an instance keeps answering under `public_url` and keeps its
+  npm, Cargo and NuGet URLs there, so existing clients go on working, while new ones are set up with the new name.
+- Helm: `hostAliases` for the pod. A shield wall follower whose leader only resolves on a tailnet maps the leader's
+  name to an in-cluster egress proxy (a Tailscale egress Service, say), so it keeps the leader's URL and certificate.
 - Shield wall: several instances standing together, one leader and many followers
   ([docs/design/shieldwall.md](docs/design/shieldwall.md), https://github.com/squirro/slowshield/issues/34).
   - Pairing: `slowshield wall invite` on the leader prints a join string (single use, 10 minutes); a follower
@@ -37,6 +42,13 @@ All notable changes to this project are documented here. The format is based on
   it had, and logs a warning that names it; it no longer becomes standalone and leaves the shield wall. Only
   `SLOWSHIELD_SHIELDWALL_ROLE=standalone` takes an instance out. A follower that has joined syncs with the leader it
   stored and no longer needs the join string; one that hasn't joined yet still does.
+
+### Fixed
+- Shield wall: the Join button on a follower's Shield wall page works in a browser. The UI's `Referrer-Policy:
+  no-referrer` makes browsers send `Origin: null` with the form, which the same-site check refused; it now takes
+  `Origin: null` when `Sec-Fetch-Site: same-origin` vouches for the request.
+- UI: the shield wall instance picker and the filter dropdowns match the design (the picker was an unstyled native
+  dropdown next to the segmented controls), in light and dark mode.
 
 ## [0.0.10] - 2026-10-24
 

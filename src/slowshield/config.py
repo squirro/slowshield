@@ -314,6 +314,9 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     bind_address: str = "0.0.0.0:8080"
     # Externally visible base URL of the UI host (e.g. https://slowshield.example.com).
     public_url: str | None = None
+    # The URL the Setup page tells clients to use, when it isn't public_url: moving clients to a new name (a Tailscale
+    # Service, say) while this instance still answers under public_url and keeps its npm, Cargo and NuGet URLs there.
+    setup_url: str | None = None
     # Caddy also serves localhost / 127.0.0.1 / [::1] over plain HTTP (SLOWSHIELD_LOCAL_HTTP=on), so local
     # clients work without trusting its internal CA. The Setup page and npm tarball URLs then use http://.
     local_http: bool = False
@@ -409,6 +412,10 @@ class LoadedConfig:
     def public_base(self) -> str:
         return (self.raw.public_url or "http://localhost:8080").rstrip("/")
 
+    def setup_base(self) -> str:
+        """Base of the URLs the Setup page gives clients: `setup_url`, else `public_url`."""
+        return self.raw.setup_url.rstrip("/") if self.raw.setup_url else self.public_base()
+
 
 def _read_secret(name: str, warnings: list[str]) -> tuple[str | None, str]:
     """Read ``NAME`` or ``NAME_FILE`` from the environment (file wins, as with Docker/K8s secrets).
@@ -482,6 +489,8 @@ def _apply_env(cfg: Config) -> set[str]:
         cfg.bind_address = v
     if v := env.get("SLOWSHIELD_PUBLIC_URL", "").strip():
         cfg.public_url = v
+    if v := env.get("SLOWSHIELD_SETUP_URL", "").strip():
+        cfg.setup_url = v
     if v := env.get("SLOWSHIELD_NPM_PUBLIC_URL", "").strip():
         cfg.upstreams.npm.public_url = v
     if v := env.get("SLOWSHIELD_WORKERS", "").strip():
@@ -643,7 +652,11 @@ def _validate(cfg: Config) -> None:
     host, sep, port = cfg.bind_address.rpartition(":")
     if not sep or not port.isdigit() or not host:
         raise ConfigError(f"bind_address must be host:port, got {cfg.bind_address!r}")
-    for name, url in (("public_url", cfg.public_url), ("upstreams.npm.public_url", cfg.upstreams.npm.public_url)):
+    for name, url in (
+        ("public_url", cfg.public_url),
+        ("setup_url", cfg.setup_url),
+        ("upstreams.npm.public_url", cfg.upstreams.npm.public_url),
+    ):
         if url and not _PUBLIC_URL.fullmatch(url):
             raise ConfigError(
                 f"{name} must be a plain http(s)://host[:port][/path] URL (no query, credentials or special "

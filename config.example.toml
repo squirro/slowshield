@@ -8,6 +8,7 @@
 
 bind_address = "0.0.0.0:8080"          # SLOWSHIELD_BIND
 public_url = "https://slowshield.example.com"   # SLOWSHIELD_PUBLIC_URL - how clients reach the UI host
+# setup_url = "https://slowshield.your-tailnet.ts.net"  # SLOWSHIELD_SETUP_URL - what the Setup page tells new clients
 data_dir = "/data"                     # SLOWSHIELD_DATA_DIR - SQLite DB, artifact cache, leader lock
 # database_path = "/data/slowshield.db" # DATABASE_URL=sqlite:/path also accepted (Rust-version compat)
 workers = 1                            # SLOWSHIELD_WORKERS - Granian workers (processes; threads on 3.15t)

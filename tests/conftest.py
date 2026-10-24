@@ -63,6 +63,7 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
                 "repos": {"snapshots": {"url": f"{fake_url}/maven/snapshots", "snapshots": True}},
             },
             "cargo": {"index_url": f"{fake_url}/cargo-index", "download_url": f"{fake_url}/cargo-static/crates"},
+            "rubygems": {"index_url": f"{fake_url}/rubygems-index", "download_url": f"{fake_url}/rubygems-dl"},
             "nuget": {
                 "flat_container_url": f"{fake_url}/nuget-flat/",
                 "registration_url": f"{fake_url}/nuget-reg/",

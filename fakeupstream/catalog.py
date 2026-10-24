@@ -1,5 +1,5 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, OCI images, OSV,
-GitHub advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, nuget.org,
+rubygems.org, OCI images, OSV, GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -19,6 +19,8 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+
+from fakeupstream import gems
 
 DAY = 86400.0
 CHUNK = 64 * 1024
@@ -352,6 +354,26 @@ class CrateVersion:
 
 
 @dataclass(slots=True)
+class GemLine:
+    name: str  # as published: rubygems.org's names are case-sensitive
+    version: str
+    platform: str  # "ruby" for a plain gem
+    created: float | None  # None: an info line without `created_at`
+    blob: Blob
+    spec_rz: bytes
+    deps: gems.Deps = ()
+
+    @property
+    def key(self) -> str:
+        """`<version>[-<platform>]`, as in the info line and the file name."""
+        return self.version if self.platform == "ruby" else f"{self.version}-{self.platform}"
+
+    @property
+    def stem(self) -> str:
+        return f"{self.name}-{self.key}"
+
+
+@dataclass(slots=True)
 class NugetVersion:
     pid: str  # the id as published (Fake.Hello); paths use it in lower case
     version: str  # normalized, as published (2.0.0-Beta.1); paths use it in lower case
@@ -468,6 +490,8 @@ class Catalog:
         self.oci: dict[tuple[str, str], OciRepo] = {}  # (registry, path) -> repository
         self.nuget: dict[str, dict[str, NugetVersion]] = {}  # lower-case id -> lower-case version, in version order
         self.nuget_catalog: dict[str, bytes] = {}  # catalog leaf path -> document (leaves never change)
+        self.gems: dict[str, dict[str, GemLine]] = {}  # name -> key -> line, in push order
+        self.gem_versions: list[bytes] = []  # /versions lines after the header: one per gem, then one per change
         self._nuget_commits = 0
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
@@ -618,6 +642,56 @@ class Catalog:
         blob = Blob(key=f"{name}@{version}.crate", data=make_crate(name, version, deps))
         when = self.now - age_days * DAY if pubtime else None
         crate[version] = CrateVersion(name, version, when, blob, yanked=yanked, deps=deps)
+
+    def add_gem(
+        self,
+        name: str,
+        version: str,
+        age_days: float,
+        *,
+        platform: str = "ruby",
+        created: bool = True,
+        deps: gems.Deps = (),
+    ) -> None:
+        """Push a gem. After the catalog is built, /versions gets a line for it, as rubygems.org appends one."""
+        line = GemLine(
+            name,
+            version,
+            platform,
+            self.now - age_days * DAY if created else None,
+            Blob(key=f"{name}-{version}-{platform}.gem", data=gems.make_gem(name, version, platform, deps)),
+            gems.make_gemspec_rz(name, version, platform, deps),
+            deps,
+        )
+        self.gems.setdefault(name, {})[line.key] = line
+        if self.gem_versions:
+            self.gem_versions.append(f"{name} {line.key} {self.gem_info_md5(name)}\n".encode())
+
+    def yank_gem(self, name: str, key: str) -> None:
+        del self.gems[name][key]
+        self.gem_versions.append(f"{name} -{key} {self.gem_info_md5(name)}\n".encode())
+
+    def rebuild_gem_versions(self) -> None:
+        """rubygems.org's monthly rebuild: one line per gem again, so the file is no longer an append to the old one."""
+        self.gem_versions = [
+            f"{name} {','.join(lines)} {self.gem_info_md5(name)}\n".encode() for name, lines in self.gems.items()
+        ]
+
+    def gem_info_line(self, g: GemLine) -> bytes:
+        deps = ",".join(f"{d}:{r}" for d, r in g.deps)
+        fields = f"checksum:{g.blob.digests()['sha256']},ruby:>= 2.0"
+        if g.created is not None:
+            fields += f",created_at:{iso_s(g.created)}"
+        return f"{g.key} {deps}|{fields}".encode()
+
+    def gem_info(self, name: str) -> bytes:
+        return b"---\n" + b"".join(self.gem_info_line(g) + b"\n" for g in self.gems[name].values())
+
+    def gem_info_md5(self, name: str) -> str:
+        return hashlib.md5(self.gem_info(name), usedforsecurity=False).hexdigest()
+
+    def gem_versions_body(self) -> bytes:
+        return b"created_at: 2026-10-01T00:00:04Z\n---\n" + b"".join(self.gem_versions)
 
     def crate_line(self, cv: CrateVersion) -> bytes:
         """The index line, with crates.io's key order and compact JSON."""
@@ -823,6 +897,24 @@ class Catalog:
         self.add_nuget("Fake.Partly", "1.0.0", 90)
         self.add_nuget("Fake.Partly", "1.1.0", 60)
         self.add_nuget("Fake.Future", "1.0.0", -30)  # a `published` in the future isn't a publish time
+        # rubygems.org: info lines carry `created_at`, one line per version and platform; names are case-sensitive.
+        self.add_gem("fake_hello", "1.0.0", 100)
+        self.add_gem("fake_hello", "1.1.0", 30)
+        self.add_gem("fake_hello", "1.2.0", 2)
+        self.add_gem("fake_deps", "0.1.0", 50, deps=(("fake_hello", "~> 1.0"),))
+        for platform in ("ruby", "x86_64-linux", "aarch64-linux"):
+            self.add_gem("fake_native", "2.0.0", 100, platform=platform)
+        self.add_gem("fake_native", "2.1.0", 60)
+        for platform in ("x86_64-linux", "aarch64-linux"):  # platform gems pushed for an old version: held
+            self.add_gem("fake_native", "2.1.0", 1, platform=platform)
+        self.add_gem("Fake_Case", "1.0.0", 60)
+        self.add_gem("fake-2fa", "1.0.0", 60)  # file fake-2fa-1.0.0.gem: `fake` + `2fa-1.0.0` is a reading too
+        self.add_gem("brand_new_gem", "0.1.0", 1 / 24)
+        self.add_gem("evil_gem", "1.0.0", 40)
+        self.add_gem("partly_gem", "1.0.0", 90)
+        self.add_gem("partly_gem", "1.1.0", 60)
+        self.add_gem("untimed_gem", "1.0.0", 0, created=False)
+        self.add_gem("future_gem", "1.0.0", -30)  # a `created_at` in the future isn't a publish time
         # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
         # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
         for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):
@@ -847,6 +939,10 @@ class Catalog:
                 self.add_go("example.com/many", f"v1.{i // 100}.{i % 100}", 600 - i)
                 self.add_maven("central", "org.example:many", f"1.{i // 100}.{i % 100}", 600 - i, jar=False)
                 self.add_crate("many-crate", f"1.{i // 100}.{i % 100}", 600 - i)
+        if self.perf:
+            for i in range(500):
+                self.add_gem("many_gem", f"1.{i // 100}.{i % 100}", 600 - i)
+        self.rebuild_gem_versions()
         for pkg in self.npm.values():
             if "latest" not in pkg.tags:
                 pkg.tags["latest"] = list(pkg.versions)[-1]
@@ -1053,6 +1149,24 @@ class Catalog:
                 summary="Fake.Partly 1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "RubyGems",
+                "MAL-2026-6001",
+                "evil_gem",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in evil_gem (RubyGems)",
+            ),
+            Advisory(
+                "github",
+                "rubygems",
+                "GHSA-aaaa-0009-0009",
+                "partly_gem",
+                n - 3 * DAY,
+                gh_range="= 1.1.0",
+                summary="partly_gem 1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -1076,6 +1190,8 @@ class Catalog:
             self.add_crate(name, version, age_days or 0.0)
         elif ecosystem == "nuget":
             self.add_nuget(name, version, age_days or 0.0)
+        elif ecosystem == "rubygems":
+            self.add_gem(name, version, age_days or 0.0)
         elif ecosystem == "oci":  # name: registry/path:tag
             image, _, tag = name.rpartition(":")
             self.add_oci(image, tag, version, age_days or 0.0)

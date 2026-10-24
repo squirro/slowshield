@@ -5,6 +5,7 @@ OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub endpo
 from __future__ import annotations
 
 import asyncio
+import base64
 import email.utils
 import gzip
 import hashlib
@@ -497,6 +498,59 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
             return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
         return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
 
+    # ---- rubygems.org ------------------------------------------------------------------------------------
+    # /rubygems-index/ (versions, names, info/<name>: ETag = MD5, Repr-Digest, Range on versions) and /rubygems-dl/
+    # (gems/<file>.gem, quick/Marshal.4.8/<file>.gemspec.rz). Names are case-sensitive.
+
+    def gem_headers(body: bytes) -> dict[str, str]:
+        digest = base64.b64encode(hashlib.sha256(body).digest()).decode()
+        return {
+            "ETag": '"' + hashlib.md5(body, usedforsecurity=False).hexdigest() + '"',
+            "Repr-Digest": f'sha-256="{digest}"',
+            "Cache-Control": "max-age=60, public",
+            "Accept-Ranges": "bytes",
+        }
+
+    def gem_index_response(request: Request, body: bytes) -> Response:
+        headers = gem_headers(body)
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        rng = request.headers.get("range", "")
+        if rng.startswith("bytes=") and rng.endswith("-") and rng[6:-1].isdigit():
+            start = int(rng[6:-1])
+            if start >= len(body):
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{len(body)}"})
+            headers["Content-Range"] = f"bytes {start}-{len(body) - 1}/{len(body)}"
+            return Response(body[start:], status_code=206, media_type="text/plain; charset=utf-8", headers=headers)
+        return Response(body, media_type="text/plain; charset=utf-8", headers=headers)
+
+    async def gem_index(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        cat = state.catalog
+        if rest == "versions":
+            return gem_index_response(request, cat.gem_versions_body())
+        if rest == "names":
+            return gem_index_response(request, b"---\n" + b"".join(f"{n}\n".encode() for n in sorted(cat.gems)))
+        name = rest.removeprefix("info/")
+        if rest.startswith("info/") and name in cat.gems:
+            return gem_index_response(request, cat.gem_info(name))
+        return PlainTextResponse("This gem could not be found", status_code=404)
+
+    def gem_lookup(stem: str) -> Any:
+        return next((g for lines in state.catalog.gems.values() for g in lines.values() if g.stem == stem), None)
+
+    async def gem_dl(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        if rest.startswith("gems/") and rest.endswith(".gem"):
+            g = gem_lookup(rest[5:-4])
+            if g is not None:
+                return _stream(g.blob, tampered=request.url.path in state.tampered)
+        elif rest.startswith("quick/Marshal.4.8/") and rest.endswith(".gemspec.rz"):
+            g = gem_lookup(rest[18:-11])
+            if g is not None:
+                return Response(g.spec_rz, media_type="application/octet-stream")
+        return PlainTextResponse("not found", status_code=404)
+
     # ---- nuget.org --------------------------------------------------------------------------------------
     # /nuget-flat/ (flat container), /nuget-reg/ (a gzipped SemVer 2 registration hive), /nuget-catalog/ (catalog
     # leaves with packageHash), /nuget-search/query, /nuget-vuln/index.json and its files. Lower-case paths only.
@@ -923,7 +977,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/")):
+        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/", "/rubygems-dl/")):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -959,6 +1013,15 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
     async def ctl_nuget_resign(request: Request) -> Response:
         """nuget.org re-signs a package: new bytes, and a catalog commit whose packageHash matches them."""
         state.catalog.nuget_resign(request.query_params["id"], request.query_params["version"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_rubygems_yank(request: Request) -> Response:
+        """rubygems.org yanks a version: the line leaves the info file and /versions gets `-<key>`."""
+        state.catalog.yank_gem(request.query_params["name"], request.query_params["key"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_rubygems_rebuild(request: Request) -> Response:
+        state.catalog.rebuild_gem_versions()
         return JSONResponse({"ok": True})
 
     async def ctl_oci_remove(request: Request) -> Response:
@@ -1027,6 +1090,13 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     }
                     for name, crate in cat.crates.items()
                 },
+                "rubygems": {
+                    name: {
+                        key: {"created": g.created, "sha256": g.blob.digests()["sha256"], "stem": g.stem}
+                        for key, g in lines.items()
+                    }
+                    for name, lines in cat.gems.items()
+                },
                 "nuget": {
                     lid: {
                         lv: {
@@ -1054,6 +1124,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/go/{rest:path}", go, methods=["GET", "HEAD"]),
         Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
         Route("/cargo-index/{rest:path}", cargo_index, methods=["GET", "HEAD"]),
+        Route("/rubygems-index/{rest:path}", gem_index, methods=["GET", "HEAD"]),
+        Route("/rubygems-dl/{rest:path}", gem_dl, methods=["GET", "HEAD"]),
         Route("/cargo-static/crates/{name}/{version}/download", cargo_static, methods=["GET", "HEAD"]),
         Route("/nuget-flat/{id}/{rest:path}", nuget_flat, methods=["GET", "HEAD"]),
         Route("/nuget-reg/{id}/{rest:path}", nuget_reg, methods=["GET", "HEAD"]),
@@ -1062,6 +1134,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/nuget-vuln/index.json", nuget_vuln_index),
         Route("/nuget-vuln-data/{rest:path}", nuget_vuln_file),
         Route("/_control/nuget-list", ctl_nuget_list, methods=["POST"]),
+        Route("/_control/rubygems-yank", ctl_rubygems_yank, methods=["POST"]),
+        Route("/_control/rubygems-rebuild", ctl_rubygems_rebuild, methods=["POST"]),
         Route("/_control/nuget-resign", ctl_nuget_resign, methods=["POST"]),
         Route("/oci/token", oci_token),
         Route("/oci/{registry}/v2/{rest:path}", oci, methods=["GET", "HEAD"]),

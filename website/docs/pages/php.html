@@ -1,0 +1,77 @@
+<!-- title: PHP | description: Use SlowShield as the Composer repository: setup, held versions left out, 425 Too Early, lock files, composer audit and Docker builds. -->
+<h1>PHP</h1>
+<p class="lead">SlowShield serves Packagist at <code>https://slowshield.example.com/composer/</code>, as a Composer
+  repository that replaces packagist.org. Projects keep their <code>composer.json</code> as it is; only where packages
+  come from changes.</p>
+
+<h2 id="setup">Set it up</h2>
+<p>Two settings in Composer's global configuration cover every project on the machine: packagist.org off, and
+  SlowShield on. One project can do the same in its own <code>composer.json</code>:</p>
+<!-- @tools php -->
+<ul>
+  <li><strong>packagist.org has to be off.</strong> Composer asks every repository, so a package SlowShield refuses
+    would come from packagist.org instead. A repository named <code>packagist</code> doesn't replace it: Composer
+    2.10 adds it next to packagist.org.</li>
+  <li><strong>Composer 2.10 or later.</strong> Older versions clone a version from GitHub when its download is
+    refused.</li>
+  <li><strong>A project's own <code>repositories</code></strong> (<code>vcs</code>, <code>path</code>, other Composer
+    repositories) still work, and don't go through SlowShield.</li>
+</ul>
+
+<h2 id="what-changes">What changes</h2>
+<ul>
+  <li><strong>The publish time</strong> is each version's <code>published-time</code>, which Packagist sets. The
+    <code>time</code> next to it comes from the package's author, so SlowShield never uses it. The first publish time
+    SlowShield sees is kept, so it can't move earlier.</li>
+  <li><strong>Held versions are left out</strong> of the metadata, so <code>composer require</code> and
+    <code>composer update</code> pick the newest version that is old enough.</li>
+  <li><strong>A <code>composer.lock</code> that pins a held version</strong> fails with <code>425 Too Early</code>, and
+    Composer prints SlowShield's message, with the version to use instead:
+    <div class="code"><pre><code>Warning from slowshield.example.com: slowshield: guzzlehttp/guzzle 8.3.0 is too new. It was published 2026-10-18T13:40:46Z (6.4 days ago); this proxy requires 7 days. It becomes available at 2026-10-25T13:40:46Z. Use an older version (composer update guzzlehttp/guzzle --with guzzlehttp/guzzle:8.2.0), or ask your SlowShield administrator for an exception.</code></pre><button class="copy" type="button" data-copy>Copy</button></div></li>
+  <li><strong>Branches</strong> (<code>dev-main</code>) count from their last push, so a branch pushed this week is
+    held.</li>
+  <li><strong>Brand-new packages</strong> none of whose versions is old enough are held too: Composer doesn't fail
+    open, because brand-new packages are the realistic attack (typosquats, dependency confusion).</li>
+  <li><strong>Malware</strong> from OSV and GitHub is refused with <code>451</code>. Packagist's own malware list
+    reaches Composer through SlowShield, so Composer refuses those versions itself.</li>
+  <li><strong>Downloads</strong> come from SlowShield, which fetches them from GitHub, checks them against the first
+    download and caches them. GitHub builds its archives on request; new bytes with the same files in them are the
+    same download.</li>
+  <li><strong><code>composer audit</code> keeps working:</strong> Packagist's advisories come through SlowShield.</li>
+</ul>
+
+<h2 id="lock-files">Lock files</h2>
+<p>A <code>composer.lock</code> written through SlowShield names SlowShield in its download URLs, so installing from
+  it goes through SlowShield too. One written against packagist.org names api.github.com, and
+  <code>composer install</code> downloads from GitHub, around SlowShield, even with packagist.org off.
+  <code>composer update --lock</code> doesn't change that: it only writes GitHub, GitLab and Bitbucket URLs. The
+  last snippet above points a lock's downloads at SlowShield and changes nothing else; run it next to
+  <code>composer.lock</code> once, and commit the result.</p>
+
+<h2 id="two-layers">The second layer</h2>
+<p>Composer 2.11 adds a cooldown of its own, <code>config.policy.cooldown.period</code>, measured from the same
+  <code>published-time</code>, which SlowShield passes on. Composer 2.10 and older have none, so SlowShield is the
+  only layer.</p>
+
+<h2 id="docker">In Docker and CI</h2>
+<p>Set the repositories in the build stage. With a build argument, the same Dockerfile still builds without
+  SlowShield when the argument is empty:</p>
+<div class="code"><pre><code>FROM composer:2 AS vendor
+ARG COMPOSER_REPO=https://slowshield.example.com/composer/
+RUN if [ -n "$COMPOSER_REPO" ]; then composer config -g repo.packagist false \
+      &amp;&amp; composer config -g repos.slowshield composer "$COMPOSER_REPO"; fi
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --no-scripts --prefer-dist</code></pre><button class="copy" type="button" data-copy>Copy</button></div>
+<p>In CI, run the Setup page's command before <code>composer install</code>. <a href="/docs/container-builds/">Building
+  images</a> covers the base image too, and how to check that nothing in a build goes around SlowShield.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+  <li>Checked with Composer 2.10.</li>
+  <li>Not served: <code>composer search</code>, publishing, and Packagist's download statistics.</li>
+  <li>Installs from source (<code>--prefer-source</code>, <code>preferred-install: source</code>) clone from GitHub,
+    not through SlowShield.</li>
+  <li>Block repo.packagist.org, api.github.com and codeload.github.com at the firewall for machines that should only
+    use SlowShield.</li>
+</ul>

@@ -1287,7 +1287,7 @@ class Catalog:
             Advisory(
                 "osv",
                 "RubyGems",
-                "MAL-2026-6001",
+                "MAL-2026-7001",
                 "evil_gem",
                 n - 3 * DAY,
                 ranges=[("0", None)],
@@ -1296,7 +1296,7 @@ class Catalog:
             Advisory(
                 "github",
                 "rubygems",
-                "GHSA-aaaa-0009-0009",
+                "GHSA-aaaa-0010-0010",
                 "partly_gem",
                 n - 3 * DAY,
                 gh_range="= 1.1.0",

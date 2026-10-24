@@ -281,17 +281,17 @@ async def test_malware_is_refused(start_app, monkeypatch) -> None:
     assert r.status_code == 200 and r.text == "---\n"
     r = await run.client.get("/rubygems/gems/evil_gem-1.0.0.gem")
     assert r.status_code == 451 and r.headers["content-type"] == TEXT
-    assert r.text.startswith("slowshield: evil_gem is blocked as known malware.\nAdvisory: MAL-2026-6001")
+    assert r.text.startswith("slowshield: evil_gem is blocked as known malware.\nAdvisory: MAL-2026-7001")
     partly = await run.client.get("/rubygems/info/partly_gem")
     assert _keys(partly.text) == ["1.0.0"]
     r = await run.client.get("/rubygems/gems/partly_gem-1.1.0.gem")
-    assert r.status_code == 451 and "GHSA-aaaa-0009-0009" in r.text
+    assert r.status_code == 451 and "GHSA-aaaa-0010-0010" in r.text
     # Yanked from rubygems.org since: still refused, and recorded.
     run.fake.control("rubygems-yank", name="evil_gem", key="1.0.0")
     run.clock.advance(7 * 3600)
     assert (await run.client.get("/rubygems/gems/evil_gem-1.0.0.gem")).status_code == 451
     blocks = run.rows("SELECT name, version, advisory_id FROM blocklist WHERE ecosystem = 'rubygems' ORDER BY name")
-    assert blocks == [("evil_gem", None, "MAL-2026-6001"), ("partly_gem", "1.1.0", "GHSA-aaaa-0009-0009")]
+    assert blocks == [("evil_gem", None, "MAL-2026-7001"), ("partly_gem", "1.1.0", "GHSA-aaaa-0010-0010")]
     await run.drain()
     events = run.rows("SELECT package, version FROM events WHERE type = 'blocked' AND ecosystem = 'rubygems'")
     assert ("evil_gem", None) in events and ("evil_gem", "1.0.0") in events

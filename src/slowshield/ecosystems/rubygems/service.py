@@ -477,19 +477,25 @@ class RubygemsService:
 
     async def _resolve(self, stem: str) -> tuple[str, I.InfoFile, I.Line] | Response | None:
         """The gem and line a file name stem means (`nokogiri-1.19.4-x86_64-linux-gnu`), from the gems' info files;
-        None when no reading of it is listed."""
+        None when no reading of it is listed. An index that can't be read is a 503 only when no other reading is
+        listed: `fake-2fa-1.0.0` is `fake-2fa` 1.0.0 even while the index of `fake` fails."""
+        failed: tuple[str, UpstreamError] | None = None
         for name, key in I.split_file(stem)[:4]:
             if not names.is_valid_rubygems(name):
                 continue
             try:
                 info = await self.info(name)
             except UpstreamError as exc:
-                self.ctx.recorder.decision(ECO, "artifact", "upstream_error")
-                return text_error(
-                    503, f"slowshield: rubygems.org's index is unavailable for {name}: {exc.detail}", headers=RETRY_SOON
-                )
+                failed = failed or (name, exc)
+                continue
             if info is not None and key in info.lines:
                 return name, info, info.lines[key]
+        if failed is not None:
+            name, exc = failed
+            self.ctx.recorder.decision(ECO, "artifact", "upstream_error")
+            return text_error(
+                503, f"slowshield: rubygems.org's index is unavailable for {name}: {exc.detail}", headers=RETRY_SOON
+            )
         return None
 
     async def download(self, request: Request, stem: str, *, spec: bool) -> AsgiResponse:

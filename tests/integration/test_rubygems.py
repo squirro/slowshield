@@ -375,6 +375,17 @@ async def test_upstream_failures_are_503_and_a_stale_info_file_is_served(running
     running.fake.control("fail", prefix="/rubygems-dl/", status="0")
 
 
+async def test_a_failing_index_of_one_reading_of_a_file_name_does_not_hide_another(running: Running) -> None:
+    # `fake-2fa-1.0.0.gem` reads as `fake` 2fa-1.0.0 first: its index failing doesn't keep `fake-2fa` 1.0.0 from
+    # being found.
+    running.fake.control("fail", prefix="/rubygems-index/info/fake$", status="503")
+    assert (await running.client.get("/rubygems/gems/fake-2fa-1.0.0.gem")).status_code == 200
+    # Without another reading, still a 503.
+    r = await running.client.get("/rubygems/gems/fake-9.9.9.gem")
+    assert r.status_code == 503 and r.headers["retry-after"] == "10"
+    running.fake.control("fail", prefix="/rubygems-index/info/fake$", status="0")
+
+
 async def test_an_info_file_without_a_usable_line_is_an_upstream_failure(running: Running) -> None:
     running.fake.control("fail", prefix="/rubygems-index/info/fake_deps", status="200")  # 200 "injected failure 200"
     r = await running.client.get("/rubygems/info/fake_deps")

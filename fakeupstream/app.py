@@ -96,7 +96,7 @@ class Injector:
             if st.latency_ms:
                 await asyncio.sleep(st.latency_ms / 1000)
             for prefix, status in st.failures.items():
-                if path.startswith(prefix):
+                if path == prefix[:-1] if prefix.endswith("$") else path.startswith(prefix):  # `$`: this path only
                     await PlainTextResponse(f"injected failure {status}", status_code=status)(scope, receive, send)
                     return
         await self.app(scope, receive, send)

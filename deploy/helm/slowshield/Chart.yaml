@@ -1,14 +1,14 @@
 apiVersion: v2
 name: slowshield
-description: Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet and container images (release-age delay, malware blocklist, tamper detection) with an optional Caddy TLS edge.
+description: Supply-chain defence proxy for PyPI, npm, Go modules, Maven, Cargo, NuGet, Composer, RubyGems and container images (release-age delay, malware blocklist, tamper detection) with an optional Caddy TLS edge.
 type: application
-version: 0.0.12
-appVersion: "0.0.12"
+version: 0.0.13
+appVersion: "0.0.13"
 kubeVersion: ">=1.27.0-0"
 home: https://github.com/squirro/slowshield
 sources:
   - https://github.com/squirro/slowshield
-keywords: [supply-chain, security, pypi, npm, go, maven, cargo, nuget, oci, proxy]
+keywords: [supply-chain, security, pypi, npm, go, maven, cargo, nuget, composer, packagist, rubygems, oci, proxy]
 maintainers:
   - name: Squirro AG
 icon: https://raw.githubusercontent.com/squirro/slowshield/main/brand/mark.svg

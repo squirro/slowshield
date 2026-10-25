@@ -455,3 +455,87 @@ def test_a_followers_fingerprint_is_evidence_about_that_follower_only(conn: sqli
     details = json.loads(conn.execute("SELECT details FROM events ORDER BY rowid DESC").fetchone()[0])
     assert details["problems"] == [f"honest: {'d' * 64}", f"liar: {'c' * 64}"]
     assert conn.execute("SELECT count(*) FROM shieldwall_changes").fetchone() == (1,)
+
+
+def test_a_listed_time_from_the_leader_counts_for_its_composer_commit_only(conn: sqlite3.Connection) -> None:
+    """Composer's `first_listed` belongs to a commit. The leader sends it with the reference; one from a leader that
+    sends none (an older build) matches no commit. Other ecosystems take the earlier time, as before."""
+    from slowshield.ecosystems.composer import metadata as M
+    from slowshield.ecosystems.composer.service import _moved
+    from slowshield.shieldwall.apply import apply_sync
+
+    conn.execute(
+        "INSERT INTO shieldwall_leader (id, leader_id, url, pubkey, join_token, state, discovered, boot_head) "
+        "VALUES (1, 'sl', 'https://hq.test', x'00', 't', 'active', 0, 1000)"
+    )
+    a, b = "a" * 40, "b" * 40
+    week = NOW - 7 * 86400
+    conn.executemany(
+        "INSERT INTO package_versions (ecosystem, name, version, first_listed, reference) VALUES (?, ?, ?, ?, ?)",
+        [("composer", "v/same", "dev-main", NOW, a), ("composer", "v/newer", "dev-main", NOW, b),
+         ("composer", "v/old-leader", "dev-main", NOW, b), ("composer", "v/stats", "1.0.0", None, None),
+         ("maven", "g:a", "1.0", NOW, None)],
+    )  # fmt: skip
+
+    def listed(name: str, version: str, **extra: object) -> dict[str, object]:
+        eco = "maven" if ":" in name else "composer"
+        return {"ecosystem": eco, "name": name, "version": version, "first_listed": week, **extra}
+
+    changes = [
+        listed("v/same", "dev-main", reference=a),  # the same commit: the leader's earlier time
+        listed("v/newer", "dev-main", reference=a),  # the follower has a newer commit: its own clock
+        listed("v/old-leader", "dev-main"),  # no reference: matches no commit
+        listed("v/stats", "1.0.0", reference=a),  # a row without times or commit: takes both
+        listed("v/new", "1.0.0", reference=a),  # not seen here yet: takes both
+        listed("v/unknown", "1.0.0"),  # not seen here yet, no reference: belongs to no commit
+        listed("v/bad", "1.0.0", reference="../x"),  # not a reference: none
+        listed("g:a", "1.0", reference=b),  # other ecosystems: as before
+    ]
+    doc = {"ack": 0, "head": len(changes), "changes": [{"seq": i + 1, "dataset": "listed", "row": row}
+                                                      for i, row in enumerate(changes)]}  # fmt: skip
+    apply_sync(conn, _cfg(), doc, NOW, sent=0, me="sme")
+    rows = {
+        (r[0], r[1]): (r[2], r[3])
+        for r in conn.execute("SELECT name, version, first_listed, reference FROM package_versions")
+    }
+    assert rows == {
+        ("v/same", "dev-main"): (week, a),
+        ("v/newer", "dev-main"): (NOW, b),
+        ("v/old-leader", "dev-main"): (NOW, b),
+        ("v/stats", "1.0.0"): (week, a),
+        ("v/new", "1.0.0"): (week, a),
+        ("v/unknown", "1.0.0"): (week, ""),
+        ("v/bad", "1.0.0"): (week, ""),
+        ("g:a", "1.0"): (week, None),
+    }
+    # A time that names no commit counts for none: the commit the follower sees is timed afresh. One kept before
+    # SlowShield kept commits (None) belongs to the first commit seen.
+    version = M.Version("1.0.0", None, a, "zip", "https://x.test/a.zip", None, {})
+    assert _moved([None, week, ""], version) and _moved([None, week, b], version)
+    assert not _moved([None, week, None], version) and not _moved([None, week, a], version)
+    assert not _moved([None, week, ""], M.Version("1.0.0", None, None, None, None, None, {}))
+
+
+def test_the_leader_logs_a_listed_time_again_when_its_commit_changes(conn: sqlite3.Connection) -> None:
+    from slowshield.shieldwall.leader import _change_row
+
+    conn.execute("INSERT INTO meta (key, value) VALUES ('shieldwall_role', 'leader')")
+    conn.execute(
+        "INSERT INTO package_versions (ecosystem, name, version, first_listed, reference) "
+        "VALUES ('composer', 'v/p', 'dev-main', ?, ?)",
+        (NOW, "a" * 40),
+    )
+
+    def logged() -> list[str]:
+        keys = [r[0] for r in conn.execute("SELECT key FROM shieldwall_changes")]
+        conn.execute("DELETE FROM shieldwall_changes")
+        return keys
+
+    assert logged() == ["composer\nv/p\ndev-main"]
+    conn.execute("UPDATE package_versions SET reference = reference, first_listed = first_listed")
+    assert logged() == []
+    conn.execute("UPDATE package_versions SET reference = ?, first_listed = ?", ("b" * 40, NOW + 60))
+    assert logged() == ["composer\nv/p\ndev-main"]
+    assert _change_row(conn, "listed", "composer\nv/p\ndev-main") == {
+        "ecosystem": "composer", "name": "v/p", "version": "dev-main", "first_listed": NOW + 60, "reference": "b" * 40,
+    }  # fmt: skip

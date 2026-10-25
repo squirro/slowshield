@@ -491,7 +491,9 @@ async def test_setup_page_shows_the_nuget_config(running: Running) -> None:
     assert 'data-tool-pick="NuGet"' in page and "NU1603" in page
     # The build should fail when a held version is skipped for a higher one.
     assert "&lt;WarningsAsErrors&gt;$(WarningsAsErrors);NU1603&lt;/WarningsAsErrors&gt;" in page
-    assert "<code>TreatWarningsAsErrors</code>" in page
+    assert "TreatWarningsAsErrors works too" in page
+    assert "Keep <code>&lt;clear /&gt;</code> in NuGet.Config" in page  # the tool's note
+    assert "Make <code>NU1603</code> an error" in page  # What to expect
 
 
 async def test_setup_page_on_local_http_allows_the_insecure_source(start_app) -> None:

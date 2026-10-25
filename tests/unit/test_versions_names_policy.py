@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given, settings
@@ -49,6 +50,26 @@ def test_invalid_npm(name: str) -> None:
 def test_npm_basename() -> None:
     assert names.npm_basename("@babel/core") == "core" and names.npm_basename("lodash") == "lodash"
     assert names.normalize_npm(" x ") == "x"
+
+
+@pytest.mark.parametrize(
+    ("valid", "name"),
+    [
+        (names.is_valid_pypi, "requests"),
+        (names.is_valid_npm, "@babel/core"),
+        (names.is_valid_go, "golang.org/x/mod"),
+        (names.is_valid_maven, "org.slf4j:slf4j-api"),
+        (names.is_valid_cargo, "serde"),
+        (names.is_valid_nuget, "Newtonsoft.Json"),
+        (names.is_valid_composer, "monolog/monolog"),
+        (names.is_valid_rubygems, "rails"),
+        (names.is_valid_oci, "ghcr.io/squirro/slowshield"),
+    ],
+)
+def test_names_with_a_trailing_newline_are_refused(valid: Callable[[str], bool], name: str) -> None:
+    # `$` matches before a final newline: `rails\n` passed, and the blocklist, which names `rails`, missed it.
+    assert valid(name)
+    assert not valid(name + "\n") and not valid(name + "\r\n")
 
 
 # ---- versions ---------------------------------------------------------------------------------

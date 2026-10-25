@@ -24,8 +24,8 @@ hostnames:
 # Defaults to https://<first hostname>.
 publicUrl: ""
 
-# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/, Maven at /maven/, Cargo at /cargo/ and NuGet
-# at /nuget/v3/index.json on every hostname above.
+# PyPI is served at /pypi/simple/, npm at /npm/, Go modules at /go/, Maven at /maven/, Cargo at /cargo/, NuGet
+# at /nuget/v3/index.json, Composer at /composer/ and RubyGems at /rubygems/ on every hostname above.
 # ecosystems.*.hostnames (per-ecosystem host routing) are deprecated and removed in 0.1: leave them empty.
 ecosystems:
   pypi:
@@ -42,6 +42,13 @@ ecosystems:
     enabled: true
   # NuGet (docs/design/nuget.md): clients need a NuGet.Config with <clear/> and this source.
   nuget:
+    enabled: true
+  # Composer (docs/design/composer.md): clients turn packagist.org off and use this repository instead.
+  composer:
+    enabled: true
+  # RubyGems (docs/design/rubygems.md): Bundler uses it as a mirror of https://rubygems.org, gem as its only source.
+  # /versions (about 24 MB) is kept under the data volume.
+  rubygems:
     enabled: true
   # Container images at /v2/ (docs/design/oci.md). Layers are streamed, not stored, unless config.toml sets
   # [upstreams.oci] layer_cache_gb; persistence.ociLayers can give that store its own volume.

@@ -193,7 +193,7 @@ def test_valid_public_urls(url: str) -> None:
         '[upstreams.npm]\nmirrors = ["registry.npmjs.org"]',
         '[upstreams.pypi]\nhostnames = ["same"]\n[upstreams.npm]\nhostnames = ["SAME"]',
         '[[exceptions]]\necosystem = "pypi"\npackage = "x"\ndelay_days = -2',
-        '[[exceptions]]\necosystem = "rubygems"\npackage = "x"\ndelay_days = 1',
+        '[[exceptions]]\necosystem = "helm"\npackage = "x"\ndelay_days = 1',
         "unknown_key = 1",
         "this is not toml",
         'database_url = "mysql://x"',
@@ -273,3 +273,35 @@ def test_restart_only_changes_detects_everything() -> None:
         "upstreams.npm.public_url",
         "cache.artifacts_enabled",
     } <= set(changed)
+
+
+def test_upstream_hosts_are_the_ones_clients_would_use() -> None:
+    hosts = C.Upstreams().hosts()
+    assert hosts == {
+        "pypi": ["pypi.org", "files.pythonhosted.org"],
+        "npm": ["registry.npmjs.org"],
+        "go": ["proxy.golang.org", "sum.golang.org"],
+        "maven": ["repo1.maven.org", "dl.google.com", "plugins.gradle.org"],
+        "cargo": ["index.crates.io", "static.crates.io"],
+        "nuget": ["api.nuget.org", "azuresearch-usnc.nuget.org"],
+        # A lock written against packagist.org downloads dists from these directly.
+        "composer": ["repo.packagist.org", "packagist.org", "codeload.github.com", "gitlab.com", "bitbucket.org"],
+        "rubygems": ["index.rubygems.org", "rubygems.org"],
+        "oci": [
+            "registry-1.docker.io", "index.docker.io", "ghcr.io", "quay.io", "registry.k8s.io", "gcr.io",
+            "mcr.microsoft.com", "public.ecr.aws",
+        ],
+    }  # fmt: skip
+    # Elsewhere, not where downloads redirect to: CDNs and cloud storage serve far more than packages.
+    flat = {h for eco, group in hosts.items() if eco != "composer" for h in group}
+    assert not flat & {"storage.googleapis.com", "codeload.github.com", "hub.docker.com", "gitlab.com"}
+    # Composer's are the configured ones, each once.
+    upstreams = C.Upstreams(
+        composer=C.ComposerUpstream(download_hosts=["Dl.Example.org", "codeload.github.com", "dl.example.org"])
+    )
+    assert upstreams.hosts()["composer"] == [
+        "repo.packagist.org",
+        "packagist.org",
+        "dl.example.org",
+        "codeload.github.com",
+    ]

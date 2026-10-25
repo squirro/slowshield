@@ -202,7 +202,7 @@ def test_split_sql() -> None:
 async def test_writer_isolates_failures(tmp_path: Path) -> None:
     path = tmp_path / "w.db"
     migrate(path)
-    assert migrate(path) == 6  # idempotent
+    assert migrate(path) == 8  # idempotent
     db = Database(path)
     db.open()
     try:
@@ -423,7 +423,7 @@ def test_github_advisory_mapping() -> None:
         b'{"package": {"ecosystem": "pip", "name": "Foo_Bar"}, "vulnerable_version_range": "= 1.2.3"},'
         b'{"package": {"ecosystem": "npm", "name": "n"}, "vulnerable_version_range": ">= 0"},'
         b'{"package": {"ecosystem": "npm", "name": "m"}, "vulnerable_version_range": "< 2.0.0"},'
-        b'{"package": {"ecosystem": "rubygems", "name": "r"}},'
+        b'{"package": {"ecosystem": "erlang", "name": "r"}},'
         b'{"package": null}]}',
         type=GhAdvisory,
     )
@@ -474,6 +474,7 @@ def test_package_blocks_matching() -> None:
     assert pb.match("npm", "v1.0.0") is entries[0]
     assert pb.match("npm", "2.5.0") is entries[1]
     assert pb.match("npm", "3.0.0") is None and pb.match("npm", None) is None
+    assert pb.match_exact("npm", "1.0.0") is entries[0] and pb.match_exact("npm", "2.5.0") is None  # no ranges
     whole = BlockEntry("pypi", "y", None, ">= 0", "osv", "C", "r", "https://u")
     assert whole.package_level and whole.matches(None) and whole.as_json()["url"] == "https://u"
     assert PackageBlocks("pypi", [whole]).match("pypi", "1") is whole

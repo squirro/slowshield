@@ -10,7 +10,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | Cargo | `source.crates-io.replace-with` → sparse | `pubtime` (server) | index `cksum` → Cargo.lock | **live** | unsigned line-JSON index; held versions marked yanked; see [design/cargo.md](../design/cargo.md) |
 | Go modules | `GOPROXY` (no `,direct`) | `.info` Time is **commit time** → the `Last-Modified` of the `.mod` on proxy.golang.org (when the mirror stored it; equals the index.golang.org `Timestamp`) | go.sum + sum.golang.org (only `.mod`/`.zip`) | **live** | spec: lists and `.info` are not authenticated, filtering allowed; MVS → refuse, don't hide. Tailing index.golang.org was rejected: ~100k entries/day, see [design/go.md](../design/go.md) |
 | NuGet | `NuGet.Config` `<clear/>` + one source named `nuget.org` | registration `published` (1900-01-01 while unlisted) | repo signature inside `.nupkg`; catalog `packageHash` (SHA512) | **live** | held versions left out of the flat container, registration and search; see [design/nuget.md](../design/nuget.md) |
-| RubyGems | `bundle config mirror.…` | compact index `created_at` | sha256 per version; Gemfile.lock CHECKSUMS | medium | `/versions` stores MD5 of each info file → rewrite consistently |
+| RubyGems | `bundle config set --global mirror.https://rubygems.org …`; `~/.gemrc` | compact index `created_at`, per version and platform | sha256 per line in the compact index; Gemfile.lock CHECKSUMS | **live** | the md5s in `/versions` are only a refetch hint: written as zeros, so Bundler always asks for the filtered info file; see [design/rubygems.md](../design/rubygems.md) |
 | Maven Central / Gradle / sbt | `settings.xml` mirror; Gradle repositories/init script | none per version in `maven-metadata.xml` → `Last-Modified` of immutable POM/JAR | `.sha1`/`.md5` sidecars (unsigned), `.asc` | **live** | exact pins → refuse (`425`), not downgrade; see [design/maven.md](../design/maven.md) |
 | OCI images | containerd `hosts.toml` `server`, podman `registries.conf` `location`; dockerd's classic mirrors only Docker Hub and fall back | none in the API; image `created` is builder-set → registry APIs (Docker Hub, Quay, Artifact Registry, MCR) and first sight | digests; cosign/notation bound to digest | **live** | mutable tags → tag→digest history and time travel; see [design/oci.md](../design/oci.md) |
 | Terraform / OpenTofu providers | `provider_installation { network_mirror }` | `published-at` / `published` | lockfile `h1:`/`zh:` | easy | modules from git are hard |
@@ -21,7 +21,7 @@ per-version publish time, and metadata it can filter without breaking a signatur
 | CRAN | `options(repos=)` | `Published:` | MD5 only | medium | rewrite too-new to the Archive copy via `Path:` |
 | conda | `.condarc` `channel_alias` | repodata `timestamp` = build time (packager-set) | sha256 | medium | shards, `.jlap`, `current_repodata` |
 | Hugging Face | `HF_ENDPOINT` | commit `date`, `lastModified` | sha256 (`X-Linked-Etag`) | medium | Xet CAS redirects bypass the endpoint |
-| Composer | `repositories` + `packagist.org: false` | p2 `time` is **author-controlled** | `dist.shasum` often empty; GitHub zipballs | medium | needs first-seen ledger, URL rewriting |
+| Composer | `repo.packagist false` + a `composer` repository | p2 `published-time` (server, since 2026-06); `time` is **author-controlled** | `dist.shasum` empty for GitHub zipballs; first-seen fingerprint, and the files in the zip | **live** | dist URLs rewritten (Composer falls back from a mirror to GitHub); see [design/composer.md](../design/composer.md) |
 | Julia | `JULIA_PKG_SERVER` | none (git history) | tree SHA1 | medium | serve filtered registry under new hash |
 | Bazel (BCR) | `--registry` | none (git history) | SRI `integrity` | medium | sources live on GitHub |
 | dnf / yum | `.repo` `baseurl` | `<time build=>` (packager) | RPM GPG; repomd GPG if `repo_gpgcheck` | medium | regenerate repomd; re-sign only with `repo_gpgcheck=1` |
@@ -36,25 +36,28 @@ per-version publish time, and metadata it can filter without breaking a signatur
 ## Cross-cutting
 
 * **Who sets the timestamp matters more than whether there is one.** Server-set: PyPI, npm, crates, RubyGems,
-  NuGet, pub, JSR, Hex, CRAN, index.golang.org and proxy.golang.org's `Last-Modified`. Author/builder-set: Go `.info`, Packagist, conda, apk, RPM, OCI
+  NuGet, Packagist's `published-time`, pub, JSR, Hex, CRAN, index.golang.org and proxy.golang.org's `Last-Modified`.
+  Author/builder-set: Go `.info`, Packagist's `time`, conda, apk, RPM, OCI
   `created`, Helm, git. → build one **first-seen ledger** shared by all adapters.
 * **Signed metadata can't be filtered** (apt, apk, Homebrew, Hex, Nix, dnf with `repo_gpgcheck`): refuse at
   download (fail closed), opt-in re-signing with an org key, or rely on the client's own gate.
 * **Exact-pin ecosystems** (Go MVS, Maven, Bazel, Nix): hiding a version breaks the build instead of
   downgrading; return a clear refusal and align with Renovate `minimumReleaseAge` / Dependabot `cooldown`.
 * **Client-side age gates now exist** (npm `min-release-age`, pnpm `minimumReleaseAge`, Yarn `npmMinimalAgeGate`,
-  Bun, Deno, uv `exclude-newer`, pip `--uploaded-prior-to`, Cargo `min-publish-age`, Hex, Bundler). They all read
-  the registry timestamps, so SlowShield must **preserve, never invent** `upload-time` / `time` / `pubtime`.
+  Bun, Deno, uv `exclude-newer`, pip `--uploaded-prior-to`, Cargo `min-publish-age`, Hex, Bundler `cooldown`). They all read
+  the registry timestamps, so SlowShield must **preserve, never invent** `upload-time` / `time` / `pubtime` /
+  `created_at`.
   SlowShield's value: central enforcement, also for clients without a gate (Maven, NuGet, Go, pub) and for
   developers who switch theirs off.
 
 ## Proposed phases
 
-1. **Shipped:** Go, Maven/Gradle, Cargo, OCI images (https://github.com/squirro/slowshield/issues/22) and NuGet
-   (https://github.com/squirro/slowshield/issues/38).
-2. **Then:** RubyGems, Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains; compatibility tests for
+1. **Shipped:** Go, Maven/Gradle, Cargo, OCI images (https://github.com/squirro/slowshield/issues/22), NuGet
+   (https://github.com/squirro/slowshield/issues/38), Composer and RubyGems
+   (https://github.com/squirro/slowshield/issues/17).
+2. **Then:** Terraform/OpenTofu, pub.dev, JSR, Helm, JetBrains; compatibility tests for
    pnpm/Yarn/Bun.
-3. **Later:** conda, CRAN, Hugging Face, Composer, Julia, Bazel (each needs a custom adapter).
+3. **Later:** conda, CRAN, Hugging Face, Julia, Bazel (each needs a custom adapter).
 4. **Opt-in only:** apt/dnf/apk re-signing, Hex/Homebrew refuse-at-download, GitHub Releases forward proxy.
 
 Sources: go.dev/ref/mod · index.golang.org · rust-lang RFC 3923 (cargo min-publish-age) · rubygems.org/info ·

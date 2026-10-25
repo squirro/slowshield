@@ -1,10 +1,12 @@
 """Starlette app serving the fake catalog as PyPI, npm, Go (module mirror and checksum database), Maven, crates.io
 (sparse index and static downloads), nuget.org (flat container, registration, catalog, search, vulnerability data),
-OCI registries (with Docker Hub- and Quay-style time APIs), OSV and GitHub endpoints, plus control hooks."""
+Packagist (p2 metadata, the malware list) with GitHub's codeload archives, OCI registries (with Docker Hub- and
+Quay-style time APIs), OSV and GitHub endpoints, plus control hooks."""
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import email.utils
 import gzip
 import hashlib
@@ -18,7 +20,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Iterator
 from html import escape
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -59,6 +61,7 @@ class State:
         self.failures: dict[str, int] = {}
         self.hits: Counter[str] = Counter()
         self.last_headers: dict[str, dict[str, str]] = {}
+        self.composer_advisories_asked: list[str] = []
         self.clock_offset = 0.0  # added to the catalog's `now` when the Go mirror stores a version
 
 
@@ -93,7 +96,7 @@ class Injector:
             if st.latency_ms:
                 await asyncio.sleep(st.latency_ms / 1000)
             for prefix, status in st.failures.items():
-                if path.startswith(prefix):
+                if path == prefix[:-1] if prefix.endswith("$") else path.startswith(prefix):  # `$`: this path only
                     await PlainTextResponse(f"injected failure {status}", status_code=status)(scope, receive, send)
                     return
         await self.app(scope, receive, send)
@@ -496,6 +499,148 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         if cv is None or cv.name != name:
             return Response(b"<Error><Code>AccessDenied</Code></Error>", status_code=403, media_type="application/xml")
         return _stream(cv.blob, tampered=request.url.path in state.tampered, media_type="application/x-tar")
+
+    # ---- Packagist and GitHub ------------------------------------------------------------------------
+    # /packagist/p2/<vendor>/<package>.json (tags) and ~dev.json (branches), minified as Packagist sends them, with
+    # Last-Modified and If-Modified-Since; /packagist/lists/all/summary.json; dists at /codeload/ (GitHub's archives).
+
+    def composer_minify(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        last: dict[str, Any] | None = None
+        for entry in entries:
+            if last is None:
+                out.append(entry)
+                last = dict(entry)
+                continue
+            diff = {k: v for k, v in entry.items() if k not in last or last[k] != v}
+            diff.update({k: "__unset" for k in last if k not in entry})
+            out.append(diff)
+            last = dict(entry)
+        return out
+
+    def last_modified(request: Request, body: bytes, when: float, media_type: str = "application/json") -> Response:
+        stamp = email.utils.formatdate(when, usegmt=True)
+        h = {"Last-Modified": stamp, "ETag": _etag(body), "Cache-Control": "public, max-age=900"}
+        since = request.headers.get("if-modified-since")
+        if since and email.utils.parsedate_to_datetime(since).timestamp() >= int(when):
+            return Response(status_code=304, headers=h)
+        if request.headers.get("if-none-match") == h["ETag"]:
+            return Response(status_code=304, headers=h)
+        return Response(body, media_type=media_type, headers=h)
+
+    async def packagist_p2(request: Request) -> Response:
+        vendor, file = request.path_params["vendor"], request.path_params["file"]
+        stem = file.removesuffix(".json")
+        dev = stem.endswith("~dev")
+        name = f"{vendor}/{stem.removesuffix('~dev')}"
+        pkg = state.catalog.composer.get(name)
+        if pkg is None or not file.endswith(".json"):
+            return JSONResponse("404 not found, no packages here", status_code=404)
+        entries = [
+            state.catalog.composer_entry(cv, base(request))
+            for cv in pkg.values()
+            if cv.version.startswith("dev-") == dev
+        ]
+        body = json.dumps(
+            {
+                "minified": "composer/2.0",
+                "packages": {name: composer_minify(entries)},
+                "security-advisories": [{"advisoryId": "PKSA-fake-0001", "affectedVersions": "<1.0.0"}],
+            }
+        ).encode()
+        when = max([cv.published or cv.time for cv in pkg.values()] + [state.catalog.now - 400 * DAY])
+        return last_modified(request, body, when)
+
+    async def packagist_summary(request: Request) -> Response:
+        body = json.dumps({"filter": {"malware": {"fake/evil": "*", "fake/gone": "1.0.0|v1.0.1"}}}).encode()
+        return last_modified(request, body, state.catalog.now - 3 * DAY)
+
+    async def packagist_advisories(request: Request) -> Response:
+        """packagist.org/api/security-advisories/: a POST form of `packages[]` (or `packages[<n>]`)."""
+        form = parse_qsl((await request.body()).decode())
+        asked = sorted(v for k, v in form if k.startswith("packages["))
+        state.composer_advisories_asked = asked
+        found = {
+            n: [
+                {
+                    "advisoryId": "PKSA-fake-0001",
+                    "packageName": n,
+                    "title": "Fake advisory",
+                    "affectedVersions": "<1.0.0",
+                }
+            ]
+            for n in asked
+            if n in state.catalog.composer
+        }
+        return JSONResponse({"advisories": found})
+
+    async def ctl_composer_advisories(request: Request) -> Response:
+        return JSONResponse({"asked": state.composer_advisories_asked})
+
+    async def codeload(request: Request) -> Response:
+        """codeload.github.com: `/<owner>/<repo>/legacy.zip/<commit>`; 404 for anything else."""
+        name = f"{request.path_params['owner']}/{request.path_params['repo']}"
+        ref = request.path_params["ref"]
+        hit = next((cv for cv in state.catalog.composer.get(name, {}).values() if cv.reference == ref), None)
+        if hit is None:
+            return PlainTextResponse("404: Not Found", status_code=404)
+        return _stream(hit.blob, tampered=request.url.path in state.tampered, media_type="application/zip")
+
+    # ---- rubygems.org ------------------------------------------------------------------------------------
+    # /rubygems-index/ (versions, names, info/<name>: ETag = MD5, Repr-Digest, Range on versions) and /rubygems-dl/
+    # (gems/<file>.gem, quick/Marshal.4.8/<file>.gemspec.rz). Names are case-sensitive.
+
+    def gem_headers(body: bytes) -> dict[str, str]:
+        digest = base64.b64encode(hashlib.sha256(body).digest()).decode()
+        return {
+            "ETag": '"' + hashlib.md5(body, usedforsecurity=False).hexdigest() + '"',
+            "Repr-Digest": f'sha-256="{digest}"',
+            "Cache-Control": "max-age=60, public",
+            "Accept-Ranges": "bytes",
+        }
+
+    def gem_index_response(request: Request, body: bytes) -> Response:
+        headers = gem_headers(body)
+        if request.headers.get("if-none-match") == headers["ETag"]:
+            return Response(status_code=304, headers=headers)
+        rng = request.headers.get("range", "")
+        if rng.startswith("bytes=") and rng.endswith("-") and rng[6:-1].isdigit():
+            start = int(rng[6:-1])
+            if start >= len(body):
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{len(body)}"})
+            headers["Content-Range"] = f"bytes {start}-{len(body) - 1}/{len(body)}"
+            return Response(body[start:], status_code=206, media_type="text/plain; charset=utf-8", headers=headers)
+        return Response(body, media_type="text/plain; charset=utf-8", headers=headers)
+
+    async def gem_index(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        cat = state.catalog
+        if rest == "versions":
+            return gem_index_response(request, cat.gem_versions_body())
+        if rest == "names":
+            return gem_index_response(request, b"---\n" + b"".join(f"{n}\n".encode() for n in sorted(cat.gems)))
+        name = rest.removeprefix("info/")
+        if rest.startswith("info/") and name in cat.gems:
+            return gem_index_response(request, cat.gem_info(name))
+        return PlainTextResponse("This gem could not be found", status_code=404)
+
+    def gem_lookup(stem: str) -> Any:
+        return next((g for lines in state.catalog.gems.values() for g in lines.values() if g.stem == stem), None)
+
+    async def gem_dl(request: Request) -> Response:
+        rest = request.path_params["rest"]
+        if rest.startswith("gems/") and rest.endswith(".gem"):
+            g = gem_lookup(rest[5:-4])
+            if g is not None:
+                return _stream(g.blob, tampered=request.url.path in state.tampered)
+        elif rest.startswith("quick/Marshal.4.8/") and rest.endswith(".gemspec.rz"):
+            g = gem_lookup(rest[18:-11])
+            if g is not None:
+                spec = g.spec_rz
+                if request.url.path in state.tampered:
+                    spec = spec[:-1] + bytes([spec[-1] ^ 1])
+                return Response(spec, media_type="application/octet-stream")
+        return PlainTextResponse("not found", status_code=404)
 
     # ---- nuget.org --------------------------------------------------------------------------------------
     # /nuget-flat/ (flat container), /nuget-reg/ (a gzipped SemVer 2 registration hive), /nuget-catalog/ (catalog
@@ -923,7 +1068,9 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         path = request.query_params["path"]
         if path.startswith("/files/"):
             path = path.removeprefix("/files")
-        elif not path.startswith(("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/")):
+        elif not path.startswith(
+            ("/go/", "/maven/", "/cargo-static/", "/oci-cdn/", "/nuget-flat/", "/codeload/", "/rubygems-dl/")
+        ):
             path = path.removeprefix("/npm")
         state.tampered.add(path)
         return JSONResponse({"ok": True, "tampered": sorted(state.tampered)})
@@ -959,6 +1106,30 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
     async def ctl_nuget_resign(request: Request) -> Response:
         """nuget.org re-signs a package: new bytes, and a catalog commit whose packageHash matches them."""
         state.catalog.nuget_resign(request.query_params["id"], request.query_params["version"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_composer_rearchive(request: Request) -> Response:
+        """GitHub archives a commit again: other bytes, the same files."""
+        state.catalog.composer_rearchive(request.query_params["name"], request.query_params["version"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_composer_push(request: Request) -> Response:
+        """A new commit under a version's name (or `reference`, another version's): `age_days` for its
+        `published-time`, `none` for none."""
+        q = request.query_params
+        age = q.get("age_days", "none")
+        ref = state.catalog.composer_push(
+            q["name"], q["version"], None if age == "none" else float(age), q.get("reference")
+        )
+        return JSONResponse({"reference": ref})
+
+    async def ctl_rubygems_yank(request: Request) -> Response:
+        """rubygems.org yanks a version: the line leaves the info file and /versions gets `-<key>`."""
+        state.catalog.yank_gem(request.query_params["name"], request.query_params["key"])
+        return JSONResponse({"ok": True})
+
+    async def ctl_rubygems_rebuild(request: Request) -> Response:
+        state.catalog.rebuild_gem_versions()
         return JSONResponse({"ok": True})
 
     async def ctl_oci_remove(request: Request) -> Response:
@@ -1027,6 +1198,24 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
                     }
                     for name, crate in cat.crates.items()
                 },
+                "composer": {
+                    name: {
+                        v: {
+                            "reference": cv.reference,
+                            "published": cv.published,
+                            "sha256": cv.blob.digests()["sha256"],
+                        }
+                        for v, cv in pkg.items()
+                    }
+                    for name, pkg in cat.composer.items()
+                },
+                "rubygems": {
+                    name: {
+                        key: {"created": g.created, "sha256": g.blob.digests()["sha256"], "stem": g.stem}
+                        for key, g in lines.items()
+                    }
+                    for name, lines in cat.gems.items()
+                },
                 "nuget": {
                     lid: {
                         lv: {
@@ -1054,6 +1243,8 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/go/{rest:path}", go, methods=["GET", "HEAD"]),
         Route("/maven/{repo}/{rest:path}", maven, methods=["GET", "HEAD"]),
         Route("/cargo-index/{rest:path}", cargo_index, methods=["GET", "HEAD"]),
+        Route("/rubygems-index/{rest:path}", gem_index, methods=["GET", "HEAD"]),
+        Route("/rubygems-dl/{rest:path}", gem_dl, methods=["GET", "HEAD"]),
         Route("/cargo-static/crates/{name}/{version}/download", cargo_static, methods=["GET", "HEAD"]),
         Route("/nuget-flat/{id}/{rest:path}", nuget_flat, methods=["GET", "HEAD"]),
         Route("/nuget-reg/{id}/{rest:path}", nuget_reg, methods=["GET", "HEAD"]),
@@ -1062,7 +1253,16 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         Route("/nuget-vuln/index.json", nuget_vuln_index),
         Route("/nuget-vuln-data/{rest:path}", nuget_vuln_file),
         Route("/_control/nuget-list", ctl_nuget_list, methods=["POST"]),
+        Route("/_control/rubygems-yank", ctl_rubygems_yank, methods=["POST"]),
+        Route("/_control/rubygems-rebuild", ctl_rubygems_rebuild, methods=["POST"]),
         Route("/_control/nuget-resign", ctl_nuget_resign, methods=["POST"]),
+        Route("/packagist/p2/{vendor}/{file}", packagist_p2, methods=["GET", "HEAD"]),
+        Route("/packagist/lists/all/summary.json", packagist_summary, methods=["GET", "HEAD"]),
+        Route("/codeload/{owner}/{repo}/legacy.zip/{ref}", codeload, methods=["GET", "HEAD"]),
+        Route("/_control/composer-rearchive", ctl_composer_rearchive, methods=["POST"]),
+        Route("/_control/composer-push", ctl_composer_push, methods=["POST"]),
+        Route("/_control/composer-advisories", ctl_composer_advisories, methods=["POST"]),
+        Route("/packagist-api/security-advisories/", packagist_advisories, methods=["POST"]),
         Route("/oci/token", oci_token),
         Route("/oci/{registry}/v2/{rest:path}", oci, methods=["GET", "HEAD"]),
         Route("/oci/{registry}/v2", oci, methods=["GET", "HEAD"]),

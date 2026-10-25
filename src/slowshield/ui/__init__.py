@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markdown_it import MarkdownIt
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -31,6 +31,7 @@ from slowshield.context import AppContext
 from slowshield.ecosystems import ECOSYSTEMS, IDS, LABELS
 from slowshield.ecosystems.oci.service import delay_days
 from slowshield.policy import DAY
+from slowshield.ui import expect as X
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
@@ -134,6 +135,14 @@ def short_version(version: str) -> str:
     return version
 
 
+_TICKS = re.compile(r"`([^`]+)`")
+
+
+def ticks(text: str) -> Markup:
+    """`text` escaped, with `code` in backticks as <code>."""
+    return Markup(_TICKS.sub(r"<code>\1</code>", str(escape(text))))  # noqa: S704 - escaped first
+
+
 class UI:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
@@ -147,7 +156,7 @@ class UI:
         )
         env.filters.update(
             bytes=fmt_bytes, num=fmt_num, ts=fmt_ts, pct=fmt_pct, duration=fmt_duration, href=safe_href,
-            short_version=short_version,
+            short_version=short_version, ticks=ticks,
         )  # fmt: skip
         cast(dict[str, Any], env.globals).update(
             version=__version__,
@@ -652,6 +661,8 @@ class UI:
         maven_base = f"{base}/maven"
         cargo_index = f"{base}/cargo/"
         nuget_source = f"{base}/nuget/v3/index.json"
+        composer_repo = f"{base}/composer/"
+        rubygems_mirror = f"{base}/rubygems"
         legacy_hosts = [*raw.upstreams.pypi.hostnames, *raw.upstreams.npm.hostnames]
         # Local plain HTTP: show http:// URLs that work without trusting Caddy's CA, keep HTTPS as the alternative.
         local = local_http_origin(request.scope, raw.local_http, cfg.trusted_networks)
@@ -668,18 +679,25 @@ class UI:
                 "maven": f"{maven_base}/all/",
                 "cargo": cargo_index,
                 "nuget": nuget_source,
+                "composer": composer_repo,
+                "rubygems": rubygems_mirror,
             }
             pypi_index = f"{local}/pypi/simple/"
             go_proxy = f"{local}/go"
             maven_base = f"{local}/maven"
             cargo_index = f"{local}/cargo/"
             nuget_source = f"{local}/nuget/v3/index.json"
+            composer_repo = f"{local}/composer/"
+            rubygems_mirror = f"{local}/rubygems"
             if not raw.upstreams.npm.public_url:
                 npm_registry = f"{local}/npm/"
         age_days = S.client_age_days(raw.default_delay_days)
         images = S.oci_tools(local or base, tuple(sorted(raw.upstreams.oci.all_registries())), age_days=age_days)
         snippets = S.for_instance(pypi_index, npm_registry, go_proxy, age_days=age_days)
+        urls = (pypi_index, npm_registry, go_proxy, maven_base, cargo_index)
         os_name = _client_os(request)
+        days = f"{round(raw.default_delay_days, 1):g}"  # as the template writes it
+        hosts = X.firewall_hosts(cfg)
         shell = next((sh.id for sh in snippets.shells if sh.os and sh.os == os_name), snippets.shells[0].id)
         return self._render(
             "setup.html.j2",
@@ -690,6 +708,8 @@ class UI:
             maven_repo=f"{maven_base}/all/",
             cargo_index=cargo_index,
             nuget_source=nuget_source,
+            composer_repo=composer_repo,
+            rubygems_mirror=rubygems_mirror,
             legacy_hosts=legacy_hosts,
             setup_url=cfg.setup_base(),
             also_at=cfg.public_base() if raw.setup_url and cfg.setup_base() != cfg.public_base() else None,
@@ -698,12 +718,10 @@ class UI:
             docs=S.docs_url,
             docs_home=S.DOCS,
             tools=S.tools(
-                pypi_index, npm_registry, go_proxy, maven_base, cargo_index, nuget=nuget_source, age_days=age_days
+                *urls, nuget=nuget_source, composer=composer_repo, rubygems=rubygems_mirror, age_days=age_days
             )
             + images,
-            tools_plain=S.tools(
-                pypi_index, npm_registry, go_proxy, maven_base, cargo_index, nuget=nuget_source, age_days=0
-            )
+            tools_plain=S.tools(*urls, nuget=nuget_source, composer=composer_repo, rubygems=rubygems_mirror, age_days=0)
             + images,
             age_days=age_days,
             ci=S.ci_env(pypi_index, npm_registry, go_proxy, age_days=age_days),
@@ -712,6 +730,10 @@ class UI:
             dockerfile_plain=S.dockerfile_env(pypi_index, npm_registry, go_proxy, age_days=0),
             shell=shell,
             os=os_name,
+            expect=X.rows(cfg, days),
+            firewall=hosts,
+            firewall_text="\n".join(h for _, group in hosts for h in group),
+            firewall_off=[eco for eco in IDS if not getattr(raw.upstreams, eco).enabled],
         )
 
     async def about(self, request: Request) -> Response:

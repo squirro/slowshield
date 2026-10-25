@@ -63,12 +63,17 @@ def base_config(data_dir: Path, fake_url: str) -> dict[str, Any]:
                 "repos": {"snapshots": {"url": f"{fake_url}/maven/snapshots", "snapshots": True}},
             },
             "cargo": {"index_url": f"{fake_url}/cargo-index", "download_url": f"{fake_url}/cargo-static/crates"},
+            "rubygems": {"index_url": f"{fake_url}/rubygems-index", "download_url": f"{fake_url}/rubygems-dl"},
             "nuget": {
                 "flat_container_url": f"{fake_url}/nuget-flat/",
                 "registration_url": f"{fake_url}/nuget-reg/",
                 "catalog_url": f"{fake_url}/nuget-catalog/",
                 "vulnerability_url": f"{fake_url}/nuget-vuln/index.json",
                 "search_url": f"{fake_url}/nuget-search/query",
+            },
+            "composer": {
+                "repo_url": f"{fake_url}/packagist",
+                "advisories_url": f"{fake_url}/packagist-api/security-advisories/",
             },
             "oci": {"registries": fake_oci_registries(fake_url)},
         },

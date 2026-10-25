@@ -177,7 +177,13 @@ way, one by one, with a warning.
 
 The leader logs a change (a row in `shieldwall_changes`, moved to a new sequence number on every change) whenever
 something followers take changes, by database triggers that only fire on a leader. Becoming a leader logs
-everything that exists. A follower asks for changes after its cursor, up to 500 at a time.
+everything that exists. A follower asks for changes after its cursor, up to 500 at a time. A change carries the
+row as it is when the follower asks for it, so the history at pairing comes the same way as later changes.
+
+Rows only gain fields (protocol 1 throughout): a reader ignores fields it doesn't know and treats one that is missing
+as unknown, so leaders and followers of different versions sync in both directions. Composer's `first_listed`
+carries its `reference`; a follower treats one without (from a leader built before the field) as belonging to no
+commit, so it can't move the clock of a commit the follower sees.
 
 | Data | Merge on the follower | Class |
 |---|---|---|
@@ -188,7 +194,8 @@ everything that exists. A follower asks for changes after its cursor, up to 500 
 | Takedowns (`oci_digests.gone`) | the earliest wins | tightens |
 | Tamper flags (`artifacts.tampered`) | set on the follower, with a `tampered` event; never cleared by the leader | tightens |
 | OCI tag history (`oci_tags`) | `first_seen` = the earlier of the follower's and the credited time | loosens |
-| Maven, Cargo and NuGet `first_listed` | the earlier of the follower's and the credited time | loosens |
+| Maven, Cargo, NuGet and RubyGems `first_listed` | the earlier of the follower's and the credited time | loosens |
+| Composer `first_listed`, with the commit (`reference`) it belongs to | the same, but only for the commit the follower has for the version (or none yet); a newer commit keeps the follower's clock | loosens |
 | `oci_since` | at pairing only: the earlier of both, so a new follower skips the fail-open window the leader is past | loosens (bootstrap) |
 | Registry times (PyPI, npm, Go, Maven files, OCI `registry_time`) | not sent: the follower reads them from the registry itself | |
 
@@ -269,8 +276,8 @@ Transparency's maximum merge delay; it is this project's own construction and de
 A follower that misses its cache asks the leader first (`SLOWSHIELD_SHIELDWALL_VIA_LEADER`, on by default):
 
 - **What goes:** files with a content address (a sha256 from the index or from the follower's first download, or
-  npm's sha512), fetched without credentials and without reading registry headers. Today that is PyPI, npm and Cargo
-  files, and any file the follower has seen before. Metadata never goes through the leader.
+  npm's sha512), fetched without credentials and without reading registry headers. Today that is PyPI, npm, Cargo
+  and RubyGems files, and any file the follower has seen before. Metadata never goes through the leader.
 - **The leader** (`GET /_shieldwall/v1/blob?sha256=…&url=…`, signed by a member) answers from its cache by content
   address, or fetches the URL, but only from its own configured upstream hosts, streams it back, and caches it if
   the bytes match the address. Its cache is keyed by content, so a follower can't put bytes under another file's

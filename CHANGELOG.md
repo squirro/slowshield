@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-10-25
+
+### Added
+- Composer (PHP): Packagist through SlowShield at `/composer/` ([docs/design/composer.md](docs/design/composer.md)).
+  A version's publish time is Packagist's `published-time`, never the author's `time`; one in the future counts as
+  now. The time belongs to the version's commit: a branch's new commit, or a tag moved on a mirror, is timed afresh.
+  Versions younger than the delay are left out of the metadata, and a lock file that pins one gets `425 Too Early`
+  with a warning Composer prints. Every dist comes through SlowShield over HTTPS, checked against its first
+  download; GitHub archives built again with the same files are not tampering, and an archive that can't be read is
+  refused. A dist is judged by every version on its commit. Malware from OSV and GitHub is refused with `451`,
+  Packagist's malware list and security advisories reach Composer, and `composer audit` works. Brand-new packages
+  are held too (`upstreams.composer.fail_open = false`). Needs Composer 2.10 or later. The Setup page has the
+  commands, a `composer.json`, and a line that points a lock written against packagist.org at SlowShield;
+  slowshield.org has a PHP guide.
+- RubyGems (Ruby) at `/rubygems/` (https://github.com/squirro/slowshield/issues/17): Bundler uses SlowShield as a
+  mirror of rubygems.org (`bundle config set --global mirror.https://rubygems.org <public_url>/rubygems`), `gem` as
+  its only source in `~/.gemrc`; Gemfiles and `Gemfile.lock` keep naming rubygems.org. Each version and platform is
+  judged by its own `created_at`, so a platform gem pushed late for an old version waits too. Held and blocked
+  versions are left out of the compact index; a download of one gets `425 Too Early` or `451`. Every `.gem` is
+  checked against the index's sha256 and its first-seen fingerprint, and every `.gemspec.rz` against its first-seen
+  fingerprint. Brand-new gems are held (`upstreams.rubygems.fail_open = false`). `gem search`, `gem outdated` and
+  `gem update` need rubygems.org's full index, which SlowShield doesn't serve. The Setup page has Bundler's mirror
+  and its `cooldown` (Bundler 4.0.13 and later), and the `.gemrc`; Helm: `ecosystems.rubygems.enabled`; the website
+  has a Ruby guide.
+
+### Security
+- Package-name checks no longer accept a name with a trailing newline, in every ecosystem. Before, `rails\n` passed
+  as a gem name, and the blocklist, which names `rails`, didn't match it.
+- OpenTelemetry 1.45.1 (GHSA-xcq7-p3pf-p88h: unbounded `tracestate` parsing) and certifi 2026.10.19
+  (GHSA-6q48-6c7w-9gw2: emSign roots with compromised intermediates). certifi is the CA bundle the OTLP exporter
+  uses for HTTPS; package downloads use the system store, which distrusts emSign since 0.0.10. The website's
+  Wrangler gets undici 7.30.1 (GHSA-xjj6-f33q-929c).
+
 ## [0.0.12] - 2026-10-24
 
 ### Added

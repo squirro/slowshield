@@ -1,5 +1,5 @@
-"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, OCI images, OSV,
-GitHub advisories).
+"""Deterministic package catalog for the fake registry (PyPI, npm, Go modules, Maven, crates.io, nuget.org,
+Packagist, rubygems.org, OCI images, OSV, GitHub advisories).
 
 All times are relative to a fixed reference `now` so tests, e2e runs and perf runs are reproducible.
 Small artifacts are *real* installable distributions (wheel/sdist/npm tarball, deterministic bytes);
@@ -14,11 +14,14 @@ import hashlib
 import io
 import json
 import random
+import re
 import tarfile
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+
+from fakeupstream import gems
 
 DAY = 86400.0
 CHUNK = 64 * 1024
@@ -109,11 +112,11 @@ def _tamper(data: bytes) -> bytes:
 # ---- distribution builders -------------------------------------------------------------------------
 
 
-def _zip(files: dict[str, bytes]) -> bytes:
+def _zip(files: dict[str, bytes], date_time: tuple[int, int, int, int, int, int] = _ZIP_TIME) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name, content in files.items():
-            info = zipfile.ZipInfo(name, date_time=_ZIP_TIME)
+            info = zipfile.ZipInfo(name, date_time=date_time)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             zf.writestr(info, content)
@@ -253,6 +256,35 @@ def make_nupkg(pid: str, version: str, deps: tuple[tuple[str, str], ...] = (), *
     )
 
 
+def composer_reference(name: str, version: str) -> str:
+    """The commit a version's tag points at (a branch: its current commit)."""
+    return hashlib.sha1(f"{name}@{version}".encode(), usedforsecurity=False).hexdigest()
+
+
+def make_composer_zip(
+    name: str, version: str, reference: str, deps: tuple[tuple[str, str], ...] = (), *, archived: int = 0
+) -> bytes:
+    """A GitHub zipball Composer can install: `<owner>-<repo>-<commit>/` with composer.json and one class. `archived`
+    changes the bytes but not the files (GitHub archiving the same commit again)."""
+    vendor, package = name.split("/")
+    stem = f"{vendor}-{package}-{reference[:7]}"
+    manifest = {"name": name, "type": "library", "license": "MIT", "autoload": {"psr-4": {"Fake\\": "src/"}}}
+    if deps:
+        manifest["require"] = dict(deps)
+    cls = "".join(part.capitalize() for part in re.split(r"[^a-z0-9]", package) if part)
+    php = f"<?php\n\nnamespace Fake;\n\nfinal class {cls}\n{{\n    public const VERSION = '{version}';\n}}\n"
+    files = {f"{stem}/composer.json": json.dumps(manifest).encode(), f"{stem}/src/{cls}.php": php.encode()}
+    return _zip(files, (2020, 1, 1 + archived, 0, 0, 0))
+
+
+def _composer_normalized(version: str) -> str:
+    """Packagist's `version_normalized` for the plain versions the catalog uses: `v1.1.0` is `1.1.0.0`."""
+    if version.startswith("dev-"):
+        return version
+    parts = version.removeprefix("v").split(".")
+    return ".".join(parts + ["0"] * (4 - len(parts)))
+
+
 def make_npm_tarball(name: str, version: str) -> bytes:
     pkg = f'{{"name": "{name}", "version": "{version}", "main": "index.js", "license": "MIT"}}\n'.encode()
     return _targz({"package/package.json": pkg, "package/index.js": f"module.exports = {version!r};\n".encode()})
@@ -352,6 +384,27 @@ class CrateVersion:
 
 
 @dataclass(slots=True)
+class GemLine:
+    name: str  # as published: rubygems.org's names are case-sensitive
+    version: str
+    platform: str  # "ruby" for a plain gem
+    created: float | None  # None: an info line without `created_at`
+    blob: Blob
+    spec_rz: bytes
+    deps: gems.Deps = ()
+    rubygems: str = ""  # the line's `rubygems:` requirement, if any
+
+    @property
+    def key(self) -> str:
+        """`<version>[-<platform>]`, as in the info line and the file name."""
+        return self.version if self.platform == "ruby" else f"{self.version}-{self.platform}"
+
+    @property
+    def stem(self) -> str:
+        return f"{self.name}-{self.key}"
+
+
+@dataclass(slots=True)
 class NugetVersion:
     pid: str  # the id as published (Fake.Hello); paths use it in lower case
     version: str  # normalized, as published (2.0.0-Beta.1); paths use it in lower case
@@ -364,6 +417,19 @@ class NugetVersion:
     @property
     def lower(self) -> str:
         return self.version.lower()
+
+
+@dataclass(slots=True)
+class ComposerVersion:
+    name: str  # vendor/package
+    version: str  # as tagged: `1.2.0`, `v1.1.0`, `dev-main`
+    published: float | None  # `published-time`, set by Packagist; None: left out
+    time: float  # `time`, the author's date
+    blob: Blob
+    reference: str
+    deps: tuple[tuple[str, str], ...] = ()
+    shasum: bool = False  # Packagist's dist.shasum (empty for GitHub dists)
+    dist_host: str | None = None  # a dist on another host than the fake GitHub (https, unless it names a scheme)
 
 
 NUGET_UNLISTED = "1900-01-01T00:00:00+00:00"
@@ -468,7 +534,10 @@ class Catalog:
         self.oci: dict[tuple[str, str], OciRepo] = {}  # (registry, path) -> repository
         self.nuget: dict[str, dict[str, NugetVersion]] = {}  # lower-case id -> lower-case version, in version order
         self.nuget_catalog: dict[str, bytes] = {}  # catalog leaf path -> document (leaves never change)
+        self.gems: dict[str, dict[str, GemLine]] = {}  # name -> key -> line, in push order
+        self.gem_versions: list[bytes] = []  # /versions lines after the header: one per gem, then one per change
         self._nuget_commits = 0
+        self.composer: dict[str, dict[str, ComposerVersion]] = {}  # name -> version -> entry, newest first
         self.advisories: list[Advisory] = []
         self.files_by_path: dict[str, PyFile] = {}
         self.meta_by_path: dict[str, PyFile] = {}
@@ -619,6 +688,60 @@ class Catalog:
         when = self.now - age_days * DAY if pubtime else None
         crate[version] = CrateVersion(name, version, when, blob, yanked=yanked, deps=deps)
 
+    def add_gem(
+        self,
+        name: str,
+        version: str,
+        age_days: float,
+        *,
+        platform: str = "ruby",
+        created: bool = True,
+        deps: gems.Deps = (),
+        rubygems: str = "",
+    ) -> None:
+        """Push a gem. After the catalog is built, /versions gets a line for it, as rubygems.org appends one."""
+        line = GemLine(
+            name,
+            version,
+            platform,
+            self.now - age_days * DAY if created else None,
+            Blob(key=f"{name}-{version}-{platform}.gem", data=gems.make_gem(name, version, platform, deps)),
+            gems.make_gemspec_rz(name, version, platform, deps),
+            deps,
+            rubygems,
+        )
+        self.gems.setdefault(name, {})[line.key] = line
+        if self.gem_versions:
+            self.gem_versions.append(f"{name} {line.key} {self.gem_info_md5(name)}\n".encode())
+
+    def yank_gem(self, name: str, key: str) -> None:
+        del self.gems[name][key]
+        self.gem_versions.append(f"{name} -{key} {self.gem_info_md5(name)}\n".encode())
+
+    def rebuild_gem_versions(self) -> None:
+        """rubygems.org's monthly rebuild: one line per gem again, so the file is no longer an append to the old one."""
+        self.gem_versions = [
+            f"{name} {','.join(lines)} {self.gem_info_md5(name)}\n".encode() for name, lines in self.gems.items()
+        ]
+
+    def gem_info_line(self, g: GemLine) -> bytes:
+        deps = ",".join(f"{d}:{r}" for d, r in g.deps)
+        fields = f"checksum:{g.blob.digests()['sha256']},ruby:>= 2.0"
+        if g.rubygems:
+            fields += f",rubygems:{g.rubygems}"
+        if g.created is not None:
+            fields += f",created_at:{iso_s(g.created)}"
+        return f"{g.key} {deps}|{fields}".encode()
+
+    def gem_info(self, name: str) -> bytes:
+        return b"---\n" + b"".join(self.gem_info_line(g) + b"\n" for g in self.gems[name].values())
+
+    def gem_info_md5(self, name: str) -> str:
+        return hashlib.md5(self.gem_info(name), usedforsecurity=False).hexdigest()
+
+    def gem_versions_body(self) -> bytes:
+        return b"created_at: 2026-10-01T00:00:04Z\n---\n" + b"".join(self.gem_versions)
+
     def crate_line(self, cv: CrateVersion) -> bytes:
         """The index line, with crates.io's key order and compact JSON."""
         line: dict[str, object] = {
@@ -703,6 +826,78 @@ class Catalog:
         nv.blob = Blob(key=f"{nv.pid}@{nv.version}.nupkg#resigned", data=make_nupkg(nv.pid, nv.version, nv.deps,
                                                                                      note=" Re-signed."))  # fmt: skip
         self.nuget_commit(nv)
+
+    def add_composer(
+        self,
+        name: str,
+        version: str,
+        age_days: float,
+        *,
+        published: bool = True,
+        time_days: float | None = None,
+        deps: tuple[tuple[str, str], ...] = (),
+        shasum: bool = False,
+        dist_host: str | None = None,
+    ) -> None:
+        """Tag `version` of `name` (or push a branch, `dev-…`), `age_days` ago. `time_days`: the author's `time`, if
+        it differs. Versions are kept newest first, as Packagist lists them, so add them oldest first."""
+        reference = composer_reference(name, version)
+        blob = Blob(key=f"{name}@{reference}.zip", data=make_composer_zip(name, version, reference, deps))
+        when = self.now - age_days * DAY
+        author = self.now - (age_days if time_days is None else time_days) * DAY
+        cv = ComposerVersion(
+            name, version, when if published else None, author, blob, reference, deps, shasum, dist_host
+        )
+        self.composer[name] = {version: cv, **{v: x for v, x in self.composer.get(name, {}).items() if v != version}}
+
+    def composer_push(self, name: str, version: str, age_days: float | None, reference: str | None = None) -> str:
+        """A new commit under `version` (a branch push, or a tag moved on a repository that allows it), or the commit
+        `reference` of another version, with a `published-time` `age_days` ago (negative: in the future) or none.
+        Returns the reference."""
+        old = self.composer[name][version]
+        reference = reference or composer_reference(name, f"{version}@{old.reference}")
+        when = None if age_days is None else self.now - age_days * DAY
+        data = make_composer_zip(name, version, reference, old.deps)
+        self.composer[name][version] = replace(
+            old, published=when, time=self.now, blob=Blob(key=f"{name}@{reference}.zip", data=data), reference=reference
+        )  # the commit's `time` is now: the file's Last-Modified moves
+        return reference
+
+    def composer_rearchive(self, name: str, version: str) -> None:
+        """GitHub archives the commit again: other bytes, the same files."""
+        cv = self.composer[name][version]
+        data = make_composer_zip(name, cv.version, cv.reference, cv.deps, archived=1)
+        cv.blob = Blob(key=f"{name}@{cv.reference}.zip#rearchived", data=data)
+
+    def composer_entry(self, cv: ComposerVersion, base: str) -> dict[str, object]:
+        """The expanded p2 entry, in Packagist's key order. Dists are on the fake GitHub, `<base>/codeload/`."""
+        dist_url = (
+            f"{cv.dist_host if '://' in cv.dist_host else 'https://' + cv.dist_host}/{cv.name}/{cv.reference}.zip"
+            if cv.dist_host
+            else f"{base}/codeload/{cv.name}/legacy.zip/{cv.reference}"
+        )
+        entry: dict[str, object] = {
+            "name": cv.name,
+            "description": f"Fake package {cv.name} for SlowShield's tests",
+            "version": cv.version,
+            "version_normalized": _composer_normalized(cv.version),
+            "license": ["MIT"],
+            "source": {"url": f"https://github.com/{cv.name}.git", "type": "git", "reference": cv.reference},
+            "dist": {
+                "url": dist_url,
+                "type": "zip",
+                "shasum": hashlib.sha1(cv.blob.data or b"", usedforsecurity=False).hexdigest() if cv.shasum else "",
+                "reference": cv.reference,
+            },
+            "type": "library",
+            "time": iso_s(cv.time).replace("Z", "+00:00"),
+            "autoload": {"psr-4": {"Fake\\": "src/"}},
+        }
+        if cv.published is not None:
+            entry["published-time"] = iso_s(cv.published).replace("Z", "+00:00")
+        if cv.deps:
+            entry["require"] = dict(cv.deps)
+        return entry
 
     def add_oci(self, image: str, tag: str, version: str, age_days: float) -> str:
         """Push `version` of `image` (registry/path) and point `tag` at it, `age_days` ago. Returns the index digest."""
@@ -823,6 +1018,47 @@ class Catalog:
         self.add_nuget("Fake.Partly", "1.0.0", 90)
         self.add_nuget("Fake.Partly", "1.1.0", 60)
         self.add_nuget("Fake.Future", "1.0.0", -30)  # a `published` in the future isn't a publish time
+        # Packagist: `published-time` set by Packagist, `time` by the author (fake/hello 1.2.0 claims a year), dists
+        # on the fake GitHub with an empty shasum. Branches are in the ~dev file.
+        self.add_composer("fake/hello", "1.0.0", 100)
+        self.add_composer("fake/hello", "v1.1.0", 30)
+        self.add_composer("fake/hello", "1.2.0", 2, time_days=400)
+        self.add_composer("fake/hello", "dev-legacy", 60)
+        self.add_composer("fake/hello", "dev-main", 1)
+        self.add_composer("fake/deps", "1.0.0", 50, deps=(("fake/hello", "^1.0"),))
+        self.add_composer("fake/brand-new", "0.1.0", 1 / 24)
+        self.add_composer("fake/evil", "1.0.0", 40)
+        self.add_composer("fake/partly", "1.0.0", 90)
+        self.add_composer("fake/partly", "v1.1.0", 60)
+        self.add_composer("fake/untimed", "1.0.0", 300, published=False)
+        self.add_composer("fake/checked", "1.0.0", 30, shasum=True)
+        self.add_composer("fake/elsewhere", "1.0.0", 30, dist_host="downloads.example.org")
+        self.add_composer("fake/plain", "1.0.0", 30, dist_host="http://downloads.example.org")
+        # rubygems.org: info lines carry `created_at`, one line per version and platform; names are case-sensitive.
+        self.add_gem("fake_hello", "1.0.0", 100)
+        self.add_gem("fake_hello", "1.1.0", 30)
+        self.add_gem("fake_hello", "1.2.0", 2)
+        self.add_gem("fake_deps", "0.1.0", 50, deps=(("fake_hello", "~> 1.0"),))
+        for platform in ("ruby", "x86_64-linux", "aarch64-linux"):
+            self.add_gem("fake_native", "2.0.0", 100, platform=platform)
+        self.add_gem("fake_native", "2.1.0", 60)
+        for platform in ("x86_64-linux", "aarch64-linux"):  # platform gems pushed for an old version: held
+            self.add_gem("fake_native", "2.1.0", 1, platform=platform)
+        self.add_gem("Fake_Case", "1.0.0", 60)
+        self.add_gem("fake-2fa", "1.0.0", 60)  # file fake-2fa-1.0.0.gem: `fake` + `2fa-1.0.0` is a reading too
+        self.add_gem("brand_new_gem", "0.1.0", 1 / 24)
+        self.add_gem("evil_gem", "1.0.0", 40)
+        self.add_gem("partly_gem", "1.0.0", 90)
+        self.add_gem("partly_gem", "1.1.0", 60)
+        self.add_gem("untimed_gem", "1.0.0", 0, created=False)
+        self.add_gem("future_gem", "1.0.0", -30)  # a `created_at` in the future isn't a publish time
+        # A version with a `-` (asciidoctor-reducer 1.0.0-beta.1): its key looks like version 1.0.0 on platform beta.1.
+        # RubyGems before 3.5 made a prerelease require `> 1.3.1` of RubyGems.
+        self.add_gem("fake_pre", "1.0.0", 30)
+        self.add_gem("fake_pre", "1.0.0-beta.1", 2, rubygems="> 1.3.1")
+        # The same from RubyGems 3.5 on (no `> 1.3.1`), with a suffix that also reads as a platform (`-linux`).
+        self.add_gem("fake_dash", "1.0.0", 30)
+        self.add_gem("fake_dash", "1.0.0-beta.2-linux", 10)
         # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
         # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
         for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):
@@ -847,6 +1083,10 @@ class Catalog:
                 self.add_go("example.com/many", f"v1.{i // 100}.{i % 100}", 600 - i)
                 self.add_maven("central", "org.example:many", f"1.{i // 100}.{i % 100}", 600 - i, jar=False)
                 self.add_crate("many-crate", f"1.{i // 100}.{i % 100}", 600 - i)
+        if self.perf:
+            for i in range(500):
+                self.add_gem("many_gem", f"1.{i // 100}.{i % 100}", 600 - i)
+        self.rebuild_gem_versions()
         for pkg in self.npm.values():
             if "latest" not in pkg.tags:
                 pkg.tags["latest"] = list(pkg.versions)[-1]
@@ -1053,6 +1293,42 @@ class Catalog:
                 summary="Fake.Partly 1.1.0 was compromised",
             ),
             Advisory(
+                "osv",
+                "Packagist",
+                "MAL-2026-6001",
+                "fake/evil",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in fake/evil (Packagist)",
+            ),
+            Advisory(  # "v1.1" names v1.1.0: Composer versions match in their normalized form
+                "github",
+                "composer",
+                "GHSA-aaaa-0009-0009",
+                "fake/partly",
+                n - 3 * DAY,
+                gh_range="= v1.1",
+                summary="fake/partly 1.1.0 was compromised",
+            ),
+            Advisory(
+                "osv",
+                "RubyGems",
+                "MAL-2026-7001",
+                "evil_gem",
+                n - 3 * DAY,
+                ranges=[("0", None)],
+                summary="Malicious code in evil_gem (RubyGems)",
+            ),
+            Advisory(
+                "github",
+                "rubygems",
+                "GHSA-aaaa-0010-0010",
+                "partly_gem",
+                n - 3 * DAY,
+                gh_range="= 1.1.0",
+                summary="partly_gem 1.1.0 was compromised",
+            ),
+            Advisory(
                 "github",
                 "npm",
                 "GHSA-aaaa-0004-0004",
@@ -1065,7 +1341,7 @@ class Catalog:
         ]
 
     def publish(self, ecosystem: str, name: str, version: str, age_days: float | None = 0.0) -> None:
-        """`age_days=None` (Go): tagged, but not on the mirror until someone asks for it."""
+        """`age_days=None` (Go): tagged, but not on the mirror until someone asks for it; (RubyGems) no `created_at`."""
         if ecosystem == "pypi":
             self.add_pypi(name, version, age_days or 0.0)
         elif ecosystem == "go":
@@ -1076,6 +1352,10 @@ class Catalog:
             self.add_crate(name, version, age_days or 0.0)
         elif ecosystem == "nuget":
             self.add_nuget(name, version, age_days or 0.0)
+        elif ecosystem == "composer":
+            self.add_composer(name, version, age_days or 0.0)
+        elif ecosystem == "rubygems":
+            self.add_gem(name, version, age_days or 0.0, created=age_days is not None)
         elif ecosystem == "oci":  # name: registry/path:tag
             image, _, tag = name.rpartition(":")
             self.add_oci(image, tag, version, age_days or 0.0)

@@ -148,7 +148,8 @@ Clients turn packagist.org off and use `<public_url>/composer/` as their Compose
 commands). SlowShield writes `packages.json` itself and reads Packagist's p2 metadata from `repo_url`; a version's
 publish time is its `published-time`, which Packagist sets (never the author's `time`), and the first one seen is
 kept. Every dist in the metadata points at SlowShield, which fetches it from the version's own dist URL:
-GitHub's API archive URLs from codeload.github.com, other hosts only if they are in `download_hosts`.
+GitHub's API archive URLs from codeload.github.com, other hosts only if they are in `download_hosts`. The Setup
+page lists the download hosts among the hosts to block: a lock written against packagist.org downloads from them.
 `advisories_url` is Packagist's security advisory API, which `composer audit` reaches through SlowShield. Changing
 the URLs or hosts needs a restart. `fail_open` is off, as for Maven, Cargo and NuGet
 ([design/composer.md](design/composer.md)).

@@ -59,7 +59,8 @@ EXPECT: dict[str, Expect] = {
 }  # fmt: skip
 
 # Hosts a client goes to without SlowShield that aren't in the config: Maven's built-in name for Central (SlowShield
-# fetches from repo1.maven.org), and GitHub, where Packagist's dist URLs point (api.github.com redirects to codeload).
+# fetches from repo1.maven.org), and GitHub, where Packagist's dist URLs point (api.github.com redirects to codeload,
+# listed here too in case `download_hosts` leaves it out).
 CLIENT_ONLY_HOSTS: dict[str, tuple[str, ...]] = {
     "maven": ("repo.maven.apache.org",),
     "composer": ("api.github.com", "codeload.github.com"),
@@ -96,7 +97,7 @@ def firewall_hosts(cfg: LoadedConfig) -> list[tuple[str, list[str]]]:
     for eco, hosts in upstreams.hosts().items():
         if not getattr(upstreams, eco).enabled:
             continue
-        new = [h for h in (*hosts, *CLIENT_ONLY_HOSTS.get(eco, ())) if h not in seen]
+        new = [h for h in dict.fromkeys((*hosts, *CLIENT_ONLY_HOSTS.get(eco, ()))) if h not in seen]
         seen.update(new)
         if new:
             out.append((eco, new))

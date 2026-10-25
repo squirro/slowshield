@@ -306,7 +306,8 @@ class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
     def hosts(self) -> dict[str, list[str]]:
         """Per ecosystem, the hosts SlowShield fetches packages and metadata from, in config order: the ones a client
         would use without SlowShield. Not the hosts downloads may redirect to (CDNs and cloud storage), and for
-        registries the API host and the aliases clients use, not where tag times come from."""
+        registries the API host and the aliases clients use, not where tag times come from. Composer's dists are the
+        exception: a lock written against packagist.org downloads from its `download_hosts` directly."""
         oci = [h for reg in self.oci.all_registries().values() for h in (reg.url, *reg.aliases)]
         urls = {
             "pypi": [*self.pypi.mirrors, self.pypi.files_url],
@@ -315,7 +316,7 @@ class Upstreams(msgspec.Struct, forbid_unknown_fields=True):
             "maven": [repo.url for repo in self.maven.all_repos().values()],
             "cargo": [self.cargo.index_url, self.cargo.download_url],
             "nuget": list(self.nuget.urls().values()),
-            "composer": [self.composer.repo_url, self.composer.advisories_url],
+            "composer": [self.composer.repo_url, self.composer.advisories_url, *self.composer.download_hosts],
             "rubygems": [self.rubygems.index_url, self.rubygems.download_url],
             "oci": oci,
         }

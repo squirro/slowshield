@@ -86,7 +86,8 @@ In one project's `composer.json` instead:
 - **Not enforced by SlowShield:** `source` installs (`--prefer-source`, `preferred-install: source`), `vcs`, `path`
   and other repositories in a project's `composer.json`, lockfiles with GitHub URLs, Composer before 2.10, and
   plugins that download things themselves. Hard enforcement needs an egress firewall to github.com, api.github.com,
-  codeload.github.com and repo.packagist.org.
+  repo.packagist.org and the `download_hosts` (codeload.github.com, gitlab.com, bitbucket.org), which a lock
+  written against packagist.org downloads from directly; the Setup page lists them all but github.com.
 
 ## What clients see
 

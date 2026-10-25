@@ -308,15 +308,18 @@ async def test_setup_firewall_hosts_come_from_the_config(start_app) -> None:
     assert '<code class="host">jitpack.example.net</code>' in groups["maven"]
     # Hosts clients use that the config doesn't hold, once each.
     assert '<code class="host">repo.maven.apache.org</code>' in groups["maven"]
-    assert '<code class="host">api.github.com</code><code class="host">codeload.github.com</code>' in groups["composer"]
+    # Composer's download hosts: a lock written against packagist.org downloads from them directly.
+    composer = re.findall(r'<code class="host">(.*?)</code>', groups["composer"])
+    assert composer[-4:] == ["codeload.github.com", "gitlab.com", "bitbucket.org", "api.github.com"]
     # The same hosts, one per line, to copy.
     listed = re.search(r"<pre><code>(.*?)</code></pre>", firewall, re.S)
     assert listed is not None
     lines = listed.group(1).split("\n")
     assert len(lines) == len(set(lines))
     assert {"pypi.mirror.example", "jitpack.example.net", "api.github.com"} <= set(lines)
-    # Never the download hosts, which serve far more than packages.
+    # Never where other ecosystems' downloads redirect to: CDNs and cloud storage serve far more than packages.
     assert "storage.googleapis.com" not in firewall and "localhost" not in lines
+    assert {"codeload.github.com", "gitlab.com", "bitbucket.org"} <= set(lines)
 
 
 async def test_setup_tool_notes_render_code(running: Running) -> None:

@@ -109,15 +109,22 @@ def write_dockerfile(caddy: str, go: str, go_sums: dict[str, str]) -> None:
     print(f"updated {DOCKERFILE}")
 
 
-def write_go_mod(caddy: str) -> None:
-    """`go get` the Caddy module and tidy, in the Dockerfile's `go` stage (AL2023 + the pinned toolchain)."""
+def write_go_mod(caddy: str, go: str) -> None:
+    """`go get` the Caddy module and tidy, in the Dockerfile's `go` stage (AL2023 + the pinned toolchain). The `go`
+    line follows the toolchain: scanners read it as the Go the binary is built with."""
     build = ["docker", "buildx", "build", "--load", "--quiet", "--target", "go", "-f", str(DOCKERFILE)]
     subprocess.run([*build, "-t", GO_IMAGE, str(ROOT)], check=True, stdout=subprocess.DEVNULL)  # noqa: S603
     tmp = "/tmp"  # noqa: S108 - inside a throwaway container
-    env = {"GOFLAGS": "-mod=mod", "GOMODCACHE": f"{tmp}/go/pkg/mod", "GOCACHE": f"{tmp}/go-build", "HOME": tmp}
+    # The image keeps GOPATH and GOMODCACHE under /go, which this user can't write (the checksum database cache is
+    # under GOPATH).
+    env = {"GOFLAGS": "-mod=mod", "GOPATH": f"{tmp}/go", "GOMODCACHE": f"{tmp}/go/pkg/mod"}
+    env |= {"GOCACHE": f"{tmp}/go-build", "HOME": tmp}
     run = ["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{BUILD}:/src", "-w", "/src"]
     run += [arg for k, v in env.items() for arg in ("-e", f"{k}={v}")]
-    script = f"go get {MODULE}@v{caddy} && go mod tidy && go mod verify && go list -m {MODULE} golang.org/x/net"
+    script = (
+        f"go mod edit -go={go} && go get {MODULE}@v{caddy} && go mod tidy && go mod verify"
+        f" && go list -m {MODULE} golang.org/x/net"
+    )
     subprocess.run([*run, GO_IMAGE, "sh", "-euc", script], check=True)  # noqa: S603 - docker via PATH
     print(f"updated {BUILD / 'go.mod'} and go.sum")
 
@@ -142,7 +149,7 @@ def main() -> None:
     print("\n".join(lines))
     if args.write:
         write_dockerfile(version, go, go_sums)
-        write_go_mod(version)
+        write_go_mod(version, go)
 
 
 if __name__ == "__main__":

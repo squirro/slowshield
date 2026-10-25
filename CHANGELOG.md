@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format is based on
   `caddy version` and `caddy list-modules` are as before; the Go toolchain from go.dev is pinned by SHA-256, the
   modules by `containers/caddy/build/go.sum`. The image goes back to the official release binary with the next Caddy
   release that ships these fixes.
+- go-chi/chi v5.4.0 in the Caddy build (GHSA-j6qf-3m9c-vwj3: client IP spoofing in `ClientIPFromXFF`, reached
+  through Caddy's ACME server module), and the build module's `go` line names Go 1.26.10, the toolchain it is
+  built with.
 
 ## [0.0.13] - 2026-10-25
 

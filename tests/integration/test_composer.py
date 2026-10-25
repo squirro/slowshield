@@ -464,3 +464,77 @@ async def test_a_follower_learns_when_the_leader_first_listed_a_version(pair: Pa
     row = "SELECT first_listed FROM package_versions WHERE ecosystem = 'composer' AND name = 'fake/untimed'"
     assert p.follower.rows(row) == [(NOW,)]
     assert p.follower.ctx.cfg.fail_open_for("composer") is False
+
+
+async def _listed_on(run: Running, name: str, version: str) -> list[tuple[Any, ...]]:
+    await run.drain()
+    return run.rows(
+        "SELECT first_listed, reference FROM package_versions WHERE ecosystem = 'composer' AND name = ? "
+        "AND version = ?",
+        (name, version),
+    )
+
+
+async def _held_until_own_clock(p: Pair, new: str, since: float) -> None:
+    """The follower serves commit `new` only after the delay from `since`, when it first saw that commit."""
+    delay = p.follower.ctx.cfg.delay_days_for("composer", "fake/hello")
+    path = f"/composer/dists/fake/hello/{new}.zip"
+    p.follower.clock.set(since + delay * DAY - 60)
+    assert (await p.follower.client.get(path)).status_code == 425
+    p.follower.clock.set(since + delay * DAY + 60)
+    assert (await p.follower.client.get(path)).status_code == 200
+
+
+async def test_a_follower_on_a_newer_commit_keeps_its_own_clock(pair: Pair) -> None:  # noqa: F811
+    """The leader times a branch's commit; by the time its change arrives, the follower sees a newer commit of the
+    branch. The leader's time is for the old commit, so the follower keeps its own. (One clock for both.)"""
+    p = pair
+    await _join(p)
+    old = p.leader.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    await _p2(p.leader, "fake/hello", dev=True)
+    assert await _listed_on(p.leader, "fake/hello", "dev-legacy") == [(NOW, old)]
+    new = p.leader.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    p.follower.clock.advance(DAY)
+    await _p2(p.follower, "fake/hello", dev=True)
+    assert await _listed_on(p.follower, "fake/hello", "dev-legacy") == [(NOW + DAY, new)]
+    await p.sync()  # the leader's change for the old commit, delayed
+    assert await _listed_on(p.follower, "fake/hello", "dev-legacy") == [(NOW + DAY, new)]
+    await _held_until_own_clock(p, new, NOW + DAY)
+
+
+async def test_a_follower_on_a_newer_commit_keeps_its_own_clock_at_pairing(pair: Pair) -> None:  # noqa: F811
+    """The same with the leader's change from before pairing (the bootstrap, taken as claimed)."""
+    p = pair
+    old = p.leader.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    await _p2(p.leader, "fake/hello", dev=True)
+    assert await _listed_on(p.leader, "fake/hello", "dev-legacy") == [(NOW, old)]
+    new = p.leader.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    p.follower.clock.advance(300)  # (the invitation is good for ten minutes)
+    await _p2(p.follower, "fake/hello", dev=True)
+    await _join(p)
+    assert p.follower.rows("SELECT cursor >= boot_head, boot_head > 0 FROM shieldwall_leader") == [(1, 1)]
+    assert await _listed_on(p.follower, "fake/hello", "dev-legacy") == [(NOW + 300, new)]
+    await _held_until_own_clock(p, new, NOW + 300)
+
+
+async def test_a_follower_takes_the_leaders_time_for_the_same_commit(pair: Pair) -> None:  # noqa: F811
+    """With the same commit on both, the leader's earlier time counts; the time a follower takes names the commit,
+    so another commit under the version is timed afresh."""
+    p = pair
+    await _join(p)
+    ref = p.leader.fake.control("composer-push", name="fake/hello", version="dev-legacy")["reference"]
+    await _p2(p.leader, "fake/hello", dev=True)
+    p.follower.clock.advance(DAY)
+    await _p2(p.follower, "fake/hello", dev=True)
+    await p.sync()
+    assert await _listed_on(p.follower, "fake/hello", "dev-legacy") == [(NOW, ref)]
+    # A version the follower hasn't seen yet: it takes the leader's time and commit.
+    await _p2(p.leader, "fake/untimed")
+    await p.sync()
+    untimed = _ref(p.leader, "fake/untimed", "1.0.0")
+    assert await _listed_on(p.follower, "fake/untimed", "1.0.0") == [(NOW + DAY, untimed)]
+    # When the follower then sees another commit under it, that one is timed afresh.
+    new = p.leader.fake.control("composer-push", name="fake/untimed", version="1.0.0")["reference"]
+    p.follower.clock.advance(3600)
+    await _p2(p.follower, "fake/untimed")
+    assert await _listed_on(p.follower, "fake/untimed", "1.0.0") == [(NOW + DAY + 3600, new)]

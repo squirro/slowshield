@@ -142,8 +142,10 @@ def zip_content(path: Path) -> str | None:
 
 
 def _moved(known: list[Any], v: M.Version) -> bool:
-    """Whether the times kept for a version belong to another commit than the one it names now."""
-    return bool(v.reference and known[2] and known[2] != v.reference)
+    """Whether the times kept for a version belong to another commit than the one it names now. A time without a
+    commit (None: recorded before SlowShield kept them) belongs to the first one seen; one from a shield wall leader
+    that didn't name the commit ('') belongs to none."""
+    return bool(v.reference) and known[2] is not None and known[2] != v.reference
 
 
 def _http_date(ts: float) -> str:
@@ -338,7 +340,8 @@ class ComposerService:
             known: list[Any] | None = times.get(v.version)
             if known is None or _moved(known, v):
                 known = times[v.version] = [None, None, v.reference]
-            known[2] = known[2] or v.reference
+            if known[2] is None:
+                known[2] = v.reference
             listed_now = None
             if pub is not None:
                 known[0] = known[0] or pub

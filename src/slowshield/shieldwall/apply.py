@@ -20,6 +20,7 @@ from typing import Any
 
 from slowshield.blocklist import bump_generation
 from slowshield.config import ECOSYSTEMS, LoadedConfig
+from slowshield.ecosystems.composer.metadata import REFERENCE
 from slowshield.shieldwall.policy import POLICY_HOLD, Bundle, BundleError, loosens, tightest
 
 log = logging.getLogger(__name__)
@@ -306,9 +307,27 @@ def _listed(conn: Any, row: dict[str, Any], when: float) -> None:
     eco = row["ecosystem"]
     if eco not in ECOSYSTEMS:
         raise ValueError(f"unknown ecosystem {eco!r}")
+    name, version = _name(row["name"]), _name(row["version"])
+    if eco != "composer":
+        conn.execute(
+            "INSERT INTO package_versions (ecosystem, name, version, first_listed) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
+            "first_listed = min(coalesce(package_versions.first_listed, excluded.first_listed), excluded.first_listed)",
+            (eco, name, version, when),
+        )
+        return
+    # Composer's times belong to a commit (dist.reference): the leader's counts only for the commit this instance has
+    # for the version, or when it has none yet. A leader that names no commit (a build from before the field) is
+    # stored as '', which matches no commit: a version this instance already has keeps its own clock, and any commit
+    # it sees later is timed afresh.
+    reference = row.get("reference")
+    reference = reference if isinstance(reference, str) and REFERENCE.fullmatch(reference) else ""
     conn.execute(
-        "INSERT INTO package_versions (ecosystem, name, version, first_listed) VALUES (?, ?, ?, ?) "
+        "INSERT INTO package_versions (ecosystem, name, version, first_listed, reference) VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT (ecosystem, name, version) DO UPDATE SET "
-        "first_listed = min(coalesce(package_versions.first_listed, excluded.first_listed), excluded.first_listed)",
-        (eco, _name(row["name"]), _name(row["version"]), when),
+        "first_listed = CASE WHEN package_versions.reference IS NOT excluded.reference "
+        "AND package_versions.reference IS NOT NULL THEN package_versions.first_listed "
+        "ELSE min(coalesce(package_versions.first_listed, excluded.first_listed), excluded.first_listed) END, "
+        "reference = coalesce(package_versions.reference, excluded.reference)",
+        (eco, name, version, when, reference),
     )

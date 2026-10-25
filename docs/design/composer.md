@@ -216,9 +216,13 @@ unless told otherwise, from the IDs inline in the p2 files.
 ## Shield wall
 
 Followers take the leader's policy and `first_listed` times, as for every ecosystem; with `published-time` on every
-version, `first_listed` is rarely used. The leader sends a `first_listed` per version name, not per commit: a
-follower that already sees a newer commit of a branch than the leader does takes the leader's earlier time for it.
-A follower fetches a dist through the leader only once it has a fingerprint
+version, `first_listed` is rarely used. The leader sends each `first_listed` with the commit it belongs to
+(`reference`), also again when a version moves to another commit. A follower takes it only for the commit it has
+for the version, or for a version it hasn't seen: one that already sees a newer commit of a branch than the leader
+keeps its own clock, whether the leader's time comes late or with the history at pairing, and a commit it sees
+after taking the leader's time is timed afresh. A time from a leader that names no commit (a build from before the
+field) matches none: a version the follower has keeps its own clock, and one it hasn't is timed afresh at the first
+commit it sees. A follower fetches a dist through the leader only once it has a fingerprint
 of its own (a dist has no registry digest to address it by), so each instance's first download of a reference comes
 from GitHub. The leader compares the instances' first fingerprints byte for byte: two instances that got differently
 archived bytes of the same commit show up as a mismatch.

@@ -175,12 +175,16 @@ def _change_row(conn: Any, dataset: str, key: str) -> dict[str, Any] | None:
             {"repository": repo, "tag": tag, "digest": digest, "first_seen": r[0], "registry_time": r[1]} if r else None
         )
     if dataset == "listed":
+        # `reference`: the commit the time belongs to (Composer). Added to protocol 1 as an optional field: a
+        # follower that doesn't know it ignores it, as any field it doesn't read.
         eco, name, version = key.split("\n", 2)
         r = conn.execute(
-            "SELECT first_listed FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
+            "SELECT first_listed, reference FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
             (eco, name, version),
         ).fetchone()
-        return {"ecosystem": eco, "name": name, "version": version, "first_listed": r[0]} if r and r[0] else None
+        if not r or not r[0]:
+            return None
+        return {"ecosystem": eco, "name": name, "version": version, "first_listed": r[0], "reference": r[1]}
     return None
 
 

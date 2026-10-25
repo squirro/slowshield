@@ -8,6 +8,8 @@ coverage.xml
 htmlcov/
 dist/
 build/
+# Caddy's build module (go.mod, go.sum, main.go), see containers/caddy/Dockerfile.
+!/containers/caddy/build/
 *.egg-info/
 .env
 *.db

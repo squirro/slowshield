@@ -30,10 +30,11 @@ def test_every_stage_is_amazon_linux_or_scratch() -> None:
         assert not re.search(r"^#\s*syntax=", text, re.MULTILINE), f"{dockerfile}: use BuildKit's built-in frontend"
         args = dict(re.findall(r"^ARG (AL2023)=(\S+)$", text, re.MULTILINE))
         assert AL2023.match(args["AL2023"]), f"{dockerfile}: base image must be AL2023 pinned by digest"
-        stages = {m.group(2) for m in re.finditer(r"^FROM (\S+) AS (\S+)$", text, re.MULTILINE)}
-        for m in re.finditer(r"^FROM (\S+)", text, re.MULTILINE):
+        stages = {m.group(2) for m in re.finditer(r"^FROM (?:--platform=\S+ )?(\S+) AS (\S+)$", text, re.MULTILINE)}
+        for m in re.finditer(r"^FROM (?:--platform=\S+ )?(\S+)", text, re.MULTILINE):
             ref = m.group(1)
-            assert ref in {"${AL2023}", "scratch"} or ref in stages or ref.startswith("deps-"), (
+            by_cache = ref.endswith("-${BUILD_CACHE}") and {ref.replace("${BUILD_CACHE}", s) for s in ("on", "off")}
+            assert ref in {"${AL2023}", "scratch"} or ref in stages or (by_cache and by_cache <= stages), (
                 f"{dockerfile}: FROM {ref}"
             )
         for m in re.finditer(r"COPY --from=(\S+)", text):
@@ -50,11 +51,32 @@ def test_runtime_images_are_non_root_without_shell_entrypoints() -> None:
 
 
 def test_build_cache_off_uses_no_cache_mounts() -> None:
-    text = (CONTAINERS / "slowshield" / "Dockerfile").read_text()
-    off = text[text.index("FROM toolchain AS deps-off") : text.index("FROM deps-${BUILD_CACHE} AS deps")]
-    assert "--mount=type=cache" not in off
-    after = text[text.index("FROM deps-${BUILD_CACHE} AS deps") :]
-    assert "--mount=type=cache" not in after
+    for name, off_stage, selected in (
+        ("slowshield", "FROM toolchain AS deps-off", "FROM deps-${BUILD_CACHE} AS deps"),
+        ("caddy", "FROM go AS caddy-off", "FROM caddy-${BUILD_CACHE} AS caddy"),
+    ):
+        text = (CONTAINERS / name / "Dockerfile").read_text()
+        off = text[text.index(off_stage) : text.index(selected)]
+        assert "--mount=type=cache" not in off, name
+        after = text[text.index(selected) :]
+        assert "--mount=type=cache" not in after, name
+
+
+def test_caddy_build_module_matches_the_dockerfile() -> None:
+    """The Caddy image builds from containers/caddy/build; its labels and version check name the same release."""
+    text = (CONTAINERS / "caddy" / "Dockerfile").read_text()
+    go_mod = (CONTAINERS / "caddy" / "build" / "go.mod").read_text()
+    pinned = re.search(r"^(?:require)?\s*github\.com/caddyserver/caddy/v2 v(\S+)$", go_mod, re.MULTILINE)
+    assert pinned is not None
+    assert set(re.findall(r"^ARG CADDY_VERSION=(\S+)$", text, re.MULTILINE)) == {pinned.group(1)}
+    assert (CONTAINERS / "caddy" / "build" / "go.sum").is_file()
+    assert re.search(r"^ARG GO_SHA256_AMD64=[0-9a-f]{64}$", text, re.MULTILINE)
+    assert re.search(r"^ARG GO_SHA256_ARM64=[0-9a-f]{64}$", text, re.MULTILINE)
+    # Go's October 2026 HTTP/2 fixes: Go 1.26.9 / 1.27.2 and golang.org/x/net v0.60.0 or later.
+    go = tuple(int(p) for p in re.search(r"^ARG GO_VERSION=(\S+)$", text, re.MULTILINE).group(1).split("."))
+    assert go >= (1, 26, 9) and (go[:2] != (1, 27) or go >= (1, 27, 2))
+    net = re.search(r"^\s*golang\.org/x/net v0\.(\d+)\.\d+", go_mod, re.MULTILINE)
+    assert net is not None and int(net.group(1)) >= 60
 
 
 def test_dockerignore_excludes_local_state() -> None:

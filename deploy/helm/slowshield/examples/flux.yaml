@@ -9,7 +9,7 @@ spec:
   interval: 1h
   url: https://github.com/squirro/slowshield
   ref:
-    tag: v0.0.13
+    tag: v0.0.14
   ignore: |
     /*
     !/deploy/helm/slowshield/

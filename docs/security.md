@@ -22,7 +22,10 @@ stays undetected for longer than your delay.
 
 * **Images**: Amazon Linux 2023 only (builder stages too); runtime is `FROM scratch` with an AL2023 RPM
   rootfs: no shell, no package manager, RPM database kept so scanners (Aikido, Trivy, Grype) can inventory
-  it. Base images pinned by digest; Python dependencies locked with hashes.
+  it. Base images pinned by digest; Python dependencies locked with hashes. Caddy is built from source for now (no
+  Caddy release carries Go's October 2026 HTTP/2 fixes yet): Go toolchain from go.dev pinned by SHA-256, modules
+  locked in `containers/caddy/build/go.sum` and checked against Go's checksum database, upstream's build flags;
+  before a bump, the Caddy source is checked against Caddy's cosign-signed release source.
 * **Runtime**: non-root UID/GID 65532, read-only root filesystem, `/data` the only writable volume,
   `/tmp` a small `noexec` tmpfs, all capabilities dropped, `no-new-privileges`, default seccomp, memory/PID
   limits; Kubernetes manifests meet the *restricted* Pod Security Standard, with a default-deny

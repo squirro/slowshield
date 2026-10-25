@@ -6,8 +6,9 @@
 # modules, go.mod/go.sum committed) with the official Go toolchain, because no Caddy release yet carries
 # Go's October 2026 HTTP/2 fixes (Go 1.26.9, golang.org/x/net v0.60.0). AL2023's own golang package is
 # older than that, so the Go tarball from go.dev/dl is used, pinned by its SHA-256 per build architecture.
-# Modules come from proxy.golang.org and are checked against go.sum (and Go's checksum database); the build
-# is cross-compiled on the build platform, never under emulation. Flags and tags match upstream's release.
+# Modules come from proxy.golang.org and are checked against go.sum (and Go's checksum database); before a
+# bump, bump_caddy.py checks the Caddy module file by file against Caddy's cosign-signed release source. The
+# build is cross-compiled on the build platform, never under emulation. Flags and tags match upstream's release.
 # Back to the official, cosign-signed release binary once a Caddy release ships with these fixes.
 # Bump Caddy and Go with containers/caddy/bump_caddy.py.
 #

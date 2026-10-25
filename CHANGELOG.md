@@ -17,8 +17,9 @@ All notable changes to this project are documented here. The format is based on
   and, with Go 1.26.10, the distrust of compromised intermediates in crypto/x509 (GO-2026-6809). Go 1.26.10 is taken
   inside the 7-day cooldown as a security exception. The build uses upstream's main package, flags and build tags, so
   `caddy version` and `caddy list-modules` are as before; the Go toolchain from go.dev is pinned by SHA-256, the
-  modules by `containers/caddy/build/go.sum`. The image goes back to the official release binary with the next Caddy
-  release that ships these fixes.
+  modules by `containers/caddy/build/go.sum`, and before a bump the Caddy source is checked against Caddy's
+  cosign-signed release source. The image goes back to the official release binary with the next Caddy release that
+  ships these fixes.
 - go-chi/chi v5.4.0 in the Caddy build (GHSA-j6qf-3m9c-vwj3: client IP spoofing in `ClientIPFromXFF`, reached
   through Caddy's ACME server module), and the build module's `go` line names Go 1.26.10, the toolchain it is
   built with.

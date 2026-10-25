@@ -423,6 +423,11 @@ class RubygemsService:
                 entry = blocks.match(ECO, c.version)
                 if entry is not None:
                     v.blocked[c.item] = entry
+            # A key that also reads as one version (`1.0.0-beta.1-linux`: a prerelease, or version 1.0.0 on a platform)
+            # is refused when an exact block names it whole, whichever reading split_key chose.
+            for k, line in info.lines.items():
+                if k != line.version and k not in v.blocked and (entry := blocks.match_exact(ECO, k)) is not None:
+                    v.blocked[k] = entry
             v.fail_open = ev.fail_open
             v.next_change = ev.next_change
         v.body = I.render(info, v.held | v.blocked.keys())
@@ -512,8 +517,10 @@ class RubygemsService:
             for name, key in I.split_file(stem)[:4]:
                 if names.is_valid_rubygems(name):
                     blocks = ctx.blocklist.for_package(ECO, name)
-                    entry = blocks.package_block or next(
-                        (e for v in I.readings(key) if (e := blocks.match(ECO, v)) is not None), None
+                    entry = (
+                        blocks.package_block
+                        or next((e for v in I.readings(key) if (e := blocks.match(ECO, v)) is not None), None)
+                        or blocks.match_exact(ECO, key)
                     )
                     if entry is not None:
                         return self._blocked(request, name, key, entry, kind="artifact")

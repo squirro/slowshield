@@ -430,6 +430,20 @@ async def test_a_version_with_a_dash_is_its_own_version(start_app) -> None:
     assert (await run.client.get("/rubygems/gems/fake_pre-1.0.0-beta.1.gem")).status_code == 451
 
 
+async def test_a_block_naming_a_whole_key_applies_however_it_reads(start_app) -> None:
+    # fake_dash 1.0.0-beta.2-linux has no `> 1.3.1` and a suffix that reads as a platform, so it is read as 1.0.0 on
+    # beta.2-linux. A block naming the whole key still refuses it, in the index and as a download.
+    run = await start_app('[[blocks]]\necosystem = "rubygems"\npackage = "fake_dash"\nversion = "1.0.0-beta.2-linux"\n')
+    assert _keys((await run.client.get("/rubygems/info/fake_dash")).text) == ["1.0.0"]
+    assert (await run.client.get("/rubygems/gems/fake_dash-1.0.0.gem")).status_code == 200
+    r = await run.client.get("/rubygems/gems/fake_dash-1.0.0-beta.2-linux.gem")
+    assert r.status_code == 451 and "is blocked" in r.text
+    # Yanked since: still refused.
+    run.fake.control("rubygems-yank", name="fake_dash", key="1.0.0-beta.2-linux")
+    run.clock.advance(7 * 3600)
+    assert (await run.client.get("/rubygems/gems/fake_dash-1.0.0-beta.2-linux.gem")).status_code == 451
+
+
 async def test_names_are_passed_on(running: Running) -> None:
     r = await running.client.get("/rubygems/names")
     assert r.status_code == 200 and r.content == await _upstream(running, "/rubygems-index/names")

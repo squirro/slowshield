@@ -1056,6 +1056,9 @@ class Catalog:
         # RubyGems before 3.5 made a prerelease require `> 1.3.1` of RubyGems.
         self.add_gem("fake_pre", "1.0.0", 30)
         self.add_gem("fake_pre", "1.0.0-beta.1", 2, rubygems="> 1.3.1")
+        # The same from RubyGems 3.5 on (no `> 1.3.1`), with a suffix that also reads as a platform (`-linux`).
+        self.add_gem("fake_dash", "1.0.0", 30)
+        self.add_gem("fake_dash", "1.0.0-beta.2-linux", 10)
         # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
         # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
         for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):

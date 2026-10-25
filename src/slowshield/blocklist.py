@@ -90,6 +90,11 @@ class PackageBlocks:
     def package_block(self) -> BlockEntry | None:
         return self._package
 
+    def match_exact(self, ecosystem: str, version: str) -> BlockEntry | None:
+        """A block that names exactly `version`, ranges left out: for a second reading of an ambiguous key, where a
+        range would also catch versions the advisory doesn't mean."""
+        return self._exact.get(versions.canonical(ecosystem, version))
+
     def __bool__(self) -> bool:
         return bool(self.entries)
 

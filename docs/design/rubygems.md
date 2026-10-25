@@ -202,8 +202,11 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
   that mark whose key is no prerelease up to the first `-` and goes on with no platform `Gem::Platform` knows is one
   version, so a block on `1.0.0` doesn't cover `1.0.0-beta.1`, and `1.0.0-beta.1` orders below `1.0.0`.
   Content-addressed lines (RubyGems 4.1, `0.4.2-04da877c`) name the version and a prefix of the gem's sha256; the
-  platform is in the line's `platform:` field. A download whose line is gone (yanked) is refused when a block
-  matches either reading of its key. Checked on 2026-10-25 against the API for every line of 43 gems with odd keys
+  platform is in the line's `platform:` field. Gems built with RubyGems 3.5 or later carry no mark, and a suffix
+  can look like a platform (`1.0.0-beta.2-linux`), so no rule picks the right reading every time. Blocks therefore
+  fail closed: a line is refused when an exact block names its whole key, whichever reading was chosen (a range
+  applies to the chosen version only, or `< 1.0.0` would catch `1.0.0-java`). A download whose line is gone
+  (yanked) is refused when a block matches either reading of its key. Checked on 2026-10-25 against the API for every line of 43 gems with odd keys
   (4,072 lines, 3,429 with a `-`): no difference.
 - A download names a file, `<name>-<version>[-<platform>].gem`. Gem names may contain `-`, so SlowShield finds the
   line by trying each split before a digit, in the gem's info file.

@@ -474,6 +474,7 @@ def test_package_blocks_matching() -> None:
     assert pb.match("npm", "v1.0.0") is entries[0]
     assert pb.match("npm", "2.5.0") is entries[1]
     assert pb.match("npm", "3.0.0") is None and pb.match("npm", None) is None
+    assert pb.match_exact("npm", "1.0.0") is entries[0] and pb.match_exact("npm", "2.5.0") is None  # no ranges
     whole = BlockEntry("pypi", "y", None, ">= 0", "osv", "C", "r", "https://u")
     assert whole.package_level and whole.matches(None) and whole.as_json()["url"] == "https://u"
     assert PackageBlocks("pypi", [whole]).match("pypi", "1") is whole

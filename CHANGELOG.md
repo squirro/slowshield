@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-10-25
+
+### Security
+- `slowshield-caddy` builds Caddy 2.11.7 from source with Go 1.26.10 and golang.org/x/net v0.60.0, because no Caddy
+  release carries Go's October fixes yet. They cover the HTTP/2 server Caddy runs as the TLS edge (GO-2026-6603
+  Trailer memory exhaustion, GO-2026-6611 and GO-2026-6612 flow control, GO-2026-6617 HPACK encoder race, GO-2026-6610
+  malformed framing headers), HTTP/1 CONNECT desynchronization (GO-2026-6605, GO-2026-6613), Range and MIME header
+  limits (GO-2026-6609, GO-2026-6608), ECH in crypto/tls (GO-2026-6607), html/template (GO-2026-6599, GO-2026-6600)
+  and, with Go 1.26.10, the distrust of compromised intermediates in crypto/x509 (GO-2026-6809). Go 1.26.10 is taken
+  inside the 7-day cooldown as a security exception. The build uses upstream's main package, flags and build tags, so
+  `caddy version` and `caddy list-modules` are as before; the Go toolchain from go.dev is pinned by SHA-256, the
+  modules by `containers/caddy/build/go.sum`. The image goes back to the official release binary with the next Caddy
+  release that ships these fixes.
+
 ## [0.0.13] - 2026-10-25
 
 ### Added

@@ -1,29 +1,38 @@
-"""Compute (and optionally apply) the pinned Caddy version + SHA-512 sums for containers/caddy/Dockerfile.
+"""Compute (and optionally apply) the pinned Caddy and Go versions for containers/caddy.
 
-    uv run python containers/caddy/bump_caddy.py                # newest release older than 7 days
-    uv run python containers/caddy/bump_caddy.py 2.11.6 --write # a specific version, rewriting the Dockerfile
+    uv run python containers/caddy/bump_caddy.py                       # newest releases older than 7 days
+    uv run python containers/caddy/bump_caddy.py 2.11.7 --go 1.26.10 --write
 
-The release's checksums file is verified with cosign (keyless, GitHub Actions identity of
-caddyserver/caddy) when the `cosign` binary is available; without it the script refuses to --write
-unless --no-verify is given explicitly.
+Caddy is built from source (containers/caddy/build) until a Caddy release carries Go's October 2026
+HTTP/2 fixes (Go 1.26.9, golang.org/x/net v0.60.0); then the image goes back to the official,
+cosign-signed release binary (see git history for the previous version of this script).
+
+--write sets the Caddy module version in build/go.mod (`go get` + `go mod tidy`, run in the Dockerfile's
+own AL2023 + Go stage, so modules are checked against Go's checksum database), and rewrites the
+CADDY_VERSION, GO_VERSION and GO_SHA256_* ARG lines in the Dockerfile. The Go version defaults to the
+newest patch release of the pinned minor line; the SHA-256 sums come from go.dev/dl.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REPO = "caddyserver/caddy"
-DOCKERFILE = Path(__file__).with_name("Dockerfile")
+MODULE = "github.com/caddyserver/caddy/v2"
+HERE = Path(__file__).parent
+ROOT = HERE.parents[1]
+DOCKERFILE = HERE / "Dockerfile"
+BUILD = HERE / "build"
 ARCHES = ("amd64", "arm64")
+GO_IMAGE = "slowshield-caddy-go:bump"
 
 
 def _get(url: str) -> bytes:
@@ -48,69 +57,92 @@ def pick_version(min_age_days: float) -> tuple[str, datetime]:
     sys.exit(f"no stable release older than {min_age_days} days")
 
 
+def _go_released(version: str) -> datetime:
+    """When go.dev published a toolchain (its golang.org/toolchain module on the Go module proxy)."""
+    info = json.loads(_get(f"https://proxy.golang.org/golang.org/toolchain/@v/v0.0.1-go{version}.linux-amd64.info"))
+    return datetime.fromisoformat(info["Time"])
+
+
+def pick_go(version: str | None, current: str, min_age_days: float) -> tuple[str, dict[str, str], datetime]:
+    """The Go version (given, or the newest patch of `current`'s minor line past the age limit, at least `current`)."""
+    releases = json.loads(_get("https://go.dev/dl/?mode=json&include=all"))
+    if version is None:
+        minor = ".".join(current.split(".")[:2])
+        cutoff = datetime.now(UTC) - timedelta(days=min_age_days)
+        for rel in releases:  # newest first
+            v = rel["version"].removeprefix("go")
+            # Never older than the pinned one, which may have been taken early as a security exception.
+            if v == current or (
+                rel["stable"] and (v == minor or v.startswith(f"{minor}.")) and _go_released(v) <= cutoff
+            ):
+                version = v
+                break
+        else:
+            sys.exit(f"no Go {minor}.x release older than {min_age_days} days")
+    rel = next((r for r in releases if r["version"] == f"go{version}"), None)
+    if rel is None:
+        sys.exit(f"go{version} is not listed on go.dev/dl")
+    sums = {
+        f["arch"]: f["sha256"]
+        for f in rel["files"]
+        if f["os"] == "linux" and f["kind"] == "archive" and f["filename"] == f"go{version}.linux-{f['arch']}.tar.gz"
+    }
+    if not set(ARCHES) <= set(sums):
+        sys.exit(f"go{version}: linux archives for {ARCHES} not found on go.dev/dl")
+    return version, {a: sums[a] for a in ARCHES}, _go_released(version)
+
+
+def _arg(name: str) -> str:
+    m = re.search(rf"^ARG {name}=(\S+)$", DOCKERFILE.read_text(), re.MULTILINE)
+    if m is None:
+        sys.exit(f"ARG {name} not found in {DOCKERFILE}")
+    return m.group(1)
+
+
+def write_dockerfile(caddy: str, go: str, go_sums: dict[str, str]) -> None:
+    text = DOCKERFILE.read_text()
+    text = re.sub(r"ARG CADDY_VERSION=\S+", f"ARG CADDY_VERSION={caddy}", text)
+    text = re.sub(r"ARG GO_VERSION=\S+", f"ARG GO_VERSION={go}", text)
+    for a in ARCHES:
+        text = re.sub(rf"ARG GO_SHA256_{a.upper()}=\S+", f"ARG GO_SHA256_{a.upper()}={go_sums[a]}", text)
+    DOCKERFILE.write_text(text)
+    print(f"updated {DOCKERFILE}")
+
+
+def write_go_mod(caddy: str) -> None:
+    """`go get` the Caddy module and tidy, in the Dockerfile's `go` stage (AL2023 + the pinned toolchain)."""
+    build = ["docker", "buildx", "build", "--load", "--quiet", "--target", "go", "-f", str(DOCKERFILE)]
+    subprocess.run([*build, "-t", GO_IMAGE, str(ROOT)], check=True, stdout=subprocess.DEVNULL)  # noqa: S603
+    tmp = "/tmp"  # noqa: S108 - inside a throwaway container
+    env = {"GOFLAGS": "-mod=mod", "GOMODCACHE": f"{tmp}/go/pkg/mod", "GOCACHE": f"{tmp}/go-build", "HOME": tmp}
+    run = ["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{BUILD}:/src", "-w", "/src"]
+    run += [arg for k, v in env.items() for arg in ("-e", f"{k}={v}")]
+    script = f"go get {MODULE}@v{caddy} && go mod tidy && go mod verify && go list -m {MODULE} golang.org/x/net"
+    subprocess.run([*run, GO_IMAGE, "sh", "-euc", script], check=True)  # noqa: S603 - docker via PATH
+    print(f"updated {BUILD / 'go.mod'} and go.sum")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("version", nargs="?", help="e.g. 2.11.6 (default: newest release past --min-age-days)")
+    ap.add_argument("version", nargs="?", help="Caddy, e.g. 2.11.7 (default: newest release past --min-age-days)")
+    ap.add_argument("--go", help="Go, e.g. 1.26.10 (default: newest patch of the pinned minor past --min-age-days)")
     ap.add_argument("--min-age-days", type=float, default=7.0)
-    ap.add_argument("--write", action="store_true", help="rewrite the ARG lines in the Dockerfile")
-    ap.add_argument("--no-verify", action="store_true", help="skip cosign verification (not recommended)")
+    ap.add_argument("--write", action="store_true", help="rewrite the Dockerfile's ARG lines and build/go.mod")
     args = ap.parse_args()
 
     version = args.version
     if version is None:
         version, published = pick_version(args.min_age_days)
-        print(f"selected v{version} (published {published:%Y-%m-%d})")
-    base = f"https://github.com/{REPO}/releases/download/v{version}"
-    name = f"caddy_{version}_checksums.txt"
-    checksums = _get(f"{base}/{name}")
+        print(f"selected Caddy v{version} (published {published:%Y-%m-%d})")
+    go, go_sums, go_published = pick_go(args.go, _arg("GO_VERSION"), args.min_age_days)
+    print(f"selected Go {go} (published {go_published:%Y-%m-%d})")
 
-    verified = False
-    cosign = shutil.which("cosign")
-    if cosign and not args.no_verify:
-        with tempfile.TemporaryDirectory() as tmp:
-            t = Path(tmp)
-            (t / name).write_bytes(checksums)
-            (t / f"{name}.sig").write_bytes(_get(f"{base}/{name}.sig"))
-            (t / f"{name}.pem").write_bytes(_get(f"{base}/{name}.pem"))
-            subprocess.run(  # noqa: S603 - fixed argv, cosign resolved via PATH on purpose
-                [
-                    cosign,
-                    "verify-blob",
-                    "--certificate",
-                    str(t / f"{name}.pem"),
-                    "--signature",
-                    str(t / f"{name}.sig"),
-                    "--certificate-identity-regexp",
-                    rf"^https://github\.com/{REPO}/\.github/workflows/release\.yml@refs/tags/v",
-                    "--certificate-oidc-issuer",
-                    "https://token.actions.githubusercontent.com",
-                    str(t / name),
-                ],
-                check=True,
-            )
-            verified = True
-    elif not args.no_verify and args.write:
-        sys.exit("cosign not found: install it (or pass --no-verify knowingly) before --write")
-
-    sums: dict[str, str] = {}
-    for line in checksums.decode().splitlines():
-        digest, _, fname = line.partition("  ")
-        for arch in ARCHES:
-            if fname.strip() == f"caddy_{version}_linux_{arch}.tar.gz":
-                sums[arch] = digest.strip()
-    if set(sums) != set(ARCHES):
-        sys.exit(f"checksums for {ARCHES} not found in {name}")
-
-    lines = [f"ARG CADDY_VERSION={version}"] + [f"ARG CADDY_SHA512_{a.upper()}={sums[a]}" for a in ARCHES]
+    lines = [f"ARG CADDY_VERSION={version}", f"ARG GO_VERSION={go}"]
+    lines += [f"ARG GO_SHA256_{a.upper()}={go_sums[a]}" for a in ARCHES]
     print("\n".join(lines))
-    print(f"# signature {'verified with cosign' if verified else 'NOT verified'}")
     if args.write:
-        text = DOCKERFILE.read_text()
-        text = re.sub(r"ARG CADDY_VERSION=\S+", f"ARG CADDY_VERSION={version}", text)
-        for a in ARCHES:
-            text = re.sub(rf"ARG CADDY_SHA512_{a.upper()}=\S+", f"ARG CADDY_SHA512_{a.upper()}={sums[a]}", text)
-        DOCKERFILE.write_text(text)
-        print(f"updated {DOCKERFILE}")
+        write_dockerfile(version, go, go_sums)
+        write_go_mod(version)
 
 
 if __name__ == "__main__":

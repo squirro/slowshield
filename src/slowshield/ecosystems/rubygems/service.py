@@ -507,11 +507,14 @@ class RubygemsService:
             return resolved
         if resolved is None:
             # Known malware is refused (and recorded) even when rubygems.org has yanked it since: a lockfile pinned
-            # during an attack window must show up as a security event, not a 404.
+            # during an attack window must show up as a security event, not a 404. Without the line, a key that can
+            # name two versions (`1.0.0-beta.1`) is refused when either is blocked.
             for name, key in I.split_file(stem)[:4]:
                 if names.is_valid_rubygems(name):
                     blocks = ctx.blocklist.for_package(ECO, name)
-                    entry = blocks.package_block or blocks.match(ECO, key.partition("-")[0])
+                    entry = blocks.package_block or next(
+                        (e for v in I.readings(key) if (e := blocks.match(ECO, v)) is not None), None
+                    )
                     if entry is not None:
                         return self._blocked(request, name, key, entry, kind="artifact")
             ctx.recorder.decision(ECO, "artifact", "not_found")

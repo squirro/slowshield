@@ -193,6 +193,18 @@ on its own, with its own `created_at` and `checksum`. SlowShield judges each lin
 - `package_versions` has a row per line, keyed by the line's version-and-platform string, as Bundler names the file
   (`1.19.4-x86_64-linux-gnu`); the UI lists platform gems as their own versions.
 - Blocks and exceptions name versions (`1.19.4`) and cover every platform of that version.
+- **Which part of a key is the version.** The compact index writes `<version>-<platform>`, and a version may hold a
+  `-` too, so a key is ambiguous. Bundler (`Gem::Resolver::APISet::GemParser`) splits at the first `-`, and
+  rubygems.org's API agrees for nearly every key, platforms that `Gem::Platform` reads as "unknown" included
+  (`0.4-windows`, `0.2.1-android`, `1.1.1-1.1.1`, `0.0.2-do_not_install`, `1.0-RubyMotion`). The exceptions are
+  versions written with a `-` (asciidoctor-reducer `1.0.0-beta.1` and `1.0.0-rc.1`, which `Gem::Version` reads as
+  `1.0.0.pre.beta.1`): prereleases from before RubyGems 3.5, whose lines require `rubygems:> 1.3.1`. A line with
+  that mark whose key is no prerelease up to the first `-` and goes on with no platform `Gem::Platform` knows is one
+  version, so a block on `1.0.0` doesn't cover `1.0.0-beta.1`, and `1.0.0-beta.1` orders below `1.0.0`.
+  Content-addressed lines (RubyGems 4.1, `0.4.2-04da877c`) name the version and a prefix of the gem's sha256; the
+  platform is in the line's `platform:` field. A download whose line is gone (yanked) is refused when a block
+  matches either reading of its key. Checked on 2026-10-25 against the API for every line of 43 gems with odd keys
+  (4,072 lines, 3,429 with a `-`): no difference.
 - A download names a file, `<name>-<version>[-<platform>].gem`. Gem names may contain `-`, so SlowShield finds the
   line by trying each split before a digit, in the gem's info file.
 

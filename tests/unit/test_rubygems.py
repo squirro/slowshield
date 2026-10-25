@@ -90,6 +90,93 @@ def test_info_lines_are_parsed_and_kept_byte_for_byte() -> None:
     assert I.repr_digest(served) == "sha-256=:" + base64.b64encode(hashlib.sha256(served).digest()).decode() + ":"
 
 
+# Info lines from rubygems.org (2026-10-25): gem, key, the line's `rubygems:` and `platform:` fields, and the number
+# and platform rubygems.org's API (/api/v1/versions/<gem>.json) gives for the line's checksum.
+LIVE_KEYS = [
+    ("asciidoctor-reducer", "1.0.0-beta.1", "> 1.3.1", "", "1.0.0-beta.1", "ruby"),
+    ("asciidoctor-reducer", "1.0.0-rc.1", "> 1.3.1", "", "1.0.0-rc.1", "ruby"),
+    ("version_test", "1.1.1-1.1.1", "", "", "1.1.1", "1.1.1"),
+    ("version_test", "1.1.2-1.1.1", "", "", "1.1.2", "1.1.1"),
+    ("uuidtoolds", "0.0.2-do_not_install", "", "", "0.0.2", "do_not_install"),
+    ("test1234567890", "0.1.0-1-2-3-4", "", "", "0.1.0", "1-2-3-4"),
+    ("test1234567890", "0.1.0-java17", "", "", "0.1.0", "java17"),
+    ("test1234567890", "1.0.0.pre.alpha-java17", "", "", "1.0.0.pre.alpha", "java17"),
+    ("test1234567890", "1.0.0-java-17", "", "", "1.0.0", "java-17"),
+    ("shattered_ogre", "0.4-windows", "", "", "0.4", "windows"),
+    ("shattered_ogre", "0.3-i386-mswin32", "", "", "0.3", "i386-mswin32"),
+    ("sqldroid", "0.2.1-android", "", "", "0.2.1", "android"),
+    ("sqldroid", "0.0.2-java", "", "", "0.0.2", "java"),
+    ("zen-engine-ruby", "0.0.1-amd64-windows", "", "", "0.0.1", "amd64-windows"),
+    ("zen-engine-ruby", "0.0.1-amd64-linux", "", "", "0.0.1", "amd64-linux"),
+    ("couchbase", "3.0.0.alpha.1-universal-darwin-19", "> 1.3.1", "", "3.0.0.alpha.1", "universal-darwin-19"),
+    ("couchbase", "3.0.0.alpha.1-x86_64-darwin-19", "> 1.3.1", "", "3.0.0.alpha.1", "x86_64-darwin-19"),
+    ("sass-embedded", "1.58.3-aarch64-linux-android", ">= 3.3.22", "", "1.58.3", "aarch64-linux-android"),
+    ("sass-embedded", "1.74.1-riscv64-linux-musl", "", "", "1.74.1", "riscv64-linux-musl"),
+    ("sass-embedded", "1.74.1-x86_64-cygwin", "", "", "1.74.1", "x86_64-cygwin"),
+    ("sass-embedded", "1.58.0-arm-linux-musleabihf", ">= 3.3.22", "", "1.58.0", "arm-linux-musleabihf"),
+    ("aikido-zen", "1.0.1.beta.3-arm64-linux-musl", "", "", "1.0.1.beta.3", "arm64-linux-musl"),
+    ("aikido-zen", "0.1.0-x86_64-mingw-64", "", "", "0.1.0", "x86_64-mingw-64"),
+    ("aikido-zen", "0.1.0-arm64-linux", "", "", "0.1.0", "arm64-linux"),
+    ("beamer-rails", "0.1.0.beta4-arm64-linux-gnu", "", "", "0.1.0.beta4", "arm64-linux-gnu"),
+    ("beamer-rails", "0.1.0.beta4-x86_64-linux-musl", "", "", "0.1.0.beta4", "x86_64-linux-musl"),
+    ("rubydex", "0.4.2-04da877c", ">= 4.1.0.a", "x86_64-darwin", "0.4.2", "x86_64-darwin"),
+    ("jenshenny-nokogiri", "1.19.4-86e5e59f", ">= 4.1.0.dev", "= arm64-darwin", "1.19.4", "arm64-darwin"),
+    ("content_addressable_test", "0.1.0-a56253e0", ">= 4.1.0.beta1", "arm64-darwin", "0.1.0", "arm64-darwin"),
+    ("flot-graph-rails", "1.0.0-Ruby", ">= 1.3.6", "", "1.0.0", "Ruby"),
+    ("test-platform", "1.0-RubyMotion", "", "", "1.0", "RubyMotion"),
+    ("ironbuildrake", "0.1.1-ironruby", "", "", "0.1.1", "ironruby"),
+    ("mygem57", "1.0.0-ruby_2.6", "", "", "1.0.0", "ruby_2.6"),
+    ("mygem57", "1.0.0-x86_64-darwin-19", "", "", "1.0.0", "x86_64-darwin-19"),
+    ("libnotify", "0.5.6.pre-universal-rubinius-1.2", "> 1.3.1", "", "0.5.6.pre", "universal-rubinius-1.2"),
+    ("example_gem", "0.0.1-dalvik10", "", "", "0.0.1", "dalvik10"),
+    ("wxruby3", "0.9.0.pre.beta.1-x64-mingw-ucrt-3.2", "", "", "0.9.0.pre.beta.1", "x64-mingw-ucrt-3.2"),
+    ("rubywmq", "0.3.0-i386-mswin32-mq5.3", "", "", "0.3.0", "i386-mswin32-mq5.3"),
+    ("rubywmq", "0.3.0-sparc-solaris2.8-mq5.3", "", "", "0.3.0", "sparc-solaris2.8-mq5.3"),
+    ("iron-term-ansicolor", "0.0.3-universal-.net-2.0", "", "", "0.0.3", "universal-.net-2.0"),
+    ("unimidi", "0.1.4-x86_64-darwin10.7.0", ">= 1.3.6", "", "0.1.4", "x86_64-darwin10.7.0"),
+    ("ibmi_db", "2.5.14-powerpc-aix-6", "", "", "2.5.14", "powerpc-aix-6"),
+    ("iseq", "0.0.2-x86-mswin32-1.9.1", "", "", "0.0.2", "x86-mswin32-1.9.1"),
+    ("ji2p", "0.0.3-jruby-java-universal-java-9", "", "", "0.0.3", "jruby-java-universal-java-9"),
+    ("minio", "0.1.0-x86_64-windows", "", "", "0.1.0", "x86_64-windows"),
+    ("rockbox_ffi", "0.1.0-x86_64-netbsd", "", "", "0.1.0", "x86_64-netbsd"),
+    ("suzuna", "0.0.1-freebsd", "", "", "0.0.1", "freebsd"),
+    ("libpng", "1.6.58.4-aarch64-linux-ohos", "", "", "1.6.58.4", "aarch64-linux-ohos"),
+    ("cpr", "0.1.0-darwin", "", "", "0.1.0", "darwin"),
+]
+
+
+@pytest.mark.parametrize("case", LIVE_KEYS, ids=lambda case: f"{case[0]}-{case[1]}")
+def test_keys_split_into_the_version_and_platform_rubygems_org_has(case: tuple[str, ...]) -> None:
+    _gem, key, rubygems, platform, number, api_platform = case
+    fields = f"checksum:{SHA},ruby:>= 2.4.0" + (f",rubygems:{rubygems}" if rubygems else "")
+    fields += (f",platform:{platform}" if platform else "") + ",created_at:2026-01-02T03:04:05Z"
+    line = I.parse_line(f"{key} |{fields}".encode())
+    assert line is not None and line.key == key
+    assert (line.version, line.platform) == (number, api_platform)
+
+
+def test_a_version_with_a_dash_is_matched_and_ordered_as_itself() -> None:
+    # The `> 1.3.1` mark makes the dash part of the version, unless the rest is a platform RubyGems knows.
+    assert I.split_key("1.0.0-beta.1", prerelease=True) == ("1.0.0-beta.1", "ruby")
+    assert I.split_key("1.0.0-arm64-darwin", prerelease=True) == ("1.0.0", "arm64-darwin")
+    assert I.split_key("1.0.0-beta.1-x86_64-linux", prerelease=True) == ("1.0.0", "beta.1-x86_64-linux")
+    assert I.split_key("1.0.0-do_not_install", prerelease=True) == ("1.0.0", "do_not_install")  # no version
+    assert I.split_key("1.0.0-beta.1") == ("1.0.0", "beta.1")  # without the mark, as Bundler reads it
+    assert I.split_key("0.4.2-04da877c") == ("0.4.2", "04da877c")  # a digest without a platform field
+    assert I.split_key("1.0-") == ("1.0", "ruby")
+    # Without the line (a file no longer listed), a key that can be either names both versions.
+    assert I.readings("1.0.0-beta.1") == ["1.0.0", "1.0.0-beta.1"] and I.readings("1.0.0") == ["1.0.0"]
+    assert I.readings("1.19.4-x86_64-linux-gnu") == ["1.19.4"]
+    # Gem::Version reads `-` as `.pre.`: a prerelease, below 1.0.0 and above 1.0.0.beta.
+    assert versions.is_prerelease("rubygems", "1.0.0-beta.1")
+    assert versions.sort_key("rubygems", "1.0.0.beta") < versions.sort_key("rubygems", "1.0.0-beta.1")
+    assert versions.sort_key("rubygems", "1.0.0-beta.1") < versions.sort_key("rubygems", "1.0.0-rc.1")
+    assert versions.sort_key("rubygems", "1.0.0-rc.1") < versions.sort_key("rubygems", "1.0.0")
+    assert versions.in_range("rubygems", "1.0.0-beta.1", "< 1.0.0")
+    assert not versions.in_range("rubygems", "1.0.0-beta.1", "= 1.0.0")
+    assert versions.in_range("rubygems", "1.0.0-beta.1", "= 1.0.0-beta.1")
+
+
 def test_file_names_split_before_each_version() -> None:
     assert I.split_file("rack-3.1.8") == [("rack", "3.1.8")]
     assert I.split_file("nokogiri-1.19.4-x86_64-linux-gnu") == [("nokogiri", "1.19.4-x86_64-linux-gnu")]

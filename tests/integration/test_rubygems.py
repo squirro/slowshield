@@ -407,6 +407,29 @@ async def test_exceptions_and_operator_blocks(start_app) -> None:
     assert (await run.client.get("/rubygems/info/fake_deps")).text == "---\n"
 
 
+async def test_a_version_with_a_dash_is_its_own_version(start_app) -> None:
+    # fake_pre 1.0.0-beta.1 (two days old, `rubygems:> 1.3.1`) is version 1.0.0-beta.1, not 1.0.0 on a platform.
+    run = await start_app(
+        '[[exceptions]]\necosystem = "rubygems"\npackage = "fake_pre"\nversion = "1.0.0-beta.1"\ndelay_days = 0\n'
+        '[[blocks]]\necosystem = "rubygems"\npackage = "fake_pre"\nversion = "1.0.0"\n'
+    )
+    assert _keys((await run.client.get("/rubygems/info/fake_pre")).text) == ["1.0.0-beta.1"]
+    assert (await run.client.get("/rubygems/gems/fake_pre-1.0.0-beta.1.gem")).status_code == 200
+    assert (await run.client.get("/rubygems/gems/fake_pre-1.0.0.gem")).status_code == 451
+    run = await start_app(
+        '[[exceptions]]\necosystem = "rubygems"\npackage = "fake_pre"\nversion = "1.0.0"\ndelay_days = 0\n'
+        '[[blocks]]\necosystem = "rubygems"\npackage = "fake_pre"\nversion = "1.0.0-beta.1"\n'
+    )
+    assert _keys((await run.client.get("/rubygems/info/fake_pre")).text) == ["1.0.0"]
+    r = await run.client.get("/rubygems/gems/fake_pre-1.0.0-beta.1.gem")
+    assert r.status_code == 451 and "fake_pre-1.0.0-beta.1 is blocked" in r.text
+    # Yanked since: the key alone still reads as 1.0.0-beta.1 (and as 1.0.0), and stays refused.
+    run.fake.control("rubygems-yank", name="fake_pre", key="1.0.0-beta.1")
+    run.clock.advance(7 * 3600)
+    assert _keys((await run.client.get("/rubygems/info/fake_pre")).text) == ["1.0.0"]
+    assert (await run.client.get("/rubygems/gems/fake_pre-1.0.0-beta.1.gem")).status_code == 451
+
+
 async def test_names_are_passed_on(running: Running) -> None:
     r = await running.client.get("/rubygems/names")
     assert r.status_code == 200 and r.content == await _upstream(running, "/rubygems-index/names")

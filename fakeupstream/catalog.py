@@ -392,6 +392,7 @@ class GemLine:
     blob: Blob
     spec_rz: bytes
     deps: gems.Deps = ()
+    rubygems: str = ""  # the line's `rubygems:` requirement, if any
 
     @property
     def key(self) -> str:
@@ -696,6 +697,7 @@ class Catalog:
         platform: str = "ruby",
         created: bool = True,
         deps: gems.Deps = (),
+        rubygems: str = "",
     ) -> None:
         """Push a gem. After the catalog is built, /versions gets a line for it, as rubygems.org appends one."""
         line = GemLine(
@@ -706,6 +708,7 @@ class Catalog:
             Blob(key=f"{name}-{version}-{platform}.gem", data=gems.make_gem(name, version, platform, deps)),
             gems.make_gemspec_rz(name, version, platform, deps),
             deps,
+            rubygems,
         )
         self.gems.setdefault(name, {})[line.key] = line
         if self.gem_versions:
@@ -724,6 +727,8 @@ class Catalog:
     def gem_info_line(self, g: GemLine) -> bytes:
         deps = ",".join(f"{d}:{r}" for d, r in g.deps)
         fields = f"checksum:{g.blob.digests()['sha256']},ruby:>= 2.0"
+        if g.rubygems:
+            fields += f",rubygems:{g.rubygems}"
         if g.created is not None:
             fields += f",created_at:{iso_s(g.created)}"
         return f"{g.key} {deps}|{fields}".encode()
@@ -1047,6 +1052,10 @@ class Catalog:
         self.add_gem("partly_gem", "1.1.0", 60)
         self.add_gem("untimed_gem", "1.0.0", 0, created=False)
         self.add_gem("future_gem", "1.0.0", -30)  # a `created_at` in the future isn't a publish time
+        # A version with a `-` (asciidoctor-reducer 1.0.0-beta.1): its key looks like version 1.0.0 on platform beta.1.
+        # RubyGems before 3.5 made a prerelease require `> 1.3.1` of RubyGems.
+        self.add_gem("fake_pre", "1.0.0", 30)
+        self.add_gem("fake_pre", "1.0.0-beta.1", 2, rubygems="> 1.3.1")
         # OCI images. docker.io-like: the Hub API knows only a tag's current digest. quay.io-like: full tag history.
         # registry.k8s.io-like (gcr): upload times per digest in tags/list. ghcr.io-like: no times at all.
         for version, age in (("1.27.0", 40), ("1.27.1", 10), ("1.27.2", 2)):

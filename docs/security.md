@@ -39,15 +39,21 @@ stays undetected for longer than your delay.
   mounted files or Caddy's internal CA.
 * **Secrets**: GitHub token via `GITHUB_TOKEN_FILE` (Docker/Podman/Kubernetes secrets), never baked into
   images or logged (log fields named like tokens are redacted).
-* **UI**: read-only; no authentication in this release — restrict it at the network level, or put an
-  authenticating proxy (OIDC/SAML/Tailscale) in front of `/` and `/ui/` while leaving `/pypi`, `/npm`
-  (or the per-ecosystem hosts) open to clients.
+* **UI**: public and read-only by default. With UI sign-in on (`SLOWSHIELD_AUTH=oidc`,
+  [authentication.md](authentication.md)), people sign in with OpenID Connect (Authorization Code with PKCE,
+  `state` and `nonce`, PAR when the IdP has it, `private_key_jwt` or a client secret) and get a role from the IdP;
+  `SLOWSHIELD_UI_REQUIRE_LOGIN=true` closes the UI to anyone else. Sessions are server-side (the browser holds a
+  random ID in a `__Host-` cookie, `Secure; HttpOnly; SameSite=Lax`) and are checked with the IdP again every
+  15 minutes, so a person the IdP signs out or disables loses the UI too. ID tokens are checked against the
+  IdP's keys (RS256, PS256 or ES256 only). The package proxy never needs a sign-in.
 
 ## Privacy
 
 Client IP addresses are stored only on security events (blocked, tampered, fail-open, too-new downloads),
 taken from `X-Forwarded-For` only when the peer is a trusted proxy, and erased after
-`client_ip_retention_days` (default 30). Set `record_client_ip = false` to never store them.
+`client_ip_retention_days` (default 30). Set `record_client_ip = false` to never store them. With UI sign-in on, the
+same applies to the activity log's client IPs; the users table keeps only what a person's ID token says about
+them (subject, name, email) and the claim values that gave their role, never their full group list.
 
 ## Supply chain of SlowShield itself
 

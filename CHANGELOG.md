@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- UI sign-in with OpenID Connect ([#64](https://github.com/squirro/slowshield/issues/64), docs/authentication.md). Off
+  by default: without `SLOWSHIELD_AUTH`, the UI stays public and read-only as before, and the package proxy never needs
+  a sign-in whatever is set. With `SLOWSHIELD_AUTH=oidc`, people sign in with their IdP (Authorization Code with PKCE,
+  `state` and `nonce`; PAR when the IdP has it; `private_key_jwt` or a client secret) and get a role: Viewer, User or
+  Admin, from a list-valued claim (`SLOWSHIELD_OIDC_ROLES_CLAIM`) or verified-email rules, worked out again at every
+  sign-in. `SLOWSHIELD_UI_REQUIRE_LOGIN=true` sends anyone not signed in straight to the IdP. Sessions live in the
+  database, and a silent check with the IdP every 15 minutes ends a session the IdP ended. Built only on what
+  Keycloak, Okta, Entra ID and Google Workspace all support; tested end to end with Keycloak.
+- Users and Activity pages for Admins: who signed in, with which role and why; sign-ins, refused sign-ins, sign-outs
+  and admin actions, with a CSV export. Admins can disable a user on an instance (their sessions end at once).
+- With sign-in on, confirming a shield wall leader takes an Admin, and the Shield wall page shows who confirmed it.
+- `slowshield auth client-cert` creates the client key and prints the certificate to register at the IdP;
+  `slowshield users list|disable|enable|logout-all`.
+- Metrics `slowshield_auth_logins_total`, `slowshield_auth_rechecks_total` and `slowshield_auth_sessions_active`.
+
 ### Security
 - `slowshield-caddy` builds Caddy 2.11.7 from source with Go 1.26.10 and golang.org/x/net v0.60.0, because no Caddy
   release carries Go's October fixes yet. They cover the HTTP/2 server Caddy runs as the TLS edge (GO-2026-6603

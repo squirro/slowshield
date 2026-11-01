@@ -1,0 +1,20 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>{{ "Fast-track" if grant else "Request a fast-track" }}</h1>
+  <p class="muted">{{ m.eco(eco) }} <code>{{ name }}</code> {{ m.ver(version) }} is held back by its release-age delay.
+  {% if grant %}As an Admin, you release it now.{% else %}A second person, a User or an Admin, has to approve your request before it's released.{% endif %}</p>
+</div></div>
+<section class="card">
+  <form method="post" action="/ui/fasttrack" class="stack">
+    <input type="hidden" name="eco" value="{{ eco }}">
+    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="version" value="{{ version }}">
+    <label for="message"><b>Why should this version skip its delay?</b></label>
+    <textarea id="message" name="message" rows="4" maxlength="1000" required minlength="3" placeholder="e.g. a security fix we need today; reviewed the diff in the upstream repository"></textarea>
+    <p class="muted small">Only the delay is lifted: advisories, operator blocks and tamper checks still apply. Your name and message are kept in the Activity log.</p>
+    <div class="actions"><button type="submit" class="button primary">{{ "Fast-track now" if grant else "Request fast-track" }}</button> <a href="{{ back }}">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}

@@ -11,10 +11,10 @@ import math
 import os
 import re
 from datetime import UTC, datetime
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -25,6 +25,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
+from slowshield import fasttrack as F
 from slowshield.auth.web import principal
 from slowshield.blocklist import PackageBlocks
 from slowshield.config import LoadedConfig
@@ -202,6 +203,10 @@ class UI:
             Route("/ui/users", self.users),
             Route("/ui/users/{user_id:int}/{action}", self.user_action, methods=["POST"]),
             Route("/ui/activity", self.activity),
+            Route("/ui/fasttrack", self.fast_tracks),
+            Route("/ui/fasttrack", self.fast_track_create, methods=["POST"]),
+            Route("/ui/fasttrack/new", self.fast_track_new),
+            Route("/ui/fasttrack/{track_id:int}/{action}", self.fast_track_decide, methods=["POST"]),
             Route("/ui/activity.csv", self.activity_csv),
             Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
@@ -420,6 +425,7 @@ class UI:
                 "events": Q.package_events(conn, eco, name, 50),
                 "blocks": Q.package_blocks(conn, eco, name),
                 "tags": Q.oci_tags(conn, name) if eco == "oci" else [],
+                "fast_tracks": F.for_package(conn, eco, name),
             }
 
         data = await self._q(collect)
@@ -442,7 +448,9 @@ class UI:
                 status, until = "yanked", None
             else:
                 status, until = "available", None
-            versions.append({**dict(v), "status": status, "until": until, "delay": delay, "block": block})
+            fast = cfg.fast_tracked(eco, name, v["version"]) and status == "available"
+            versions.append({**dict(v), "status": status, "until": until, "delay": delay, "block": block,
+                             "fast": fast})  # fmt: skip
         buckets = w.buckets()
         chart = svg.stacked_bars(
             buckets,
@@ -473,7 +481,144 @@ class UI:
             upstream_url=info.page_url(name),
             upstream_site=info.registry_site,
             w=w,
+            fast_tracks=data["fast_tracks"],
+            pending={r["version"] for r in data["fast_tracks"] if r["state"] == "pending"},
+            can_fast_track=self._fast_track_problem(request) is None,
         )
+
+    # ---- fast-tracks ---------------------------------------------------------------------------------
+
+    def _fast_track_problem(self, request: Request) -> str | None:
+        """Why this person can't fast-track here, or None. It takes sign-in, and a User or an Admin."""
+        if self.ctx.auth is None:
+            return "Fast-tracks need UI sign-in (docs/authentication.md)."
+        if self.ctx.cfg.raw.shieldwall.role == "follower":
+            return "A shield wall follower takes its policy from its leader: fast-track on the leader."
+        if not principal(request).can("user"):
+            return "Fast-tracks are for Users and Admins." if principal(request).signed_in else "Sign in first."
+        return None
+
+    async def _held_problem(self, eco: str, name: str, version: str) -> str | None:
+        """Why this version can't be fast-tracked, or None: it must be held back by its delay alone, with no advisory
+        or block and no tampering seen."""
+        cfg = self.ctx.cfg
+        blocks = self.ctx.blocklist.for_package(eco, name)
+        now = self.ctx.clock.now()
+        if blocks.package_block is not None or blocks.match(eco, version) is not None:
+            return "This version is blocked by an advisory or an operator block; a fast-track can't release it."
+
+        def collect(conn: Any) -> Any:
+            if eco == "oci":
+                return Q.oci_tags(conn, name)
+            return conn.execute(
+                "SELECT v.published, (SELECT max(tampered) FROM artifacts a WHERE a.ecosystem = v.ecosystem AND "
+                "a.package = v.name AND a.version = v.version) FROM package_versions v WHERE v.ecosystem = ? AND "
+                "v.name = ? AND v.version = ?",
+                (eco, name, version),
+            ).fetchone()
+
+        found = await self._q(collect)
+        if eco == "oci":
+            held = [t for t in _oci_tags(found, name, cfg, blocks, now) if t["digest"] == version]
+            if not held:
+                return "SlowShield hasn't seen this image digest."
+            return None if any(t["status"] == "held" for t in held) else "This digest isn't held back."
+        if found is None:
+            return "SlowShield hasn't seen this version."
+        published, tampered = found[0], found[1]
+        if tampered:
+            return "This version was detected as tampered; a fast-track can't release it."
+        if published is None:
+            return "SlowShield doesn't know when this version was published."
+        if now - published >= cfg.delay_days_for(eco, name, version) * DAY:
+            return "This version isn't held back."
+        return None
+
+    def _fast_track_refused(self, request: Request, message: str, back: str) -> Response:
+        resp = self._render("auth.html.j2", request, title="Fast-track", heading="Can't fast-track", message=message,
+                            retry=back, retry_label="Back")  # fmt: skip
+        resp.status_code = 400
+        return resp
+
+    @staticmethod
+    def _package_href(eco: str, name: str) -> str:
+        return f"/ui/packages/{eco}/{quote(name, safe='/@:')}"
+
+    async def fast_tracks(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+
+        def collect(conn: Any) -> dict[str, Any]:
+            return {"pending": F.listing(conn, ("pending",)), "active": F.listing(conn, ("active",)),
+                    "closed": F.listing(conn, ("rejected", "revoked"), limit=50)}  # fmt: skip
+
+        data = await self._q(collect)
+        problem = self._fast_track_problem(request)
+        return self._render("fasttrack.html.j2", request, title="Fast-tracks", problem=problem,
+                            package_href=self._package_href, **data)  # fmt: skip
+
+    async def fast_track_new(self, request: Request) -> Response:
+        eco = request.query_params.get("eco", "")
+        name = (request.query_params.get("name") or "")[:300]
+        version = (request.query_params.get("version") or "")[:300]
+        back = self._package_href(eco, name) if eco in ECOSYSTEMS else "/ui/fasttrack"
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, back)
+        if eco not in ECOSYSTEMS or (problem := await self._held_problem(eco, name, version)):
+            return self._fast_track_refused(request, problem or "Unknown ecosystem.", back)
+        return self._render("fasttrack_new.html.j2", request, title="Fast-track", eco=eco, name=name, version=version,
+                            back=back, grant=principal(request).can("admin"))  # fmt: skip
+
+    async def fast_track_create(self, request: Request) -> Response:
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        form = parse_qs((await request.body())[:8192].decode("utf-8", "replace"))
+        eco, name, version = ((form.get(k) or [""])[0][:300] for k in ("eco", "name", "version"))
+        back = self._package_href(eco, name) if eco in ECOSYSTEMS else "/ui/fasttrack"
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, back)
+        if eco not in ECOSYSTEMS or (problem := await self._held_problem(eco, name, version)):
+            return self._fast_track_refused(request, problem or "Unknown ecosystem.", back)
+        try:
+            text = F.message((form.get("message") or [""])[0])
+            me, now, ip = principal(request), self.ctx.clock.now(), self._client_ip(request)
+            change = await self.ctx.db.writer.run(
+                partial(F.create, eco=eco, name=name, version=version, who=me, text=text, now=now, client_ip=ip)
+            )
+        except F.FastTrackError as exc:
+            return self._fast_track_refused(request, str(exc), back)
+        what = "granted" if change.state == "active" else "requested"
+        log.info(f"fast-track {what}", extra={"user_id": me.user_id, "ecosystem": eco, "package": name,
+                                              "version": version})  # fmt: skip
+        await self.ctx.fast_tracks.refresh()
+        return RedirectResponse(back, status_code=303)
+
+    async def fast_track_decide(self, request: Request) -> Response:
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, "/ui/fasttrack")
+        action = request.path_params["action"]
+        if action not in ("approve", "reject", "revoke"):
+            return PlainTextResponse("not found", status_code=404)
+        form = parse_qs((await request.body())[:8192].decode("utf-8", "replace"))
+        me, now, ip = principal(request), self.ctx.clock.now(), self._client_ip(request)
+        track_id = int(request.path_params["track_id"])
+        try:
+            text = F.message((form.get("message") or [""])[0])
+            if action == "approve":  # still held, and still clean: an advisory may have come in since
+                sql = "SELECT ecosystem, package, version FROM fast_tracks WHERE id = ?"
+                row = await self._q(lambda c: c.execute(sql, (track_id,)).fetchone())
+                if row is not None and (problem := await self._held_problem(row[0], row[1], row[2])):
+                    raise F.FastTrackError(problem)
+            await self.ctx.db.writer.run(
+                partial(F.decide, track_id=track_id, action=action, who=me, text=text, now=now, client_ip=ip)
+            )
+        except F.FastTrackError as exc:
+            return self._fast_track_refused(request, str(exc), "/ui/fasttrack")
+        log.info(f"fast-track {action}", extra={"user_id": me.user_id, "fast_track": track_id})
+        await self.ctx.fast_tracks.refresh()
+        return RedirectResponse("/ui/fasttrack", status_code=303)
 
     # ---- leaderboards -----------------------------------------------------------------------------
 

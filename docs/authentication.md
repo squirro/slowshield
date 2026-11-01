@@ -6,8 +6,8 @@ the identity provider (IdP):
 | Role | Who | Can |
 |---|---|---|
 | Viewer | anyone not signed in (unless sign-in is required), and anyone signed in that no rule maps | read the UI |
-| User | mapped by an IdP claim or a verified email | everything a Viewer can, plus User actions (none yet) |
-| Admin | mapped by an IdP claim or a verified email | everything a User can, plus the Users and Activity pages, disabling users, and confirming a shield wall leader |
+| User | mapped by an IdP claim or a verified email | everything a Viewer can, plus requesting and approving [fast-tracks](#fast-tracks) |
+| Admin | mapped by an IdP claim or a verified email | everything a User can, plus fast-tracking at once, the Users and Activity pages, disabling users, and confirming a shield wall leader |
 
 **Nothing changes by default.** Without `SLOWSHIELD_AUTH`, the UI is public and read-only, as before. **The package
 proxy never needs a sign-in**, whatever is set here: every ecosystem path, `/v2`, `/.well-known`, `/healthz`,
@@ -247,6 +247,27 @@ Keycloak, e.g. with an authentication flow that requires a role. You can also gi
   or use the built-in `groups` claim.
 - Issuer: `https://<authentik>/application/o/<slug>/`, with the trailing slash, exactly as discovery names it.
 
+## Fast-tracks
+
+A version held back by its release-age delay can be released early, when it is needed before the delay is up (a
+security fix, say):
+
+- **An Admin fast-tracks it** with a message saying why, from the version's row on its package page ("Fast-track…").
+  It is released at once.
+- **A User requests a fast-track**, with a message. A second person, another User or an Admin, approves it with their
+  own message (Fast-tracks page), and only then is it released. They can reject it instead. Nobody approves their own
+  request.
+- **An Admin can revoke** a fast-track, with a message; the version is held back again until its delay is up.
+
+Only the delay is lifted. A version with an advisory or an operator block, or one SlowShield saw tampered with, can't
+be fast-tracked, and a request whose version gets an advisory before it is approved can't be approved. The blocklist
+and tamper checks also still apply when a fast-tracked version is served, so an advisory that comes in later blocks
+it as before.
+
+Every step, with its message, is in the Activity log, and the package page shows the history. A fast-track applies
+on the instance it was made on (every worker within seconds). A shield wall follower takes its policy from its
+leader and offers no fast-tracks; fast-tracks made on a leader don't reach its followers yet.
+
 ## Pages, records and commands
 
 - **The header** shows who is signed in, their role, and *Sign in* / *Sign out*.
@@ -256,8 +277,10 @@ Keycloak, e.g. with an authentication flow that requires a role. You can also gi
   
   Admins can disable a user here. Their sessions end at once, and they can't sign in to this instance until enabled
   again.
+- **Fast-tracks** (`/ui/fasttrack`, Users and Admins): requests waiting for approval, what is fast-tracked, and what
+  was rejected or revoked.
 - **Activity** (`/ui/activity`, Admins only, CSV export) records sign-ins, refused sign-ins with the reason,
-  sign-outs, sessions the IdP ended, role changes, and what Admins changed.
+  sign-outs, sessions the IdP ended, role changes, fast-tracks, and what Admins changed.
   - Entries are kept for `event_retention_days`.
   - Client IPs follow `record_client_ip` and `client_ip_retention_days`, as on security events.
 - **Metrics:** `slowshield_auth_logins_total{result}`, `slowshield_auth_rechecks_total{result}` and

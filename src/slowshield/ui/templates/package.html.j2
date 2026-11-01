@@ -1,6 +1,10 @@
 {% extends "base.html.j2" %}
 {% import "macros.html.j2" as m with context %}
 {% block title %}{{ name }}{% endblock %}
+{% macro fast_track_link(version) -%}
+{% if version in pending %} <a class="badge fast-pending" href="/ui/fasttrack">fast-track requested</a>
+{%- elif can_fast_track %} <a class="small" href="/ui/fasttrack/new{{ qs({'eco': eco, 'name': name, 'version': version}) }}">{{ "Fast-track…" if me.can("admin") else "Request fast-track…" }}</a>{% endif %}
+{%- endmacro %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -47,7 +51,7 @@
         <td>{{ m.ver(t.digest) }}</td>
         <td>{{ m.status_badge(t.status) }}{% if t.serving %} <span class="badge">served for this tag</span>{% endif %}{% if t.block %} {{ m.advisory(t.block) }}{% endif %}</td>
         <td>{{ t.time|ts }} <span class="muted small">({{ t.clock }})</span></td>
-        <td>{% if t.status == "held" %}<span class="countdown">in {{ (t.until - now)|duration }}</span>{% elif t.status == "available" %}yes{% else %}—{% endif %}</td>
+        <td>{% if t.status == "held" %}<span class="countdown">in {{ (t.until - now)|duration }}</span>{{ fast_track_link(t.digest) }}{% elif t.status == "available" %}yes{% else %}—{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -66,9 +70,9 @@
     {% for v in versions %}
       <tr class="row-{{ v.status }}">
         <td>{{ m.ver(v.version) }}</td>
-        <td>{{ m.status_badge(v.status) }}{% if v.block %} {{ m.advisory(v.block) }}{% endif %}</td>
+        <td>{{ m.status_badge(v.status) }}{% if v.fast %} <span class="badge fast">fast-tracked</span>{% endif %}{% if v.block %} {{ m.advisory(v.block) }}{% endif %}</td>
         <td>{{ v.published|ts if v.published else "—" }}</td>
-        <td>{% if v.status == "held" %}<span class="countdown">in {{ (v.until - now)|duration }}</span>{% elif v.status == "available" %}yes{% else %}—{% endif %}</td>
+        <td>{% if v.status == "held" %}<span class="countdown">in {{ (v.until - now)|duration }}</span>{{ fast_track_link(v.version) }}{% elif v.status == "available" %}yes{% else %}—{% endif %}</td>
         <td class="num">{{ v.serves|num }}</td>
         <td class="num">{{ v.bytes|bytes }}</td>
         <td>{{ ago(v.last_served) if v.last_served else "—" }}</td>
@@ -96,6 +100,21 @@
     </table>
     {% else %}<p class="empty">No events for this package.</p>{% endif %}
   </section>
+  {% if fast_tracks %}
+  <section class="card">
+    <header class="card-head"><h2>Fast-tracks</h2><a href="/ui/fasttrack">All fast-tracks →</a></header>
+    <ul class="fast-list">
+    {% for f in fast_tracks %}
+      <li><span class="badge fast-{{ f.state }}">{{ {"pending": "requested", "active": "fast-tracked"}.get(f.state, f.state) }}</span> {{ m.ver(f.version) }}
+        <span class="muted small">{{ ago(f.requested_at) }}</span>
+        <div class="small"><b>{{ f.requester }}</b>: {{ f.request_message }}</div>
+        {% if f.decider and f.decided_by != f.requested_by %}<div class="small"><b>{{ f.decider }}</b> ({{ "approved" if f.state in ("active", "revoked") else f.state }}): {{ f.decision_message }}</div>{% endif %}
+        {% if f.revoker %}<div class="small"><b>{{ f.revoker }}</b> (revoked): {{ f.revoke_message }}</div>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   <section class="card">
     <header class="card-head"><h2>Threat-feed entries</h2></header>
     {% if blocks %}

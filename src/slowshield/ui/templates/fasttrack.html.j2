@@ -1,0 +1,68 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% macro what(f) -%}
+{{ m.eco(f.ecosystem) }} <a href="{{ package_href(f.ecosystem, f.package) }}"><code>{{ f.package }}</code></a> {{ m.ver(f.version) }}
+{%- endmacro %}
+{% macro said(who, text, label) -%}
+<div class="small"><b>{{ who }}</b>{% if label %} ({{ label }}){% endif %}: {{ text }}</div>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Fast-tracks</h1><p class="muted">Held-back versions released before their delay is up. An Admin fast-tracks a version with a reason; a User asks, and a second person approves. Advisories, operator blocks and tamper checks still apply to every fast-tracked version.</p></div>
+</div>
+{% if problem %}<div class="banners"><div class="banner warn" role="status">{{ problem }}</div></div>{% endif %}
+
+<section class="card">
+  <header class="card-head"><h2>Waiting for approval</h2></header>
+  {% if pending %}
+  <ul class="fast-list">
+  {% for f in pending %}
+    <li>{{ what(f) }} <span class="muted small">{{ ago(f.requested_at) }}</span>
+      {{ said(f.requester, f.request_message, "asked") }}
+      {% if not problem and f.requested_by != me.user_id %}
+      <form method="post" action="/ui/fasttrack/{{ f.id }}/approve" class="inline-form">
+        <input type="text" name="message" required minlength="3" maxlength="1000" placeholder="Your reason" aria-label="Your reason">
+        <button type="submit" class="button primary small">Approve</button>
+        <button type="submit" class="button small" formaction="/ui/fasttrack/{{ f.id }}/reject">Reject</button>
+      </form>
+      {% elif f.requested_by == me.user_id %}<div class="muted small">Someone else has to approve or reject your request.</div>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}<p class="empty">No requests waiting.</p>{% endif %}
+</section>
+
+<section class="card">
+  <header class="card-head"><h2>Fast-tracked</h2></header>
+  {% if active %}
+  <ul class="fast-list">
+  {% for f in active %}
+    <li>{{ what(f) }} <span class="muted small">{{ ago(f.decided_at) }}</span>
+      {{ said(f.requester, f.request_message, "asked" if f.decided_by != f.requested_by else "") }}
+      {% if f.decided_by != f.requested_by %}{{ said(f.decider, f.decision_message, "approved") }}{% endif %}
+      {% if not problem and me.can("admin") %}
+      <form method="post" action="/ui/fasttrack/{{ f.id }}/revoke" class="inline-form">
+        <input type="text" name="message" required minlength="3" maxlength="1000" placeholder="Why revoke?" aria-label="Why revoke?">
+        <button type="submit" class="button small">Revoke</button>
+      </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}<p class="empty">Nothing fast-tracked.</p>{% endif %}
+</section>
+
+{% if closed %}
+<section class="card">
+  <header class="card-head"><h2>Rejected and revoked</h2></header>
+  <ul class="fast-list">
+  {% for f in closed %}
+    <li><span class="badge">{{ f.state }}</span> {{ what(f) }}
+      {{ said(f.requester, f.request_message, "asked") }}
+      {% if f.state == "rejected" %}{{ said(f.decider, f.decision_message, "rejected") }}{% else %}{{ said(f.revoker, f.revoke_message, "revoked") }}{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

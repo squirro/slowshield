@@ -470,6 +470,8 @@ class LoadedConfig:
     _pkg_rules: dict[tuple[str, str], float] = field(default_factory=dict)
     _ver_rules: dict[tuple[str, str, str], float] = field(default_factory=dict)
     _networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = ()
+    # Versions fast-tracked in the UI (slowshield.fasttrack): no delay, whatever the rules say.
+    _fast: frozenset[tuple[str, str, str]] = frozenset()
 
     @property
     def db_path(self) -> Path:
@@ -490,7 +492,9 @@ class LoadedConfig:
         return self._networks
 
     def delay_days_for(self, ecosystem: str, name: str, version: str | None = None) -> float:
-        """Delay for a package (already normalised name). Version-specific rules win over package rules."""
+        """Delay for a package (already normalised name). A fast-track wins, then version rules, then package rules."""
+        if version is not None and self._fast and (ecosystem, name, version) in self._fast:
+            return 0.0
         if version is not None and self._ver_rules:
             v = self._ver_rules.get((ecosystem, name, version))
             if v is not None:
@@ -504,7 +508,10 @@ class LoadedConfig:
         return self.raw.fail_open if value is None else value
 
     def has_version_rules(self, ecosystem: str, name: str) -> bool:
-        return any(k[0] == ecosystem and k[1] == name for k in self._ver_rules)
+        return any(k[0] == ecosystem and k[1] == name for k in (*self._ver_rules, *self._fast))
+
+    def fast_tracked(self, ecosystem: str, name: str, version: str) -> bool:
+        return (ecosystem, name, version) in self._fast
 
     def npm_public_base(self, *, via_hostname: bool = False) -> str:
         """Base for npm tarball URLs: `upstreams.npm.public_url`, else `<public_url>/npm`. Only requests that
@@ -1212,6 +1219,7 @@ class ConfigHolder:
         self._generation = cfg.generation
         self._overlay: Callable[[LoadedConfig], LoadedConfig] | None = None
         self._overlay_key: object = None
+        self._fast: frozenset[tuple[str, str, str]] = frozenset()
 
     def set_overlay(self, key: object, overlay: Callable[[LoadedConfig], LoadedConfig] | None) -> bool:
         """Merge something into the local config (the shield wall leader's policy); `key` identifies it, so setting the
@@ -1223,10 +1231,18 @@ class ConfigHolder:
         self._swap()
         return True
 
+    def set_fast_tracks(self, keys: frozenset[tuple[str, str, str]]) -> bool:
+        """The versions fast-tracked in the UI, (ecosystem, package, version). Returns whether they changed."""
+        if keys == self._fast:
+            return False
+        self._fast = keys
+        self._swap()
+        return True
+
     def _swap(self) -> None:
         self._generation += 1
         merged = self.local if self._overlay is None else self._overlay(self.local)
-        self.current = dataclasses.replace(merged, generation=self._generation)
+        self.current = dataclasses.replace(merged, generation=self._generation, _fast=self._fast)
 
     @staticmethod
     def _file_stamp(path: Path | None) -> tuple[float, int] | None:

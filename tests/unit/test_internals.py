@@ -202,7 +202,7 @@ def test_split_sql() -> None:
 async def test_writer_isolates_failures(tmp_path: Path) -> None:
     path = tmp_path / "w.db"
     migrate(path)
-    assert migrate(path) == 9  # idempotent
+    assert migrate(path) == 10  # idempotent
     db = Database(path)
     db.open()
     try:
@@ -218,7 +218,7 @@ async def test_writer_isolates_failures(tmp_path: Path) -> None:
         assert db.meta("a") == "1" and db.meta("b") == "2" and db.meta("d") == "4" and db.meta("zz") is None
         assert db.writer.failures == 1 and db.writer.queue_depth == 0
         rows = await db.readers.aquery("SELECT count(*) FROM meta")
-        assert rows[0][0] == 5
+        assert rows[0][0] == 6  # blocklist_generation, fast_track_generation and the four written here
     finally:
         db.close()
     db.writer.stop()  # second stop is a no-op

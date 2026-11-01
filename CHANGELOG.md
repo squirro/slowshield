@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format is based on
   Keycloak, Okta, Entra ID and Google Workspace all support; tested end to end with Keycloak.
 - Users and Activity pages for Admins: who signed in, with which role and why; sign-ins, refused sign-ins, sign-outs
   and admin actions, with a CSV export. Admins can disable a user on an instance (their sessions end at once).
+- Fast-tracks: an Admin releases a held-back version before its delay is up, with a message saying why; a User
+  requests one with a message, and a second person (a User or an Admin) approves or rejects it with theirs. Versions
+  with an advisory or block, or seen tampered with, can't be fast-tracked, and blocks and tamper checks still apply
+  when a fast-tracked version is served. Admins can revoke a fast-track. Every step is in the Activity log.
 - With sign-in on, confirming a shield wall leader takes an Admin, and the Shield wall page shows who confirmed it.
 - `slowshield auth client-cert` creates the client key and prints the certificate to register at the IdP;
   `slowshield users list|disable|enable|logout-all`.

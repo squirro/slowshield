@@ -129,7 +129,15 @@ def test_unsafe_methods_rejected(stack: Stack) -> None:
         urllib.request.urlopen(req, context=stack.ssl_context(), timeout=10)
     assert exc.value.code == 405
     # The UI's few forms get through Caddy to SlowShield (sign-in is off here: it answers 404 itself).
-    for path in ("/ui/auth/logout", "/ui/users/1/disable", "/ui/users/1/enable"):
+    for path in (
+        "/ui/auth/logout",
+        "/ui/users/1/disable",
+        "/ui/users/1/enable",
+        "/ui/fasttrack",
+        "/ui/fasttrack/1/approve",
+        "/ui/fasttrack/1/reject",
+        "/ui/fasttrack/1/revoke",
+    ):
         req = urllib.request.Request(f"{stack.base}{path}", data=b"", method="POST")
         with pytest.raises(urllib.error.HTTPError) as exc:
             urllib.request.urlopen(req, context=stack.ssl_context(), timeout=10)

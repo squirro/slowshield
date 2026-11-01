@@ -182,6 +182,10 @@ class SlowShield:
         await asyncio.to_thread(ctx.db.open)
         await asyncio.to_thread(ctx.metadata_store.open)
         await sync_blocks(ctx)
+        from slowshield.fasttrack import Refresher
+
+        ctx.fast_tracks = Refresher(ctx)
+        await ctx.fast_tracks.refresh(force=True)
         await self._shieldwall_startup(ctx)
         for store in ctx.artifacts.stores.values():
             store.prepare()
@@ -384,6 +388,7 @@ class SlowShield:
                 if await asyncio.to_thread(ctx.config.maybe_reload):
                     ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
                     await sync_blocks(ctx)
+                await ctx.fast_tracks.refresh()  # made on another worker
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -669,6 +674,7 @@ _UI_PAGES = frozenset(
         "users",
         "activity",
         "activity.csv",
+        "fasttrack",
     }
 )
 _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (

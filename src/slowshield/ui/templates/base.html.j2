@@ -28,6 +28,7 @@
       ("/ui/", "Overview"), ("/ui/packages", "Packages"), ("/ui/leaderboards", "Leaderboards"),
       ("/ui/security", "Security"), ("/ui/blocklist", "Blocklist"), ("/ui/feeds", "Feeds"), ("/ui/setup", "Setup")] %}
     {% if shieldwall_role != "standalone" %}{% set nav = nav + [("/ui/shieldwall", "Shield wall")] %}{% endif %}
+    {% if auth_on and me.can("user") %}{% set nav = nav + [("/ui/fasttrack", "Fast-tracks")] %}{% endif %}
     {% if auth_on and me.can("admin") %}{% set nav = nav + [("/ui/users", "Users"), ("/ui/activity", "Activity")] %}{% endif %}
     {% for href, label in nav %}
       <a href="{{ href }}"{% if (href == "/ui/" and path == "/ui/") or (href != "/ui/" and path.startswith(href)) %} aria-current="page"{% endif %}>{{ label }}</a>

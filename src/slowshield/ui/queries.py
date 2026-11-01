@@ -609,6 +609,11 @@ AUDIT_ACTIONS = {
     "user_disabled": "User disabled",
     "user_enabled": "User enabled",
     "shieldwall_confirmed": "Shield wall leader confirmed",
+    "fasttrack_granted": "Fast-tracked",
+    "fasttrack_requested": "Fast-track requested",
+    "fasttrack_approved": "Fast-track approved",
+    "fasttrack_rejected": "Fast-track rejected",
+    "fasttrack_revoked": "Fast-track revoked",
 }
 
 

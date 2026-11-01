@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-from fakeupstream.oidc import CLIENT_SECRET
 
 from slowshield.auth import jose
 from slowshield.auth.web import LOGIN_COOKIE, SESSION_COOKIE
@@ -52,22 +51,6 @@ def _toml(value: Any) -> str:
     if isinstance(value, int | float):
         return str(value)
     return json.dumps(value)
-
-
-@pytest.fixture
-def secret_file(tmp_path: Path) -> Path:
-    path = tmp_path / "client_secret"
-    path.write_text(CLIENT_SECRET + "\n")
-    return path
-
-
-@pytest.fixture
-def start_auth(start_app: Callable[..., Any], upstream: Any, secret_file: Path) -> Callable[..., Any]:
-    async def start(**extra: Any) -> Running:
-        data_dir = extra.pop("data_dir", None)
-        return await start_app(auth_toml(upstream.url, secret_file, **extra), scheme="https", data_dir=data_dir)
-
-    return start
 
 
 def idp(run: Running, **settings: Any) -> None:

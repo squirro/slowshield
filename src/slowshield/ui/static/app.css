@@ -327,3 +327,15 @@ a.button.primary:hover { text-decoration: none; }
 .badge.role-admin { background: var(--primary-soft); color: var(--primary); }
 .badge.role-user { background: var(--surface-2); color: var(--text); }
 td form { margin: 0; }
+
+/* Fast-tracks */
+.fast-list { list-style: none; margin: 0; padding: 0; }
+.fast-list li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.fast-list li:last-child { border-bottom: 0; }
+.fast-list .small { margin-top: 4px; }
+.inline-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.inline-form input[type="text"] { flex: 1; min-width: 220px; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.stack textarea { width: 100%; font: inherit; }
+.badge.fast, .badge.fast-active { background: var(--primary-soft); color: var(--primary); }
+.badge.fast-pending { background: var(--surface-2); color: var(--text); }

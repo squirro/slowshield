@@ -36,6 +36,20 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_INSTANCE_NAME`, `SLOWSHIELD_INSTANCE_LOCATION`, `SLOWSHIELD_INSTANCE_LABELS` | `shieldwall.name`, `.location`, `.labels` | how a leader shows and filters this instance; labels as `env=prod,team=ml` |
 | `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` | `shieldwall.min_delay_days` | no delay from the leader goes lower (default 1) |
 | `SLOWSHIELD_SHIELDWALL_VIA_LEADER` | `shieldwall.via_leader` | fetch package files through the leader (default on) |
+| `SLOWSHIELD_SHIELDWALL_FAST_TRACKS` | `shieldwall.fast_tracks` | release the versions the leader fast-tracked, after the hour's hold-down (default on; [authentication.md](authentication.md#fast-tracks)) |
+| `SLOWSHIELD_AUTH` | `auth.mode` | `oidc` or `password` turns on UI sign-in ([authentication.md](authentication.md)); unset or `none`, the UI stays public and read-only. The package proxy never needs a sign-in |
+| `SLOWSHIELD_AUTH_USERNAME`, `SLOWSHIELD_AUTH_PASSWORD_HASH`, `SLOWSHIELD_AUTH_PASSWORD_HASH_FILE` | `auth.username`, `auth.password_hash` | password sign-in: the one Admin's username, and its scrypt hash ([how to make it](authentication.md#password-sign-in)) |
+| `SLOWSHIELD_UI_REQUIRE_LOGIN` | `auth.require_login` | no UI at all without signing in: anonymous visitors go straight to the IdP |
+| `SLOWSHIELD_UI_URLS` | `auth.ui_urls` | every URL the UI is reached at, comma-separated (default `public_url`); each gets its own redirect URI |
+| `SLOWSHIELD_AUTH_DEFAULT_ROLE` | `auth.default_role` | `viewer` (default) or `user`, for a signed-in person no rule maps |
+| `SLOWSHIELD_AUTH_ADMIN_EMAILS`, `SLOWSHIELD_AUTH_USER_EMAILS` | `auth.admin_emails`, `auth.user_emails` | addresses or `*@domain`, comma-separated; count only for a verified email |
+| `SLOWSHIELD_SESSION_HOURS`, `SLOWSHIELD_SESSION_RECHECK_MINUTES` | `auth.session_hours`, `auth.recheck_minutes` | session lifetime (12) and how often a session is checked with the IdP again (15) |
+| `SLOWSHIELD_OIDC_ISSUER`, `SLOWSHIELD_OIDC_CLIENT_ID` | `auth.oidc.issuer`, `.client_id` | the IdP (one tenant or realm) and this client |
+| `SLOWSHIELD_OIDC_CLIENT_KEY_FILE`, `SLOWSHIELD_OIDC_CLIENT_SECRET_FILE` | `auth.oidc.client_key_file`, `.client_secret_file` | exactly one: a private key for `private_key_jwt`, or a client secret |
+| `SLOWSHIELD_OIDC_PAR` | `auth.oidc.par` | `auto` (default: PAR when the IdP has it), `required`, `off` |
+| `SLOWSHIELD_OIDC_SCOPES` | `auth.oidc.scopes` | default `openid email profile` |
+| `SLOWSHIELD_OIDC_ROLES_CLAIM`, `SLOWSHIELD_OIDC_ADMIN_VALUES`, `SLOWSHIELD_OIDC_USER_VALUES` | `auth.oidc.roles_claim`, `.admin_values`, `.user_values` | a list-valued claim (dotted paths allowed) and the values that make an Admin or a User, comma-separated |
+| `SLOWSHIELD_OIDC_REQUIRE_CLAIMS` | `auth.oidc.require_claims` | `claim=value` rules every sign-in must meet, e.g. `hd=example.com` or `tid=<tenant>` |
 | `SLOWSHIELD_LEADER_CA_FILE` | `shieldwall.leader_ca_file` | a leader whose certificate a private CA signed |
 | `SLOWSHIELD_LOG_LEVEL`, `SLOWSHIELD_LOG_FORMAT` | — | `info`…; `json` (default in containers) or `text` |
 | `SLOWSHIELD_ACCESS_LOG` | — | `1` enables Granian access logs (Caddy already logs requests) |

@@ -257,6 +257,62 @@ async def test_loosening_waits_and_tightening_does_not(pair: Pair) -> None:
     assert p.follower.ctx.cfg.raw.default_delay_days == 1  # never below the floor
 
 
+async def test_fast_tracks_reach_followers_after_the_hold_down(pair: Pair) -> None:
+    p = pair
+    await _join(p)
+    key = ("npm", "left-pad-ng", "2.0.0")
+
+    async def leader_fast_track(state: str) -> None:
+        def op(c: Any) -> None:
+            c.execute("DELETE FROM fast_tracks")
+            c.execute(
+                "INSERT INTO fast_tracks (ecosystem, package, version, state, requester, requested_at, "
+                "request_message) VALUES (?, ?, ?, ?, 'Ada', ?, 'needed now')",
+                (*key, state, NOW),
+            )
+            c.execute("UPDATE meta SET value = value || 'x' WHERE key = 'fast_track_generation'")
+
+        await p.leader.ctx.db.writer.run(op)
+        await p.leader.ctx.fast_tracks.refresh()
+
+    await leader_fast_track("active")
+    assert p.leader.ctx.cfg.fast_tracked(*key)
+    await p.sync()
+    await runtime.refresh(p.follower.ctx)
+    assert not p.follower.ctx.cfg.fast_tracked(*key)  # a loosening: it waits an hour
+    assert p.follower.ctx.cfg.delay_days_for(*key) == 3
+    p.follower.clock.advance(3601)
+    await runtime.housekeeping(p.follower.ctx)
+    await runtime.refresh(p.follower.ctx)
+    assert p.follower.ctx.cfg.fast_tracked(*key)
+    assert p.follower.ctx.cfg.delay_days_for(*key) == 0  # the floor doesn't hold a fast-track back
+    page = await p.follower.client.get("/ui/packages/npm/left-pad-ng")
+    assert page.status_code == 200
+    await leader_fast_track("revoked")
+    await p.sync()
+    await runtime.refresh(p.follower.ctx)
+    assert not p.follower.ctx.cfg.fast_tracked(*key)  # tightening: at once
+
+
+async def test_a_follower_can_refuse_fast_tracks(pair: Pair, start: Any) -> None:
+    p = pair
+    await _join(p)
+    p.follower.ctx.config.local.raw.shieldwall.fast_tracks = False  # SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off
+    p.follower.ctx.config.set_overlay(None, None)
+    await p.leader.ctx.db.writer.run(
+        lambda c: c.execute(
+            "INSERT INTO fast_tracks (ecosystem, package, version, state, requester, requested_at, request_message) "
+            "VALUES ('npm', 'left-pad-ng', '2.0.0', 'active', 'Ada', ?, 'needed now')",
+            (NOW,),
+        )
+    )
+    await p.sync()
+    p.follower.clock.advance(3601)
+    await runtime.housekeeping(p.follower.ctx)
+    await runtime.refresh(p.follower.ctx)
+    assert not p.follower.ctx.cfg.fast_tracked("npm", "left-pad-ng", "2.0.0")
+
+
 async def test_blocks_come_down_and_lifting_waits(pair: Pair) -> None:
     p = pair
     await _join(p)

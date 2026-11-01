@@ -28,7 +28,7 @@ from slowshield.cache.artifacts import ArtifactCache
 from slowshield.cache.kv import KVStore
 from slowshield.cache.metadata import LRUCache
 from slowshield.clock import Clock, SystemClock
-from slowshield.config import BlockRule, ConfigHolder, LoadedConfig, keep_role, load
+from slowshield.config import BlockRule, ConfigError, ConfigHolder, LoadedConfig, keep_role, load
 from slowshield.context import AppContext
 from slowshield.db import Database
 from slowshield.ecosystems import normalize
@@ -182,6 +182,10 @@ class SlowShield:
         await asyncio.to_thread(ctx.db.open)
         await asyncio.to_thread(ctx.metadata_store.open)
         await sync_blocks(ctx)
+        from slowshield.fasttrack import Refresher
+
+        ctx.fast_tracks = Refresher(ctx)
+        await ctx.fast_tracks.refresh(force=True)
         await self._shieldwall_startup(ctx)
         for store in ctx.artifacts.stores.values():
             store.prepare()
@@ -199,6 +203,8 @@ class SlowShield:
         from slowshield.ui import UI
 
         ui = UI(ctx)
+        if self.cfg.raw.auth.enabled:
+            ctx.auth = await self._auth_startup(ctx, ui)
         self._scheduler = FeedScheduler(ctx, [OsvFeed(ctx), GithubFeed(ctx)])
         self._register_gauges(ctx, oci)
         self._handler = SecurityHeadersMiddleware(
@@ -241,6 +247,34 @@ class SlowShield:
                 "artifact_cache": self.cfg.raw.cache.artifacts_enabled,
             },
         )
+
+    async def _auth_startup(self, ctx: AppContext, ui: Any) -> Any:
+        from slowshield.auth.oidc import OidcError, Provider
+        from slowshield.auth.web import Auth
+
+        if self.cfg.raw.auth.mode == "password":
+            auth = self.cfg.raw.auth
+            log.info(
+                "UI sign-in with a password", extra={"username": auth.username, "require_login": auth.require_login}
+            )
+            from slowshield.auth.password import fingerprint
+
+            fp = fingerprint(auth.username or "", auth.password_hash or "")
+            if ended := await ctx.db.writer.run(partial(_new_password, fp=fp)):
+                log.warning("the password or username changed: %d earlier session(s) ended", ended)
+            return Auth(ctx, None, ui.render)
+
+        try:
+            provider = Provider(self.cfg.raw.auth, self.clock)
+        except OidcError as exc:
+            raise ConfigError(f"UI sign-in: {exc}") from exc
+        try:  # the IdP needn't be up: sign-in finds it on first use
+            await provider.metadata()
+        except OidcError as exc:
+            log.warning("UI sign-in: the IdP isn't reachable yet, trying again at the first sign-in: %s", exc)
+        log.info("UI sign-in", extra={"issuer": provider.issuer, "client_auth": provider.client_auth_method,
+                                      "require_login": self.cfg.raw.auth.require_login})  # fmt: skip
+        return Auth(ctx, provider, ui.render)
 
     async def _shieldwall_startup(self, ctx: AppContext) -> None:
         sw = self.cfg.raw.shieldwall
@@ -291,6 +325,8 @@ class SlowShield:
             await self.ctx.upstream.close()
             if self.ctx.artifacts.via is not None:
                 await self.ctx.artifacts.via.transport.close()
+            if self.ctx.auth is not None:
+                await self.ctx.auth.close()
             await asyncio.to_thread(self.ctx.db.close)
             self.ctx.metadata_store.close()
         self._leader.release()
@@ -345,6 +381,15 @@ class SlowShield:
             ],
         )
         instruments.observe("slowshield.leader", lambda: [(1 if ctx.is_leader else 0, {})])
+        if ctx.auth is not None:
+            from slowshield.auth.store import active_sessions
+
+            instruments.observe(
+                "slowshield.auth.sessions.active",
+                lambda: [(active_sessions(ctx.db.readers.get(), ctx.clock.now()), {})],
+                unit="{session}",
+                description="Signed-in UI sessions that haven't expired.",
+            )
         if oci is not None:
             instruments.observe("slowshield.oci.ratelimit.remaining", oci.client.remaining, unit="{request}")
 
@@ -355,6 +400,7 @@ class SlowShield:
                 if await asyncio.to_thread(ctx.config.maybe_reload):
                     ctx.recorder.record_client_ip = ctx.cfg.raw.record_client_ip
                     await sync_blocks(ctx)
+                await ctx.fast_tracks.refresh()  # made on another worker
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -415,6 +461,12 @@ class SlowShield:
                         )
                     )
                     await ctx.db.writer.run(partial(wall.retention, now=now))
+                    from slowshield.auth.store import retention as auth_retention
+
+                    await ctx.db.writer.run(
+                        partial(auth_retention, now=now, audit_days=raw.event_retention_days,
+                                ip_days=raw.client_ip_retention_days)
+                    )  # fmt: skip
                 if raw.shieldwall.role == "follower":
                     await wall.housekeeping(ctx)
                 if now - last_scrub > raw.cache.scrub_interval_hours * 3600:
@@ -482,6 +534,8 @@ class SlowShield:
                 )
             )
         main.append(Mount("/ui/static", app=StaticFiles(directory=STATIC_DIR), name="static"))
+        if ctx.auth is not None:
+            main.extend(ctx.auth.routes())
         main.extend(ui.routes())
         # Deprecated, removed in 0.1: the old asset path, and the root PyPI alias from the Rust version
         # (single-host deployments only).
@@ -489,7 +543,9 @@ class SlowShield:
         root_alias = pypi is not None and not raw.upstreams.pypi.hostnames and not raw.upstreams.npm.hostnames
         if root_alias and pypi is not None:
             main.extend(pypi.routes())
-        main_router = Router(main, redirect_slashes=False)
+        main_router: ASGIApp = Router(main, redirect_slashes=False)
+        if ctx.auth is not None:
+            main_router = ctx.auth.gate(main_router)  # /ui/ only: the proxy never needs a sign-in
         self.root_routes = tuple(main)
 
         # Deprecated, removed in 0.1: per-ecosystem hostnames (host routing). New ecosystems never get one.
@@ -556,6 +612,23 @@ class SlowShield:
                 return
 
 
+def _new_password(conn: Any, fp: str) -> int:
+    """Password sign-in: sessions from before a new password or username end, whoever held them."""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'password_fingerprint'").fetchone()
+    if row is not None and row[0] == fp:
+        return 0
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('password_fingerprint', ?) "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        (fp,),
+    )
+    if row is None:
+        return 0
+    return conn.execute(
+        "DELETE FROM ui_sessions WHERE user_id IN (SELECT id FROM users WHERE provider = 'password')"
+    ).rowcount
+
+
 def _host(scope: Scope) -> str:
     """Host header without the port, lower-cased (IPv6 literals keep their brackets)."""
     for k, v in scope.get("headers", ()):
@@ -617,7 +690,21 @@ async def _traced(app: ASGIApp, scope: Scope, receive: Receive, send: Send) -> N
 
 
 _UI_PAGES = frozenset(
-    {"packages", "partials", "leaderboards", "security", "security.csv", "blocklist", "feeds", "setup", "about"}
+    {
+        "packages",
+        "partials",
+        "leaderboards",
+        "security",
+        "security.csv",
+        "blocklist",
+        "feeds",
+        "setup",
+        "about",
+        "users",
+        "activity",
+        "activity.csv",
+        "fasttrack",
+    }
 )
 _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/pypi/simple/", "/pypi/simple/{project}/"),
@@ -627,6 +714,7 @@ _ROUTE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("/npm/-/", "/npm/-/{endpoint}"),
     ("/go/sumdb/", "/go/sumdb/{endpoint}"),
     ("/ui/static/", "/ui/static/{asset}"),
+    ("/ui/auth/", "/ui/auth/{step}"),
     ("/static/", "/static/{asset}"),
     ("/ui/", "/ui/{page}"),
     ("/_shieldwall/", "/_shieldwall/{endpoint}"),

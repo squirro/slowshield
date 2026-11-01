@@ -11,10 +11,10 @@ import math
 import os
 import re
 from datetime import UTC, datetime
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import msgspec
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -25,6 +25,8 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
+from slowshield import fasttrack as F
+from slowshield.auth.web import principal
 from slowshield.blocklist import PackageBlocks
 from slowshield.config import LoadedConfig
 from slowshield.context import AppContext
@@ -35,7 +37,7 @@ from slowshield.ui import expect as X
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
-from slowshield.web import is_loopback_host, local_http_origin, request_scheme
+from slowshield.web import client_ip, is_loopback_host, local_http_origin, request_scheme
 
 log = logging.getLogger(__name__)
 
@@ -198,6 +200,14 @@ class UI:
             Route("/ui/shieldwall", self.shieldwall),
             Route("/ui/shieldwall/join", self.shieldwall_join, methods=["POST"]),
             Route("/ui/about", self.about),
+            Route("/ui/users", self.users),
+            Route("/ui/users/{user_id:int}/{action}", self.user_action, methods=["POST"]),
+            Route("/ui/activity", self.activity),
+            Route("/ui/fasttrack", self.fast_tracks),
+            Route("/ui/fasttrack", self.fast_track_create, methods=["POST"]),
+            Route("/ui/fasttrack/new", self.fast_track_new),
+            Route("/ui/fasttrack/{track_id:int}/{action}", self.fast_track_decide, methods=["POST"]),
+            Route("/ui/activity.csv", self.activity_csv),
             Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
 
@@ -227,10 +237,35 @@ class UI:
             "shieldwall_role": cfg.raw.shieldwall.role,
             "shieldwall_join": self._shieldwall_join_pending(),
             "instance_names": self._instance_names(),
+            "auth_on": self.ctx.auth is not None,
+            "me": principal(request),
+            "login_url": self._login_link(request),
         }
         base.update(context)
         html = tpl.render(base)
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    render = _render  # for slowshield.auth.web's pages
+
+    def _login_link(self, request: Request) -> str:
+        if self.ctx.auth is None:
+            return ""
+        path = request.url.path
+        target = path if path.startswith("/ui") and not path.startswith("/ui/auth/") else "/ui/"
+        query = f"?{request.url.query}" if request.url.query and target == path else ""
+        return self.ctx.auth.login_url(target + query)
+
+    def _allowed(self, request: Request, role: str) -> bool:
+        """Without sign-in everything stays as it was (the UI is read-only); with it, the role decides."""
+        return self.ctx.auth is None or principal(request).can(role)
+
+    def _forbidden(self, request: Request) -> Response:
+        me = principal(request)
+        message = "This page is for administrators." if me.signed_in else "Sign in to see this page."
+        resp = self._render("auth.html.j2", request, title="Not allowed", heading="Not allowed", message=message,
+                            retry=None if me.signed_in else self._login_link(request))  # fmt: skip
+        resp.status_code = 403
+        return resp
 
     def _shieldwall_join_pending(self) -> dict[str, Any] | None:
         """A follower waiting for the operator to confirm its leader (the banner on every page)."""
@@ -390,6 +425,7 @@ class UI:
                 "events": Q.package_events(conn, eco, name, 50),
                 "blocks": Q.package_blocks(conn, eco, name),
                 "tags": Q.oci_tags(conn, name) if eco == "oci" else [],
+                "fast_tracks": F.for_package(conn, eco, name),
             }
 
         data = await self._q(collect)
@@ -412,7 +448,9 @@ class UI:
                 status, until = "yanked", None
             else:
                 status, until = "available", None
-            versions.append({**dict(v), "status": status, "until": until, "delay": delay, "block": block})
+            fast = cfg.fast_tracked(eco, name, v["version"]) and status == "available"
+            versions.append({**dict(v), "status": status, "until": until, "delay": delay, "block": block,
+                             "fast": fast})  # fmt: skip
         buckets = w.buckets()
         chart = svg.stacked_bars(
             buckets,
@@ -443,7 +481,168 @@ class UI:
             upstream_url=info.page_url(name),
             upstream_site=info.registry_site,
             w=w,
+            fast_tracks=data["fast_tracks"],
+            pending={r["version"] for r in data["fast_tracks"] if r["state"] == "pending"},
+            can_fast_track=self._fast_track_problem(request) is None,
         )
+
+    # ---- fast-tracks ---------------------------------------------------------------------------------
+
+    def _fast_track_problem(self, request: Request) -> str | None:
+        """Why this person can't fast-track here, or None. It takes sign-in, and a User or an Admin."""
+        if self.ctx.auth is None:
+            return "Fast-tracks need UI sign-in (docs/authentication.md)."
+        if self.ctx.cfg.raw.shieldwall.role == "follower":
+            return (
+                "This instance follows a shield wall leader: fast-tracks are made on the leader, and apply here an "
+                "hour later."
+            )
+        if not principal(request).can("user"):
+            return "Fast-tracks are for Users and Admins." if principal(request).signed_in else "Sign in first."
+        return None
+
+    async def _held_problem(self, eco: str, name: str, version: str) -> str | None:
+        """Why this version can't be fast-tracked, or None: it must be held back by its delay alone, with no advisory
+        or block and no tampering seen."""
+        cfg = self.ctx.cfg
+        blocks = self.ctx.blocklist.for_package(eco, name)
+        now = self.ctx.clock.now()
+        if blocks.package_block is not None or blocks.match(eco, version) is not None:
+            return "This version is blocked by an advisory or an operator block; a fast-track can't release it."
+
+        def collect(conn: Any) -> Any:
+            if F.tampered(conn, eco, name, version):
+                return "tampered"
+            if eco == "oci":
+                return Q.oci_tags(conn, name)
+            return conn.execute(
+                "SELECT published FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
+                (eco, name, version),
+            ).fetchone()
+
+        found = await self._q(collect)
+        if found == "tampered":
+            return "This version was detected as tampered; a fast-track can't release it."
+        if eco == "oci":
+            held = [t for t in _oci_tags(found, name, cfg, blocks, now) if t["digest"] == version]
+            if not held:
+                return "SlowShield hasn't seen this image digest."
+            return None if any(t["status"] == "held" for t in held) else "This digest isn't held back."
+        if found is None:
+            return "SlowShield hasn't seen this version."
+        published = found[0]
+        if published is None:
+            return "SlowShield doesn't know when this version was published."
+        if now - published >= cfg.delay_days_for(eco, name, version) * DAY:
+            return "This version isn't held back."
+        return None
+
+    def _blocklist_generation(self) -> str:
+        """The blocklist as of now, so the write that grants a fast-track can tell whether it changed in between."""
+        self.ctx.blocklist.refresh_generation(force=True)
+        return self.ctx.blocklist.generation
+
+    def _fast_track_refused(self, request: Request, message: str, back: str) -> Response:
+        resp = self._render("auth.html.j2", request, title="Fast-track", heading="Can't fast-track", message=message,
+                            retry=back, retry_label="Back")  # fmt: skip
+        resp.status_code = 400
+        return resp
+
+    @staticmethod
+    def _package_href(eco: str, name: str) -> str:
+        return f"/ui/packages/{eco}/{quote(name, safe='/@:')}"
+
+    async def fast_tracks(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+        if not principal(request).can("user"):  # who asked for what, and why: not for anonymous visitors
+            return self._forbidden(request)
+
+        def collect(conn: Any) -> dict[str, Any]:
+            return {"pending": F.listing(conn, ("pending",)), "active": F.listing(conn, ("active",)),
+                    "closed": F.listing(conn, ("rejected", "revoked"), limit=50)}  # fmt: skip
+
+        data = await self._q(collect)
+        problem = self._fast_track_problem(request)
+        cfg = self.ctx.cfg
+        from_leader = cfg.fast_track_keys() if cfg.raw.shieldwall.role == "follower" else []
+        return self._render("fasttrack.html.j2", request, title="Fast-tracks", problem=problem, from_leader=from_leader,
+                            package_href=self._package_href, **data)  # fmt: skip
+
+    async def fast_track_new(self, request: Request) -> Response:
+        eco = request.query_params.get("eco", "")
+        name = (request.query_params.get("name") or "")[:300]
+        version = (request.query_params.get("version") or "")[:300]
+        back = self._package_href(eco, name) if eco in ECOSYSTEMS else "/ui/fasttrack"
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, back)
+        if eco not in ECOSYSTEMS or (problem := await self._held_problem(eco, name, version)):
+            return self._fast_track_refused(request, problem or "Unknown ecosystem.", back)
+        return self._render("fasttrack_new.html.j2", request, title="Fast-track", eco=eco, name=name, version=version,
+                            back=back, grant=principal(request).can("admin"))  # fmt: skip
+
+    async def fast_track_create(self, request: Request) -> Response:
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        form = parse_qs((await request.body())[:8192].decode("utf-8", "replace"))
+        eco, name, version = ((form.get(k) or [""])[0][:300] for k in ("eco", "name", "version"))
+        back = self._package_href(eco, name) if eco in ECOSYSTEMS else "/ui/fasttrack"
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, back)
+        gen = self._blocklist_generation()
+        if eco not in ECOSYSTEMS or (problem := await self._held_problem(eco, name, version)):
+            return self._fast_track_refused(request, problem or "Unknown ecosystem.", back)
+        try:
+            text = F.message((form.get("message") or [""])[0])
+            me, now, ip = principal(request), self.ctx.clock.now(), self._client_ip(request)
+            change = await self.ctx.db.writer.run(
+                partial(F.create, eco=eco, name=name, version=version, who=me, text=text, now=now, client_ip=ip,
+                        blocklist_generation=gen)
+            )  # fmt: skip
+        except F.FastTrackError as exc:
+            return self._fast_track_refused(request, str(exc), back)
+        what = "granted" if change.state == "active" else "requested"
+        log.info(f"fast-track {what}", extra={"user_id": me.user_id, "ecosystem": eco, "package": name,
+                                              "version": version})  # fmt: skip
+        await self.ctx.fast_tracks.refresh()
+        return RedirectResponse(back, status_code=303)
+
+    async def fast_track_decide(self, request: Request) -> Response:
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if problem := self._fast_track_problem(request):
+            return self._fast_track_refused(request, problem, "/ui/fasttrack")
+        action = request.path_params["action"]
+        if action not in ("approve", "reject", "revoke"):
+            return PlainTextResponse("not found", status_code=404)
+        form = parse_qs((await request.body())[:8192].decode("utf-8", "replace"))
+        me, now, ip = principal(request), self.ctx.clock.now(), self._client_ip(request)
+        track_id = int(request.path_params["track_id"])
+        try:
+            text = F.message((form.get("message") or [""])[0])
+            gen = self._blocklist_generation()
+            if action == "approve":  # still held, and still clean: an advisory may have come in since
+                sql = "SELECT ecosystem, package, version FROM fast_tracks WHERE id = ?"
+                row = await self._q(lambda c: c.execute(sql, (track_id,)).fetchone())
+                if row is not None and (problem := await self._held_problem(row[0], row[1], row[2])):
+                    raise F.FastTrackError(problem)
+            await self.ctx.db.writer.run(
+                partial(
+                    F.decide,
+                    track_id=track_id,
+                    action=action,
+                    who=me,
+                    text=text,
+                    now=now,
+                    client_ip=ip,
+                    blocklist_generation=gen,
+                )
+            )
+        except F.FastTrackError as exc:
+            return self._fast_track_refused(request, str(exc), "/ui/fasttrack")
+        log.info(f"fast-track {action}", extra={"user_id": me.user_id, "fast_track": track_id})
+        await self.ctx.fast_tracks.refresh()
+        return RedirectResponse("/ui/fasttrack", status_code=303)
 
     # ---- leaderboards -----------------------------------------------------------------------------
 
@@ -626,25 +825,126 @@ class UI:
 
     async def shieldwall_join(self, request: Request) -> Response:
         """The operator confirms the leader the join string names: the only thing this page can change. It can't
-        pick another leader, leave, or lower anything."""
+        pick another leader, leave, or lower anything. With sign-in on, only an Admin can, and it records who."""
         if self.ctx.cfg.raw.shieldwall.role != "follower":
             return PlainTextResponse("not a shield wall follower", status_code=404)
-        if not _same_origin(request, self.ctx.cfg.trusted_networks):
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
             return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
         body = await request.body()
         form = parse_qs(body[:4096].decode("latin-1"))
         leader_id = (form.get("leader") or [""])[0]
+        me = principal(request)
+        by = f"user:{me.user_id}" if me.signed_in else "ui"
+        now = self.ctx.clock.now()
 
         def op(conn: Any) -> int:
-            return conn.execute(
-                "UPDATE shieldwall_leader SET confirmed_by = 'ui' WHERE id = 1 AND state = 'pending' "
+            n = conn.execute(
+                "UPDATE shieldwall_leader SET confirmed_by = ? WHERE id = 1 AND state = 'pending' "
                 "AND confirmed_by IS NULL AND leader_id = ?",
-                (leader_id,),
+                (by, leader_id),
             ).rowcount
+            if n and me.signed_in:
+                from slowshield.auth.store import audit
+
+                audit(conn, now=now, action="shieldwall_confirmed", principal=me, target=leader_id,
+                      client_ip=self._client_ip(request))  # fmt: skip
+            return n
 
         if await self.ctx.db.writer.run(op):
-            log.info("shield wall leader confirmed in the UI", extra={"leader": leader_id})
+            log.info("shield wall leader confirmed in the UI", extra={"leader": leader_id, "user_id": me.user_id})
         return RedirectResponse("/ui/shieldwall", status_code=303)
+
+    def _client_ip(self, request: Request) -> str | None:
+        cfg = self.ctx.cfg
+        return client_ip(request.scope, cfg.trusted_networks) if cfg.raw.record_client_ip else None
+
+    # ---- users and activity (sign-in on, admins only) ----------------------------------------------------------------
+
+    async def users(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        rows = await self._q(Q.users, self.ctx.clock.now())
+        return self._render("users.html.j2", request, title="Users", rows=rows)
+
+    async def user_action(self, request: Request) -> Response:
+        """An admin disables (at once: sessions dropped) or enables a user on this instance."""
+        if self.ctx.auth is None:
+            return PlainTextResponse("not found", status_code=404)
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        action = request.path_params["action"]
+        if action not in ("disable", "enable"):
+            return PlainTextResponse("not found", status_code=404)
+        user_id = int(request.path_params["user_id"])
+        me = principal(request)
+        if action == "disable" and user_id == me.user_id:
+            return PlainTextResponse("refused: you can't disable yourself", status_code=409)
+        now = self.ctx.clock.now()
+        ip = self._client_ip(request)
+
+        def op(conn: Any) -> bool:
+            from slowshield.auth.store import audit, set_disabled
+
+            changed = set_disabled(conn, user_id, action == "disable", now)
+            if changed:
+                target = conn.execute("SELECT coalesce(email, name, id) FROM users WHERE id = ?", (user_id,)).fetchone()
+                audit(conn, now=now, action=f"user_{action}d", principal=me, client_ip=ip,
+                      target=str(target[0]) if target else str(user_id))  # fmt: skip
+            return changed
+
+        if await self.ctx.db.writer.run(op):
+            log.info(f"user {action}d in the UI", extra={"user_id": me.user_id, "target": user_id})
+        return RedirectResponse("/ui/users", status_code=303)
+
+    async def activity(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        w = Q.window(request.query_params.get("range") or "30d", self.ctx.clock.now())
+        action = (request.query_params.get("action") or "").strip()[:40] or None
+        page = self._page(request)
+        rows = await self._q(Q.audit_page, w, action=action, page=page)
+        dec = msgspec.json.Decoder()
+        out = []
+        for r in rows[:50]:
+            try:
+                details = dec.decode(r["details"]) if r["details"] else {}
+            except msgspec.DecodeError:
+                details = {}
+            out.append({**dict(r), "details": details})
+        return self._render("activity.html.j2", request, title="Activity", rows=out, has_next=len(rows) > 50,
+                            page=page, action=action, actions=Q.AUDIT_ACTIONS, w=w, range=w.key)  # fmt: skip
+
+    async def activity_csv(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return PlainTextResponse("not found", status_code=404)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        w = Q.window(request.query_params.get("range") or "30d", self.ctx.clock.now())
+        rows = await self._q(Q.audit_page, w, per_page=50_000)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["time_utc", "action", "user", "target", "client_ip", "details", "instance"])
+        for r in rows:
+            writer.writerow([
+                fmt_ts(r["ts"]), r["action"], _csv_safe(r["actor"] or ""), _csv_safe(r["target"] or ""),
+                r["client_ip"] or "", _csv_safe(r["details"] or ""), _csv_safe(r["instance"]),
+            ])  # fmt: skip
+        return Response(
+            buf.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="slowshield-activity.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     # ---- static-ish pages -------------------------------------------------------------------------
 
@@ -785,7 +1085,7 @@ def _client_os(request: Request) -> str:
     return ""
 
 
-def _same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
+def same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
     """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site, scheme
     included (behind Caddy, the scheme the browser used comes from X-Forwarded-Proto). Our `Referrer-Policy:
     no-referrer` makes browsers send `Origin: null` on a form POST, so then only `Sec-Fetch-Site` can vouch."""

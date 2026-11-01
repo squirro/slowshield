@@ -101,10 +101,14 @@
       <dt>URL</dt><dd><code>{{ leader.url }}</code></dd>
       <dt>Fingerprint</dt><dd><code>{{ leader.fingerprint }}</code></dd>
     </dl>
+    {% if not auth_on or me.can("admin") %}
     <form method="post" action="/ui/shieldwall/join" class="actions">
       <input type="hidden" name="leader" value="{{ leader.leader_id }}">
       <button type="submit" class="button primary">Join</button>
     </form>
+    {% else %}
+    <p class="actions muted">An administrator confirms the leader{% if not me.signed_in %}: <a href="{{ login_url }}">sign in</a>{% endif %}.</p>
+    {% endif %}
     <p class="muted small">Joining sends this instance's statistics and events (with client IPs, unless it doesn't record them) to the leader, and applies the leader's policy: stricter settings at once, looser ones after an hour, never below {{ days(cfg.shieldwall.min_delay_days) }}.</p>
   </section>
   {% else %}
@@ -115,6 +119,7 @@
       <dt>URL</dt><dd><code>{{ leader.url }}</code></dd>
       <dt>Fingerprint</dt><dd><code>{{ leader.fingerprint }}</code></dd>
       {% if leader.paired %}<dt>Joined</dt><dd>{{ ago(leader.paired) }}</dd>{% endif %}
+      {% if confirmed_by %}<dt>Confirmed</dt><dd>{{ confirmed_by }}</dd>{% endif %}
       <dt>Last sync</dt><dd{% if sync_age and sync_age > 300 %} class="warn-text"{% endif %}>{{ ago(leader.last_sync) }}</dd>
       <dt>Reports queued</dt><dd>{{ outbox[0]|num }}{% if outbox[1] %} <span class="muted small">(oldest {{ ago(outbox[1]) }})</span>{% endif %}</dd>
       <dt>Blocks from the leader</dt><dd>{{ leader_blocks|num }}</dd>

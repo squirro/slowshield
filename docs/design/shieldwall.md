@@ -137,7 +137,7 @@ version, one follower could have made it too large for the others to send back o
 | Class | Applied | Examples |
 |---|---|---|
 | **Tightens** | at once | new blocks, a stricter delay or exception, `fail_open` off, `enforce_age_on_download` on, takedowns, tamper flags |
-| **Loosens** | bounded: the floor, a hold-down, the late-news rule | a lower delay, a new or shorter exception, `fail_open` on, a block lifted, an earlier observation time |
+| **Loosens** | bounded: the floor, a hold-down, the late-news rule | a lower delay, a new or shorter exception, a fast-track, `fail_open` on, a block lifted, an earlier observation time |
 | **Never** | not in the protocol | upstream URLs, mirrors, registries, tokens, caches, listeners, `public_url`, trusted proxies, client IP settings, the follower's own shield wall settings and floor, clearing a tamper flag |
 
 The last class matters most. A leader that could change a follower's upstream could send it to a malicious mirror
@@ -146,7 +146,7 @@ whose metadata and bytes agree with each other; then every check passes.
 ### Policy
 
 The leader sends a bundle (`default_delay_days`, `fail_open`, per-ecosystem `fail_open`, `enforce_age_on_download`,
-`exceptions`) with a version that grows whenever its content changes. The follower ignores a bundle no newer than
+`exceptions`, and the versions fast-tracked in its UI, `fast_tracks`) with a version that grows whenever its content changes. The follower ignores a bundle no newer than
 the last one it took (rollback protection). A leader restored from a backup sees the higher version its followers
 report and moves past it. A new version is the current Unix time, or one past the last if that is later: what a
 follower reports only makes the leader move on, never sets the number.
@@ -158,6 +158,10 @@ The follower's effective policy (`shieldwall/policy.py`):
   is on only if both sides allow it; the download check is on if either side wants it.
 - **The floor:** no delay from the leader goes below `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` (1 day), exceptions for
   single versions included. A leader that is taken over can't release a package early everywhere with one exception.
+- **Fast-tracks** (docs/authentication.md) are the exception to the floor: each is one version an Admin, or a User
+  and a second person, released in the leader's UI with a reason, and a follower releases it too, after the hold-down.
+  A follower that shouldn't trust its leader that far sets `SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off`. Blocks and
+  tamper checks still apply to a fast-tracked version.
 - **The follower's own exceptions keep their authority** over the leader's default delay; a stricter rule from the
   leader for the same package still applies.
 - **A looser bundle waits an hour.** Until then the stricter of the old and the new applies, and the Shield wall page
@@ -307,6 +311,7 @@ leader comes back, the outbox drains and changes arrive under the late-news rule
 | `SLOWSHIELD_INSTANCE_LABELS` | `shieldwall.labels` | | `env=prod,team=ml` |
 | `SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS` | `shieldwall.min_delay_days` | `1` | the follower's floor |
 | `SLOWSHIELD_SHIELDWALL_VIA_LEADER` | `shieldwall.via_leader` | `true` | package files through the leader |
+| `SLOWSHIELD_SHIELDWALL_FAST_TRACKS` | `shieldwall.fast_tracks` | `true` | release the versions the leader fast-tracked |
 | `SLOWSHIELD_LEADER_CA_FILE` | `shieldwall.leader_ca_file` | | a leader whose certificate a private CA signed |
 
 Shield wall settings need a restart. The Helm chart has a `shieldwall` section (`role`, `joinSecret`, `name`,
@@ -317,7 +322,7 @@ Shield wall settings need a restart. The Helm chart has a `shieldwall` section (
 
 | Threat | Mitigation | What remains |
 |---|---|---|
-| A leader that is taken over | the floor; the hour's wait and the page that shows it; blocks are a union with the follower's own feeds; the late-news rule; evidence direct and every byte checked; the "never" class | after an hour it can lower delays to the floor; it can backdate observations by about one sync (a day after an outage); after a day it can lift GitHub-only blocks on followers without a token; it can deny service with bogus blocks or tamper flags, and stop syncing (the page shows the sync age) |
+| A leader that is taken over | the floor; the hour's wait and the page that shows it (fast-tracks too; `SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off` refuses them); blocks are a union with the follower's own feeds; the late-news rule; evidence direct and every byte checked; the "never" class | after an hour it can lower delays to the floor, and release single versions at once with fast-tracks unless the follower refuses them; it can backdate observations by about one sync (a day after an outage); after a day it can lift GitHub-only blocks on followers without a token; it can deny service with bogus blocks or tamper flags, and stop syncing (the page shows the sync age) |
 | A leader taken over before a follower pairs | none beyond the floor: pairing trusts the leader's past | planted history is accepted; said so on this page |
 | A follower that is taken over | everything is attributed to it; its fingerprints are checked against the leader's own record and refuse files on that follower only (see "The rule for a follower's fingerprint"); the leader fetches only from its own upstream hosts; `wall remove` | polluted statistics until removed; `integrity_mismatch` noise on the leader's timeline for files the leader never served; it sees the policy and blocklist; it could fetch too-new files through the leader, as it could directly |
 | Someone with the join string | single use, 10 minutes; bound to the follower's key; the follower checks the leader's key hash | whoever uses it first joins; the operator sees every follower on the leader |

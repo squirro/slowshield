@@ -35,6 +35,8 @@ class AppContext:
     feeds: dict[str, FeedStatus] = field(default_factory=dict)
     is_leader: bool = False
     started_at: float = 0.0
+    auth: Any = None  # slowshield.auth.web.Auth when UI sign-in is on
+    fast_tracks: Any = None  # slowshield.fasttrack.Refresher: this worker's view of the active fast-tracks
 
     @property
     def cfg(self) -> LoadedConfig:

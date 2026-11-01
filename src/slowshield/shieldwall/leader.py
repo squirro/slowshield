@@ -100,6 +100,9 @@ def current_policy(conn: Any, cfg: LoadedConfig, now: float, *, seen: int = 0) -
     only triggers a bump and never sets the number, so no follower can push the version towards the bound every
     follower's report is held to (wire.MAX_SEQ), and a restored leader still moves past its followers at once."""
     body = policy_body(cfg)
+    from slowshield.fasttrack import active
+
+    body["fast_tracks"] = [list(key) for key in sorted(active(conn))]  # decided in this leader's UI
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
     row = conn.execute("SELECT value FROM meta WHERE key = 'shieldwall_policy'").fetchone()
     state: dict[str, Any] = json.loads(row[0]) if row else {"version": 0, "digest": ""}

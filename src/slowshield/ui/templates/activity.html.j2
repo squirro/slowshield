@@ -1,0 +1,37 @@
+{% extends "base.html.j2" %}
+{% import "macros.html.j2" as m with context %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Activity</h1><p class="muted">Sign-ins, refused sign-ins, sign-outs, sessions the identity provider ended, and what administrators changed.</p></div>
+  <div class="controls">{{ m.range_picker(range, "/ui/activity", {"action": action}) }}
+    <a class="button" href="/ui/activity.csv{{ qs({'range': range}) }}">Export CSV</a></div>
+</div>
+<div class="chips" role="group" aria-label="Action">
+  <a href="/ui/activity{{ qs({'range': range}) }}"{% if not action %} aria-current="true"{% endif %}>All</a>
+  {% for a, label in actions.items() %}
+  <a href="/ui/activity{{ qs({'range': range, 'action': a}) }}"{% if action == a %} aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</div>
+<section class="card">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>When</th><th>What</th><th>Who</th><th>Target</th><th>Client</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for e in rows %}
+      <tr>
+        <td title="{{ e.ts|ts }}">{{ ago(e.ts) }}</td>
+        <td>{{ actions.get(e.action, e.action) }}</td>
+        <td>{{ e.actor or "—" }}</td>
+        <td>{{ e.target or "—" }}</td>
+        <td>{{ e.client_ip or "—" }}</td>
+        <td class="details small">{% for k, v in e.details.items() %}<span class="muted">{{ k }}</span> {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ m.pager(page, has_next, "/ui/activity", {"range": range, "action": action}) }}
+  {% else %}<p class="empty">Nothing in this period.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html.j2" %}
+{% block head_extra %}<meta http-equiv="refresh" content="0;url={{ url }}">{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Signing out…</h1>
+  <p class="muted">You have signed out of SlowShield. Signing out at your identity provider too.</p>
+  <p><a class="button" href="{{ url }}">Continue</a></p>
+</div></div>
+{% endblock %}

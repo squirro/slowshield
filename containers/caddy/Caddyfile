@@ -52,7 +52,8 @@
 	}
 
 	# Only GET/HEAD, plus POST for `npm audit` (forwarded to the registry by SlowShield), for a shield wall leader's
-	# API (its followers report there) and for the Join button on a follower's Shield wall page.
+	# API (its followers report there), for the Join button on a follower's Shield wall page, and, with UI sign-in,
+	# for signing in with a password and out, an Admin disabling or enabling a user, and fast-tracks.
 	@audit {
 		method POST
 		path_regexp audit ^(/npm)?/-/npm/v1/security/(advisories/bulk|audits/quick)$
@@ -69,7 +70,11 @@
 		}
 		not {
 			method POST
-			path /_shieldwall/v1/join /_shieldwall/v1/sync /ui/shieldwall/join
+			path /_shieldwall/v1/join /_shieldwall/v1/sync /ui/shieldwall/join /ui/auth/logout /ui/auth/login
+		}
+		not {
+			method POST
+			path_regexp ^/ui/(users/[0-9]+/(disable|enable)|fasttrack|fasttrack/[0-9]+/(approve|reject|revoke))$
 		}
 	}
 	respond @forbidden_method 405

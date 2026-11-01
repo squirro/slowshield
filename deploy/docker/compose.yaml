@@ -55,6 +55,25 @@ services:
       SLOWSHIELD_LEADER_CA_FILE: /run/secrets/leader_ca
       # Empty placeholder unless GITHUB_TOKEN_SECRET_FILE points at a real token file.
       GITHUB_TOKEN_FILE: /run/secrets/github_token
+      # UI sign-in (docs/authentication.md): off unless SLOWSHIELD_AUTH=oidc. The client's key or secret is the
+      # oidc_client secret (OIDC_CLIENT_SECRET_FILE, secrets/README.md); point one of the two _FILE settings at it.
+      SLOWSHIELD_AUTH: ${SLOWSHIELD_AUTH:-}
+      SLOWSHIELD_AUTH_USERNAME: ${SLOWSHIELD_AUTH_USERNAME:-}  # password sign-in
+      SLOWSHIELD_AUTH_PASSWORD_HASH: ${SLOWSHIELD_AUTH_PASSWORD_HASH:-}
+      SLOWSHIELD_UI_REQUIRE_LOGIN: ${SLOWSHIELD_UI_REQUIRE_LOGIN:-}
+      SLOWSHIELD_UI_URLS: ${SLOWSHIELD_UI_URLS:-}
+      SLOWSHIELD_AUTH_DEFAULT_ROLE: ${SLOWSHIELD_AUTH_DEFAULT_ROLE:-}
+      SLOWSHIELD_AUTH_ADMIN_EMAILS: ${SLOWSHIELD_AUTH_ADMIN_EMAILS:-}
+      SLOWSHIELD_AUTH_USER_EMAILS: ${SLOWSHIELD_AUTH_USER_EMAILS:-}
+      SLOWSHIELD_OIDC_ISSUER: ${SLOWSHIELD_OIDC_ISSUER:-}
+      SLOWSHIELD_OIDC_CLIENT_ID: ${SLOWSHIELD_OIDC_CLIENT_ID:-}
+      SLOWSHIELD_OIDC_CLIENT_KEY_FILE: ${SLOWSHIELD_OIDC_CLIENT_KEY_FILE:-}  # /run/secrets/oidc_client
+      SLOWSHIELD_OIDC_CLIENT_SECRET_FILE: ${SLOWSHIELD_OIDC_CLIENT_SECRET_FILE:-}  # or this one
+      SLOWSHIELD_OIDC_PAR: ${SLOWSHIELD_OIDC_PAR:-}
+      SLOWSHIELD_OIDC_ROLES_CLAIM: ${SLOWSHIELD_OIDC_ROLES_CLAIM:-}
+      SLOWSHIELD_OIDC_ADMIN_VALUES: ${SLOWSHIELD_OIDC_ADMIN_VALUES:-}
+      SLOWSHIELD_OIDC_USER_VALUES: ${SLOWSHIELD_OIDC_USER_VALUES:-}
+      SLOWSHIELD_OIDC_REQUIRE_CLAIMS: ${SLOWSHIELD_OIDC_REQUIRE_CLAIMS:-}
     configs:
       - source: slowshield_config
         target: /etc/slowshield/config.toml
@@ -64,6 +83,11 @@ services:
         target: github_token
       - source: leader_ca
         target: leader_ca
+        mode: 0400
+        uid: "65532"
+        gid: "65532"
+      - source: oidc_client
+        target: oidc_client
         mode: 0400
         uid: "65532"
         gid: "65532"
@@ -146,3 +170,5 @@ secrets:
     file: ${GITHUB_TOKEN_SECRET_FILE:-./secrets/github_token.empty}
   leader_ca:
     file: ${LEADER_CA_SECRET_FILE:-./secrets/leader-ca.empty}
+  oidc_client:
+    file: ${OIDC_CLIENT_SECRET_FILE:-./secrets/oidc-client.empty}

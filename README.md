@@ -95,6 +95,10 @@ followers take its policy and fetch package files through it ([docs/design/shiel
 On a tailnet, all of them can serve one Tailscale Service name, and each client reaches the nearest instance
 ([docs/tailscale.md](docs/tailscale.md)).
 
+The UI is public and read-only unless you turn on sign-in: people then sign in with your identity provider over
+OpenID Connect and get a Viewer, User or Admin role from it, or, on a single-user deployment, one Admin signs in with a
+password. The package proxy never asks anyone to sign in ([docs/authentication.md](docs/authentication.md)).
+
 ## Point your clients at it
 
 ```bash
@@ -158,7 +162,8 @@ live. Reference: [docs/configuration.md](docs/configuration.md).
   manager, RPM database kept for scanners), non-root UID 65532, read-only root filesystem, all
   capabilities dropped, `no-new-privileges`, multi-arch (amd64/arm64).
 - TLS by Caddy: TLS 1.3 only by default, hybrid post-quantum key exchange (X25519MLKEM768), HTTP/3, HSTS.
-- UI: strict Content-Security-Policy (no inline script/style), every value escaped, read-only.
+- UI: strict Content-Security-Policy (no inline script/style), every value escaped, read-only; optional OIDC
+  sign-in with PKCE, PAR and `private_key_jwt`, server-side sessions rechecked with the IdP.
 - Supply chain of SlowShield itself: locked & hashed dependencies (`uv.lock`), digest-pinned base images,
   SHA-pinned GitHub Actions audited by `zizmor --persona=pedantic`, Dependabot with a 7-day cooldown,
   SBOM + provenance attestations on every image.

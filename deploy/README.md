@@ -65,9 +65,12 @@ docker buildx build --file containers/slowshield/Dockerfile --build-arg PYTHON_V
 docker buildx build --file containers/slowshield/Dockerfile --build-arg BUILD_CACHE=off ...
 ```
 
-Caddy's version and SHA-512 sums are pinned in `containers/caddy/Dockerfile`; update them with
-`uv run python containers/caddy/bump_caddy.py --write` (verifies the release's cosign signature and,
-by default, only picks releases older than 7 days, in keeping with SlowShield's own policy).
+Caddy is built from source until a Caddy release carries Go's October 2026 HTTP/2 fixes: the module in
+`containers/caddy/build` (upstream's main package, `go.mod` and `go.sum` committed) is compiled with the official Go
+toolchain, pinned by SHA-256 in `containers/caddy/Dockerfile`. Update Caddy and Go with
+`uv run python containers/caddy/bump_caddy.py --write` (by default only releases older than 7 days, in keeping with
+SlowShield's own policy; `go mod tidy` runs in the Dockerfile's own Go stage). With the next fixed Caddy release the
+image goes back to the official, cosign-signed release binary.
 
 ## End-to-end tests
 

@@ -46,6 +46,18 @@ updates:
     cooldown:
       default-days: 7
 
+  # Caddy built from source (until a Caddy release carries Go's October 2026 HTTP/2 fixes). Only Caddy
+  # itself: its other modules stay at the versions its release pins. The Dockerfile's CADDY_VERSION must
+  # follow (tests/e2e/test_dockerfiles.py fails until `uv run python containers/caddy/bump_caddy.py --write`).
+  - package-ecosystem: gomod
+    directory: /containers/caddy/build
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: github.com/caddyserver/caddy/v2
+
   - package-ecosystem: pip
     directory: /containers/slowshield
     schedule:

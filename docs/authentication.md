@@ -171,24 +171,8 @@ python3 -c 'import getpass, hashlib, os; s = os.urandom(16); k = hashlib.scrypt(
 ```
 
 Either prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:6c1f…:9b2e…`. Use a long, random
-password, e.g. from a password manager. SlowShield also slows failed sign-ins down and refuses more than 10 from one
-address in 15 minutes.
-
-<details>
-<summary>The older SHA-256 hash, with nothing but openssl</summary>
-
-SlowShield still accepts `sha256:<salt>:<hex of SHA-256(salt + password)>`, which `openssl` alone can make on any
-macOS or Linux, and warns at every start: SHA-256 is fast, so a hash that leaks is only as safe as the password is
-long. Prefer scrypt.
-
-```sh
-printf 'Password: '; stty -echo; read -r pw; stty echo; echo
-salt=$(openssl rand -hex 16)
-echo "SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:$salt:$(printf '%s%s' "$salt" "$pw" | openssl dgst -sha256 | sed 's/^.*= //')"
-unset pw
-```
-
-</details>
+password, e.g. from a password manager. SlowShield also slows failed sign-ins down, and refuses more than 10 from one
+address, or 50 from all addresses together, in 15 minutes (counted in its database, so across all workers).
 
 ### 2. Configure SlowShield
 
@@ -199,11 +183,16 @@ SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:…:…  # or SLOWSHIELD_AUTH_PA
 SLOWSHIELD_UI_REQUIRE_LOGIN=false             # true: no UI at all without signing in
 ```
 
+Keep the hash where only SlowShield sees it, not the TLS edge in front of it: Compose passes it to the SlowShield
+service only; with Podman, store it as a Podman secret
+(`deploy/podman/quadlet/slowshield.container.d/password.conf.example`), because `slowshield.env` is read by the Caddy
+container too; with Helm, it comes from a Secret (`auth.passwordHashSecret`).
+
 The UI must be served over `https`, e.g. by the bundled Caddy at `https://localhost`, because the session cookie is
 `Secure`. `SLOWSHIELD_UI_URLS` defaults to `SLOWSHIELD_PUBLIC_URL`, as with OIDC.
 
 Sessions last `SLOWSHIELD_SESSION_HOURS` (12); there is no IdP to recheck with. To change the password, set a new hash
-and restart. `slowshield users logout-all` ends every session at once. The Activity page records sign-ins and failed
+and restart: sessions from before a new password or username end at that start. `slowshield users logout-all` ends every session at once. The Activity page records sign-ins and failed
 attempts, with the client address unless `record_client_ip` is off.
 
 ## Keycloak (tested)

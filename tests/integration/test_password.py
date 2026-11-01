@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -22,10 +21,6 @@ SALT = bytes.fromhex("0123456789abcdef0123456789abcdef")
 HASH = f"scrypt:16384:8:1:{SALT.hex()}:{password._scrypt(SECRET, SALT, 2**14, 8, 1).hex()}"
 DOCS = Path(__file__).resolve().parents[2] / "docs" / "authentication.md"
 FORM = {**SAME_ORIGIN, "Content-Type": "application/x-www-form-urlencoded"}
-
-# The older recipe docs/authentication.md gives, minus the prompt: openssl is on every Linux and macOS.
-RECIPE = """salt=$(openssl rand -hex 16)
-echo "sha256:$salt:$(printf '%s%s' "$salt" "$pw" | openssl dgst -sha256 | sed 's/^.*= //')\""""
 
 
 @pytest.fixture(autouse=True)
@@ -94,10 +89,11 @@ async def test_require_login_shows_the_form(start_password: Callable[..., Any]) 
     assert (await run.client.get("/ui/packages")).status_code == 200
 
 
-async def test_guessing_is_capped(start_password: Callable[..., Any]) -> None:
-    run = await start_password()
-    for _ in range(password.FAILURES):
-        assert (await _login(run, pw="guess")).status_code == 401
+async def test_guessing_is_capped(start_password: Callable[..., Any], tmp_path: Path) -> None:
+    run = await start_password(data_dir=tmp_path / "data")
+    other = await start_password(data_dir=tmp_path / "data")  # another worker: the same count
+    for i in range(password.PER_ADDRESS):
+        assert (await _login(run if i % 2 else other, pw="guess")).status_code == 401
     r = await _login(run)  # even the right password waits now
     assert r.status_code == 429 and "Too many failed attempts" in r.text
     assert audit(run)[-1][3] == '{"reason":"throttled"}'
@@ -125,18 +121,6 @@ def test_the_documented_python_line() -> None:
 def test_the_default_hash() -> None:
     stored = password.make_hash(SECRET)
     assert stored.startswith("scrypt:131072:8:1:") and password.verify(stored, SECRET)
-    assert not password.weak(stored)
-
-
-@pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is not installed")
-def test_the_documented_openssl_recipe() -> None:
-    out = subprocess.run(  # noqa: S603 - fixed argv
-        ["/bin/sh", "-c", RECIPE], env={"pw": SECRET, "PATH": "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"},
-        capture_output=True, text=True, check=True, timeout=30,
-    ).stdout.strip()  # fmt: skip
-    assert out.startswith("sha256:") and len(out.split(":")[1]) == 32
-    assert password.verify(out, SECRET) and not password.verify(out, SECRET + "x")
-    assert password.weak(out) and password.problem(out) is None  # still accepted, with a warning
 
 
 def test_hash_password_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -149,3 +133,42 @@ def test_hash_password_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
     assert password.verify(capsys.readouterr().out.strip(), SECRET)
     monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
     assert cli.main(["auth", "hash-password"]) == 2
+
+
+async def test_everyone_together_is_capped_too(start_password: Callable[..., Any]) -> None:
+    run = await start_password()
+    for i in range(password.OVERALL):  # from many addresses, as a distributed guess would
+        headers = {**FORM, "X-Forwarded-For": f"203.0.113.{i}"}
+        r = await run.client.post("/ui/auth/login", content="username=admin&password=guess", headers=headers)
+        assert r.status_code == 401
+    assert (await _login(run)).status_code == 429
+
+
+async def test_one_check_at_a_time(start_password: Callable[..., Any]) -> None:
+    run = await start_password()
+    auth = run.ctx.auth
+    async with auth._checking:  # a check is under way on this worker
+        r = await _login(run)
+    assert r.status_code == 429 and "Try again" in r.text
+    assert (await _login(run)).status_code == 303
+
+
+async def test_a_new_password_ends_earlier_sessions(
+    start_app: Callable[..., Any], start_password: Callable[..., Any], tmp_path: Path
+) -> None:
+    run = await start_password(data_dir=tmp_path / "data")
+    await _login(run)
+    assert run.rows("SELECT count(*) FROM ui_sessions") == [(1,)]
+    again = await start_password(data_dir=tmp_path / "data")  # a restart with the same password keeps them
+    assert again.rows("SELECT count(*) FROM ui_sessions") == [(1,)]
+    other = password.make_hash("another long password!", salt=SALT)
+    extra = f"""
+[auth]
+mode = "password"
+ui_urls = ["{UI}"]
+username = "admin"
+password_hash = "{other}"
+"""
+    changed = await start_app(extra, scheme="https", data_dir=tmp_path / "data")
+    assert changed.rows("SELECT count(*) FROM ui_sessions") == [(0,)]
+    assert "Sign out" not in (await run.client.get("/ui/")).text

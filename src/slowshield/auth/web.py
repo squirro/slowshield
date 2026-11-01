@@ -24,7 +24,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from slowshield.auth import ANONYMOUS, Principal, jose, password, roles, store
 from slowshield.auth.oidc import OidcError, Provider, pkce
-from slowshield.auth.password import Throttle
 from slowshield.context import AppContext
 from slowshield.telemetry import instruments
 from slowshield.web import client_ip
@@ -95,7 +94,6 @@ class Auth:
         self.ctx = ctx
         self._provider = provider
         self.render = render
-        self.throttle = Throttle()
         self._checking = asyncio.Semaphore(1)  # one scrypt check at a time per worker: 128 MiB each
 
     @property
@@ -205,21 +203,25 @@ class Auth:
         username = (form.get("username") or [""])[0]
         given = (form.get("password") or [""])[0]
         next_path = safe_next((form.get("next") or [""])[0])
-        who_key = client_ip(request.scope, self.ctx.cfg.trusted_networks) or "?"
-        if self.throttle.blocked(who_key):
+        address = client_ip(request.scope, self.ctx.cfg.trusted_networks) or "?"
+        now = self.ctx.clock.now()
+        reader = self.ctx.db.readers
+        if await asyncio.to_thread(lambda: password.throttled(reader.get(), address, now)):
             await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "throttled"})
             return self.password_form(request, error="Too many failed attempts. Wait a few minutes.", status=429)
+        if self._checking.locked():  # one scrypt check at a time per worker (128 MiB each): no queue to pile up
+            return self.password_form(request, error="Another sign-in is being checked. Try again.", status=429)
         settings = self.settings
         async with self._checking:  # the hash is checked whatever the username, so timing tells nothing
             hash_ok = await asyncio.to_thread(password.verify, settings.password_hash or "", given)
         ok = password.same(username, settings.username or "") & hash_ok
         if not ok:
-            self.throttle.failed(who_key)
+            await self.ctx.db.writer.run(partial(password.failed, address=address, now=now))
             instruments.auth_logins.add(1, {"result": "refused"})
             await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "password"})
-            await asyncio.sleep(FAILED_PASSWORD_DELAY)  # slows guessing down; the throttle caps it
+            await asyncio.sleep(FAILED_PASSWORD_DELAY)  # slows guessing down; the cap stops it
             return self.password_form(request, error="Wrong username or password.", status=401)
-        self.throttle.succeeded(who_key)
+        await self.ctx.db.writer.run(partial(password.succeeded, address=address))
         ident = store.Identity(provider="password", issuer="local", subject=settings.username, email=None,
                                email_verified=False, name=settings.username, role="admin",
                                role_source="password")  # fmt: skip

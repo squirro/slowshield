@@ -347,20 +347,27 @@ def test_users_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys:
     assert actions == ["user_disabled", "user_enabled", "logout_all"]
 
 
+HASH = f"scrypt:16384:8:1:{'ab' * 16}:{'a' * 64}"
+
+
 @pytest.mark.parametrize(
     ("auth", "message"),
     [
-        ({"mode": "password", "password_hash": "sha256:0123456789abcdef:" + "a" * 64}, "USERNAME"),
+        ({"mode": "password", "password_hash": HASH}, "USERNAME"),
         ({"mode": "password", "username": "admin"}, "PASSWORD_HASH"),
-        ({"mode": "password", "username": "admin", "password_hash": "sha256:short:" + "a" * 64}, "PASSWORD_HASH"),
-        ({"mode": "password", "username": "admin", "password_hash": "md5:0123456789abcdef:" + "a" * 32}, "sha256"),
+        (
+            {"mode": "password", "username": "admin", "password_hash": "scrypt:16384:8:1:ab:" + "a" * 64},
+            "PASSWORD_HASH",
+        ),
+        ({"mode": "password", "username": "admin", "password_hash": "sha256:0123456789abcdef:" + "a" * 64}, "scrypt"),
+        ({"mode": "password", "username": "admin", "password_hash": HASH, "session_hours": 0}, "session_hours"),
         (
             {"mode": "password", "username": "admin", "password_hash": f"scrypt:1024:8:1:{'ab' * 16}:{'a' * 64}"},
             "range",
         ),
         ({"mode": "password", "username": "admin", "password_hash": f"scrypt:3:8:1:{'ab' * 16}:{'a' * 64}"}, "range"),
         (
-            {"mode": "password", "username": "my admin", "password_hash": "sha256:0123456789abcdef:" + "a" * 64},
+            {"mode": "password", "username": "my admin", "password_hash": HASH},
             "spaces",
         ),
     ],
@@ -382,8 +389,5 @@ def test_password_config_from_the_environment(monkeypatch: pytest.MonkeyPatch, t
     cfg = config_mod.load(None)
     auth = cfg.raw.auth
     assert auth.mode == "password" and auth.password_hash == stored
-    assert not any("SHA-256" in w for w in cfg.warnings)
-    monkeypatch.setenv("SLOWSHIELD_AUTH_PASSWORD_HASH", "sha256:0123456789abcdef:" + "a" * 64)
-    assert any("SHA-256" in w for w in config_mod.load(None).warnings)  # the older hash: a warning
     assert verify(stored, "correct horse battery staple") and not verify(stored, "wrong")
-    assert not verify("sha256:salt:short", "x") and not verify("garbage", "x")
+    assert not verify("sha256:0123456789abcdef:" + "a" * 64, "x") and not verify("garbage", "x")

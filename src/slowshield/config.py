@@ -405,8 +405,8 @@ class AuthConfig(msgspec.Struct, forbid_unknown_fields=True):
     """Who may use the UI (docs/authentication.md). The package proxy never needs a sign-in."""
 
     mode: AuthMode = "none"  # SLOWSHIELD_AUTH: none keeps the UI public and read-only; oidc; password
-    # SLOWSHIELD_AUTH=password: one local Admin, for single-user deployments. The hash is sha256:<salt>:<hex of
-    # SHA-256(salt + password)> (docs/authentication.md shows how to make it with openssl).
+    # SLOWSHIELD_AUTH=password: one local Admin, for single-user deployments. The hash is
+    # scrypt:<N>:<r>:<p>:<salt>:<key> from `slowshield auth hash-password` (docs/authentication.md#password-sign-in).
     username: str | None = None  # SLOWSHIELD_AUTH_USERNAME
     password_hash: str | None = None  # SLOWSHIELD_AUTH_PASSWORD_HASH or SLOWSHIELD_AUTH_PASSWORD_HASH_FILE
     require_login: bool = False  # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI without signing in
@@ -878,6 +878,8 @@ def _validate_auth(cfg: Config) -> None:
     hosts = [urlsplit(u).netloc.lower() for u in urls]
     if len(set(hosts)) != len(hosts):
         raise ConfigError("auth.ui_urls: each host only once")
+    if not 0 < auth.session_hours <= 24 * 30:
+        raise ConfigError("auth.session_hours must be above 0 and at most 720")
     if auth.mode == "password":
         if not auth.username or len(auth.username) > 100 or any(ord(c) < 33 for c in auth.username):
             raise ConfigError("SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_USERNAME (no spaces)")
@@ -1097,11 +1099,6 @@ def build(
                 f"upstreams.{eco}.hostnames ({env}) is deprecated and will be removed in 0.1: "
                 f"point clients at {path_url} instead (docs/design/routing.md)"
             )
-    if cfg.auth.mode == "password" and (cfg.auth.password_hash or "").startswith("sha256:"):
-        warnings.append(
-            "SLOWSHIELD_AUTH_PASSWORD_HASH is a salted SHA-256, which is fast to guess at if it leaks: make an scrypt "
-            "hash with `slowshield auth hash-password` (docs/authentication.md#password-sign-in)"
-        )
     pkg_rules, ver_rules = rule_tables(cfg.exceptions, cfg.upstreams.oci)
     networks = []
     for cidr in cfg.trusted_proxies:

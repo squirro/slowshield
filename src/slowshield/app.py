@@ -257,6 +257,11 @@ class SlowShield:
             log.info(
                 "UI sign-in with a password", extra={"username": auth.username, "require_login": auth.require_login}
             )
+            from slowshield.auth.password import fingerprint
+
+            fp = fingerprint(auth.username or "", auth.password_hash or "")
+            if ended := await ctx.db.writer.run(partial(_new_password, fp=fp)):
+                log.warning("the password or username changed: %d earlier session(s) ended", ended)
             return Auth(ctx, None, ui.render)
 
         try:
@@ -605,6 +610,23 @@ class SlowShield:
                 await self.shutdown()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
+
+
+def _new_password(conn: Any, fp: str) -> int:
+    """Password sign-in: sessions from before a new password or username end, whoever held them."""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'password_fingerprint'").fetchone()
+    if row is not None and row[0] == fp:
+        return 0
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('password_fingerprint', ?) "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        (fp,),
+    )
+    if row is None:
+        return 0
+    return conn.execute(
+        "DELETE FROM ui_sessions WHERE user_id IN (SELECT id FROM users WHERE provider = 'password')"
+    ).rowcount
 
 
 def _host(scope: Scope) -> str:

@@ -25,7 +25,11 @@ stays undetected for longer than your delay.
   it. Base images pinned by digest; Python dependencies locked with hashes. Caddy is built from source for now (no
   Caddy release carries Go's October 2026 HTTP/2 fixes yet): Go toolchain from go.dev pinned by SHA-256, modules
   locked in `containers/caddy/build/go.sum` and checked against Go's checksum database, upstream's build flags;
-  before a bump, the Caddy source is checked against Caddy's cosign-signed release source.
+  before a bump, the Caddy source is checked against Caddy's cosign-signed release source. Caddy's PKI module
+  (`tls internal`) pulls in go-jose v3 through smallstep. Several go-jose advisories (CVE-2026-116585, -116586,
+  -116587 and the ones fixed in v4.1.7) have no fixed v3 release, and Caddy and smallstep still require v3.0.5.
+  go-jose only parses untrusted JWS and JWK input in Caddy's ACME server, which SlowShield never enables, and its
+  admin API is off; a test keeps it that way. The findings are accepted until smallstep moves to go-jose v4.
 * **Runtime**: non-root UID/GID 65532, read-only root filesystem, `/data` the only writable volume,
   `/tmp` a small `noexec` tmpfs, all capabilities dropped, `no-new-privileges`, default seccomp, memory/PID
   limits; Kubernetes manifests meet the *restricted* Pod Security Standard, with a default-deny

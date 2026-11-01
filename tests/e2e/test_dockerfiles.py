@@ -79,6 +79,20 @@ def test_caddy_build_module_matches_the_dockerfile() -> None:
     assert net is not None and int(net.group(1)) >= 60
 
 
+def test_caddy_never_parses_untrusted_jose() -> None:
+    """go-jose v3 (through smallstep, behind Caddy's PKI module) has DoS and panic advisories with no fixed v3
+    release (CVE-2026-116585/6/7). It only sees untrusted JWS/JWK in Caddy's ACME server, and the admin API could
+    load one, so neither may ever be switched on. See docs/security.md."""
+    files = [CONTAINERS / "caddy" / "Caddyfile", *sorted((CONTAINERS / "caddy").glob("*/*.caddy"))]
+    assert len(files) > 5
+    for path in files:
+        lines = [line.split("#", 1)[0].strip() for line in path.read_text().splitlines()]
+        assert not any(line.split()[:1] == ["acme_server"] for line in lines), path
+        assert not any(line.split()[:1] == ["admin"] and line.split()[1:2] != ["off"] for line in lines), path
+    caddyfile = (CONTAINERS / "caddy" / "Caddyfile").read_text()
+    assert re.search(r"^\{\n(?:\t.*\n|\n)*?\tadmin off$", caddyfile, re.MULTILINE)
+
+
 def test_dockerignore_excludes_local_state() -> None:
     entries = {line.strip() for line in (ROOT / ".dockerignore").read_text().splitlines()}
     assert {".git", ".venv", "perf/results"} <= entries

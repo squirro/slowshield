@@ -73,7 +73,7 @@ def cmd_hash_password(args: argparse.Namespace) -> int:
     else:
         first = sys.stdin.readline().rstrip("\n")
     if len(first) < 12:
-        print("use a password of 12 characters or more (SHA-256 is fast to guess at)", file=sys.stderr)
+        print("use a password of 12 characters or more", file=sys.stderr)
         return 2
     print(make_hash(first))
     return 0

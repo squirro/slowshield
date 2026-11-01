@@ -6,8 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.0.14] - 2026-10-25
-
 ### Security
 - `slowshield-caddy` builds Caddy 2.11.7 from source with Go 1.26.10 and golang.org/x/net v0.60.0, because no Caddy
   release carries Go's October fixes yet. They cover the HTTP/2 server Caddy runs as the TLS edge (GO-2026-6603

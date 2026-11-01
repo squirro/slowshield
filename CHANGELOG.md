@@ -21,6 +21,8 @@ All notable changes to this project are documented here. The format is based on
 - go-chi/chi v5.4.0 in the Caddy build (GHSA-j6qf-3m9c-vwj3: client IP spoofing in `ClientIPFromXFF`, reached
   through Caddy's ACME server module), and the build module's `go` line names Go 1.26.10, the toolchain it is
   built with.
+- go-jose/go-jose v4.1.6 in the Caddy build (CVE-2026-116587: a crafted RSA key in a JWK costs cubic CPU time to
+  validate; reached through the OIDC provisioner of Caddy's PKI module).
 
 ## [0.0.13] - 2026-10-25
 

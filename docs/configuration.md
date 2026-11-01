@@ -38,7 +38,7 @@ The annotated reference is [`config.example.toml`](../config.example.toml).
 | `SLOWSHIELD_SHIELDWALL_VIA_LEADER` | `shieldwall.via_leader` | fetch package files through the leader (default on) |
 | `SLOWSHIELD_SHIELDWALL_FAST_TRACKS` | `shieldwall.fast_tracks` | release the versions the leader fast-tracked, after the hour's hold-down (default on; [authentication.md](authentication.md#fast-tracks)) |
 | `SLOWSHIELD_AUTH` | `auth.mode` | `oidc` or `password` turns on UI sign-in ([authentication.md](authentication.md)); unset or `none`, the UI stays public and read-only. The package proxy never needs a sign-in |
-| `SLOWSHIELD_AUTH_USERNAME`, `SLOWSHIELD_AUTH_PASSWORD_HASH`, `SLOWSHIELD_AUTH_PASSWORD_HASH_FILE` | `auth.username`, `auth.password_hash` | password sign-in: the one Admin's username, and `sha256:<salt>:<hex>` ([how to make it](authentication.md#password-sign-in)) |
+| `SLOWSHIELD_AUTH_USERNAME`, `SLOWSHIELD_AUTH_PASSWORD_HASH`, `SLOWSHIELD_AUTH_PASSWORD_HASH_FILE` | `auth.username`, `auth.password_hash` | password sign-in: the one Admin's username, and its scrypt hash ([how to make it](authentication.md#password-sign-in)) |
 | `SLOWSHIELD_UI_REQUIRE_LOGIN` | `auth.require_login` | no UI at all without signing in: anonymous visitors go straight to the IdP |
 | `SLOWSHIELD_UI_URLS` | `auth.ui_urls` | every URL the UI is reached at, comma-separated (default `public_url`); each gets its own redirect URI |
 | `SLOWSHIELD_AUTH_DEFAULT_ROLE` | `auth.default_role` | `viewer` (default) or `user`, for a signed-in person no rule maps |

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,10 +17,13 @@ from tests.conftest import Running
 from tests.integration.test_auth import SAME_ORIGIN, UI, advance, audit
 
 SECRET = "correct horse battery staple"
-HASH = password.make_hash(SECRET, salt="0123456789abcdef")
+SALT = bytes.fromhex("0123456789abcdef0123456789abcdef")
+# The smallest scrypt cost SlowShield takes, so the many checks here stay quick; the real default is N=2^17.
+HASH = f"scrypt:16384:8:1:{SALT.hex()}:{password._scrypt(SECRET, SALT, 2**14, 8, 1).hex()}"
+DOCS = Path(__file__).resolve().parents[2] / "docs" / "authentication.md"
 FORM = {**SAME_ORIGIN, "Content-Type": "application/x-www-form-urlencoded"}
 
-# The recipe docs/authentication.md gives, minus the prompt: openssl is on every Linux and macOS.
+# The older recipe docs/authentication.md gives, minus the prompt: openssl is on every Linux and macOS.
 RECIPE = """salt=$(openssl rand -hex 16)
 echo "sha256:$salt:$(printf '%s%s' "$salt" "$pw" | openssl dgst -sha256 | sed 's/^.*= //')\""""
 
@@ -105,6 +110,24 @@ async def test_login_csrf(start_password: Callable[..., Any]) -> None:
     assert r.status_code == 403
 
 
+def test_the_documented_python_line() -> None:
+    """The exact `python3 -c` line from docs/authentication.md, with the password on stdin."""
+    line = next(ln for ln in DOCS.read_text().splitlines() if ln.startswith("python3 -c 'import getpass"))
+    code = line.removeprefix("python3 -c '").removesuffix("'")
+    out = subprocess.run(  # noqa: S603 - our own interpreter and the docs' line
+        [sys.executable, "-c", code], input=SECRET + "\n", capture_output=True, text=True, check=True, timeout=60
+    ).stdout.strip()
+    stored = out.removeprefix("SLOWSHIELD_AUTH_PASSWORD_HASH=")
+    assert stored.startswith("scrypt:131072:8:1:") and password.problem(stored) is None
+    assert password.verify(stored, SECRET) and not password.verify(stored, SECRET + "x")
+
+
+def test_the_default_hash() -> None:
+    stored = password.make_hash(SECRET)
+    assert stored.startswith("scrypt:131072:8:1:") and password.verify(stored, SECRET)
+    assert not password.weak(stored)
+
+
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is not installed")
 def test_the_documented_openssl_recipe() -> None:
     out = subprocess.run(  # noqa: S603 - fixed argv
@@ -113,6 +136,7 @@ def test_the_documented_openssl_recipe() -> None:
     ).stdout.strip()  # fmt: skip
     assert out.startswith("sha256:") and len(out.split(":")[1]) == 32
     assert password.verify(out, SECRET) and not password.verify(out, SECRET + "x")
+    assert password.weak(out) and password.problem(out) is None  # still accepted, with a warning
 
 
 def test_hash_password_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

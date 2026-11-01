@@ -46,8 +46,8 @@ stays undetected for longer than your delay.
   random ID in a `__Host-` cookie, `Secure; HttpOnly; SameSite=Lax`) and are checked with the IdP again every
   15 minutes, so a person the IdP signs out or disables loses the UI too. ID tokens are checked against the
   IdP's keys (RS256, PS256 or ES256 only). For a single-user deployment, `SLOWSHIELD_AUTH=password` signs in one
-  Admin with a password stored as a salted SHA-256 hash; failed attempts are slowed down and capped per address, and
-  the password should be long and random because SHA-256 is fast. The package proxy never needs a sign-in.
+  Admin with a password stored as an scrypt hash (N=2^17, r=8, p=1); failed attempts are slowed down and capped per
+  address. The package proxy never needs a sign-in.
 
 ## Privacy
 

@@ -143,7 +143,7 @@ enabled = true
 # [auth]
 # mode = "none"                        # SLOWSHIELD_AUTH: none | oidc | password
 # username = "admin"                   # SLOWSHIELD_AUTH_USERNAME (password sign-in: one Admin)
-# password_hash = "sha256:<salt>:<hex>"  # SLOWSHIELD_AUTH_PASSWORD_HASH(_FILE): docs/authentication.md#password-sign-in
+# password_hash = "scrypt:131072:8:1:<salt>:<key>"  # SLOWSHIELD_AUTH_PASSWORD_HASH(_FILE): docs/authentication.md#password-sign-in
 # require_login = false                # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI at all without signing in
 # ui_urls = []                         # SLOWSHIELD_UI_URLS: every URL the UI is reached at (default: public_url)
 # default_role = "viewer"              # SLOWSHIELD_AUTH_DEFAULT_ROLE: viewer | user, for anyone no rule maps

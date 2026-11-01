@@ -33,7 +33,7 @@ A leader with a publicly trusted certificate (ACME) needs none of this.
 
 ```sh
 docker compose run --rm --no-deps -v "$PWD/secrets:/out" slowshield \
-  slowshield auth client-cert --new ec --key /out/oidc-client.pem > slowshield-oidc.crt   # register the .crt at the IdP
+  auth client-cert --new ec --key /out/oidc-client.pem > slowshield-oidc.crt   # register the .crt at the IdP
 echo 'OIDC_CLIENT_SECRET_FILE=./secrets/oidc-client.pem' >> .env
 echo 'SLOWSHIELD_OIDC_CLIENT_KEY_FILE=/run/secrets/oidc_client' >> .env
 ```

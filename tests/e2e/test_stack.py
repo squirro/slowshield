@@ -613,3 +613,15 @@ def test_rubygems_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> No
     status, headers, body = stack.get("/rubygems/info/fake_hello", headers={"Accept-Encoding": "gzip"})
     assert status == 200 and "content-encoding" not in headers
     assert headers["etag"] == '"' + hashlib.md5(body, usedforsecurity=False).hexdigest() + '"'
+
+
+def test_the_image_makes_password_hashes(stack: Stack) -> None:
+    """docs/authentication.md's first way to make SLOWSHIELD_AUTH_PASSWORD_HASH: the image's Python has scrypt."""
+    from slowshield.auth import password
+
+    image = os.environ.get("SLOWSHIELD_IMAGE", "slowshield:ci")
+    out = subprocess.run(
+        ["docker", "run", "--rm", "-i", image, "auth", "hash-password"],
+        input="correct horse battery staple\n", capture_output=True, text=True, check=True, timeout=120,
+    ).stdout.strip()  # fmt: skip
+    assert out.startswith("scrypt:131072:8:1:") and password.verify(out, "correct horse battery staple")

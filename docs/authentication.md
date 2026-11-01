@@ -150,13 +150,36 @@ as without sign-in, and the header gets a **Sign in** button. Signing in with th
 makes you an Admin: fast-tracks, the Users and Activity pages. With `SLOWSHIELD_UI_REQUIRE_LOGIN=true`, the UI shows
 the sign-in form to anyone not signed in instead. The package proxy never asks for it.
 
-SlowShield never stores the password, only a salted SHA-256 hash of it: `sha256:<salt>:<hex digest>`, where the
-digest is SHA-256 of the salt followed by the password.
+SlowShield never stores the password, only an scrypt hash of it (Python's standard library, with OWASP's parameters:
+N=2^17, r=8, p=1, so each check takes 128 MiB and a fraction of a second, which makes guessing at a leaked hash slow):
+`scrypt:131072:8:1:<salt>:<key>`.
 
 ### 1. Make the hash
 
-`openssl` is on every macOS and almost every Linux. Paste this into a terminal (bash or zsh); it asks for the password
-without showing it:
+**With SlowShield itself**, wherever it runs (Docker or Podman, Linux or macOS). It asks for the password twice,
+without showing it, and prints the line to configure:
+
+```sh
+docker run --rm -it ghcr.io/squirro/slowshield auth hash-password
+```
+
+**With `python3`**, on Linux, and on macOS with Python from Homebrew or python.org. Apple's own `/usr/bin/python3` is
+built without scrypt; use the command above there. It asks for the password without showing it:
+
+```sh
+python3 -c 'import getpass, hashlib, os; s = os.urandom(16); k = hashlib.scrypt(getpass.getpass().encode(), salt=s, n=2**17, r=8, p=1, maxmem=2**28, dklen=32); print(f"SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:{s.hex()}:{k.hex()}")'
+```
+
+Either prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:6c1f…:9b2e…`. Use a long, random
+password, e.g. from a password manager. SlowShield also slows failed sign-ins down and refuses more than 10 from one
+address in 15 minutes.
+
+<details>
+<summary>The older SHA-256 hash, with nothing but openssl</summary>
+
+SlowShield still accepts `sha256:<salt>:<hex of SHA-256(salt + password)>`, which `openssl` alone can make on any
+macOS or Linux, and warns at every start: SHA-256 is fast, so a hash that leaks is only as safe as the password is
+long. Prefer scrypt.
 
 ```sh
 printf 'Password: '; stty -echo; read -r pw; stty echo; echo
@@ -165,40 +188,14 @@ echo "SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:$salt:$(printf '%s%s' "$salt" "$pw" |
 unset pw
 ```
 
-It prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:6c1f…:9b2e…`.
-
-<details>
-<summary>Without openssl, or with SlowShield's own command</summary>
-
-Linux, with coreutils:
-
-```sh
-printf 'Password: '; stty -echo; read -r pw; stty echo; echo
-salt=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
-echo "SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:$salt:$(printf '%s%s' "$salt" "$pw" | sha256sum | cut -d' ' -f1)"
-unset pw
-```
-
-On macOS, `shasum -a 256` takes the place of `sha256sum`.
-
-SlowShield prints one too. It asks twice on a terminal, or reads one line from stdin:
-
-```sh
-docker run --rm -it ghcr.io/squirro/slowshield slowshield auth hash-password
-```
-
 </details>
-
-Use a long, random password, e.g. from a password manager. SHA-256 is fast, so a hash that leaks is only as safe as
-the password is long; SlowShield also slows failed sign-ins down and refuses more than 10 from one address in 15
-minutes.
 
 ### 2. Configure SlowShield
 
 ```sh
 SLOWSHIELD_AUTH=password
 SLOWSHIELD_AUTH_USERNAME=admin
-SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:…:…      # or SLOWSHIELD_AUTH_PASSWORD_HASH_FILE=/run/secrets/…
+SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:…:…  # or SLOWSHIELD_AUTH_PASSWORD_HASH_FILE=/run/secrets/…
 SLOWSHIELD_UI_REQUIRE_LOGIN=false             # true: no UI at all without signing in
 ```
 

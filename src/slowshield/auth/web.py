@@ -96,6 +96,7 @@ class Auth:
         self._provider = provider
         self.render = render
         self.throttle = Throttle()
+        self._checking = asyncio.Semaphore(1)  # one scrypt check at a time per worker: 128 MiB each
 
     @property
     def provider(self) -> Provider:
@@ -209,7 +210,9 @@ class Auth:
             await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "throttled"})
             return self.password_form(request, error="Too many failed attempts. Wait a few minutes.", status=429)
         settings = self.settings
-        ok = password.same(username, settings.username or "") & password.verify(settings.password_hash or "", given)
+        async with self._checking:  # the hash is checked whatever the username, so timing tells nothing
+            hash_ok = await asyncio.to_thread(password.verify, settings.password_hash or "", given)
+        ok = password.same(username, settings.username or "") & hash_ok
         if not ok:
             self.throttle.failed(who_key)
             instruments.auth_logins.add(1, {"result": "refused"})

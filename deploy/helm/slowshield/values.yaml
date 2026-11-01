@@ -168,7 +168,7 @@ shieldwall:
 auth:
   mode: ""  # oidc, or password (one Admin; the hash from a Secret: passwordHashSecret)
   username: ""  # password sign-in
-  passwordHashSecret: ""  # kubectl create secret generic slowshield-password --from-literal=hash='sha256:…:…'
+  passwordHashSecret: ""  # kubectl create secret generic slowshield-password --from-literal=hash='scrypt:131072:8:1:…:…'
   passwordHashSecretKey: hash
   requireLogin: false  # true: no UI at all without signing in
   uiUrls: []  # every URL the UI is reached at (default: publicUrl), e.g. [https://slowshield.example.com]

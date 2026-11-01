@@ -842,7 +842,6 @@ _HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)*")
 _OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 
-_PASSWORD_HASH = re.compile(r"sha256:[A-Za-z0-9._-]{8,128}:[0-9a-fA-F]{64}")
 _EMAIL_RULE = re.compile(r"(?:[^@\s,]+|\*)@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 _ENTRA_MULTI = re.compile(r"^/(?:common|organizations|consumers)(?:/|$)", re.IGNORECASE)
 
@@ -882,10 +881,12 @@ def _validate_auth(cfg: Config) -> None:
     if auth.mode == "password":
         if not auth.username or len(auth.username) > 100 or any(ord(c) < 33 for c in auth.username):
             raise ConfigError("SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_USERNAME (no spaces)")
-        if not _PASSWORD_HASH.fullmatch(auth.password_hash or ""):
+        from slowshield.auth.password import problem
+
+        if why := problem(auth.password_hash or ""):
             raise ConfigError(
-                "SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_PASSWORD_HASH as sha256:<salt>:<64 hex digits> "
-                "(docs/authentication.md#password-sign-in shows how to make one)"
+                f"SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_PASSWORD_HASH: {why}. `slowshield auth "
+                "hash-password` makes one (docs/authentication.md#password-sign-in)"
             )
         return
     if not oidc.issuer or not oidc.client_id:
@@ -1096,6 +1097,11 @@ def build(
                 f"upstreams.{eco}.hostnames ({env}) is deprecated and will be removed in 0.1: "
                 f"point clients at {path_url} instead (docs/design/routing.md)"
             )
+    if cfg.auth.mode == "password" and (cfg.auth.password_hash or "").startswith("sha256:"):
+        warnings.append(
+            "SLOWSHIELD_AUTH_PASSWORD_HASH is a salted SHA-256, which is fast to guess at if it leaks: make an scrypt "
+            "hash with `slowshield auth hash-password` (docs/authentication.md#password-sign-in)"
+        )
     pkg_rules, ver_rules = rule_tables(cfg.exceptions, cfg.upstreams.oci)
     networks = []
     for cidr in cfg.trusted_proxies:

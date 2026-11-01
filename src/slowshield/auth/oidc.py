@@ -353,6 +353,7 @@ class Provider:
             ("azp" in c and c.get("azp") != self.client_id, "authorized party"),
             (not isinstance(c.get("exp"), int | float) or c["exp"] < now - SKEW, "expiry"),
             (not isinstance(c.get("iat"), int | float) or c["iat"] > now + SKEW, "issue time"),
+            ("nbf" in c and (not isinstance(c["nbf"], int | float) or c["nbf"] > now + SKEW), "not-before time"),
             (not isinstance(c.get("nonce"), str) or not secrets.compare_digest(c["nonce"], nonce), "nonce"),
             (not isinstance(c.get("sub"), str) or not c["sub"] or len(c["sub"]) > 255, "subject"),
         )

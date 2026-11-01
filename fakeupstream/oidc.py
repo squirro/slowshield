@@ -98,7 +98,7 @@ def defaults() -> dict[str, Any]:
         "alg": "RS256",
         "kid": "rsa-1",
         "jwks": ["rsa-1", "ec-1"],
-        "bad": None,  # wrong_aud wrong_iss wrong_nonce expired alg_none hs256 unknown_kid bad_sig extra_aud
+        "bad": None,  # wrong_aud wrong_iss wrong_nonce expired future_nbf alg_none hs256 unknown_kid bad_sig extra_aud
         "client_jwk": None,  # the client's public key, for private_key_jwt
     }
 
@@ -242,6 +242,8 @@ def routes(state: Any) -> list[Route]:
         }
         if bad != "extra_aud":
             id_claims["azp"] = CLIENT_ID
+        if bad == "future_nbf":
+            id_claims["nbf"] = int(t) + 3600
         alg = {"alg_none": "none", "hs256": "HS256"}.get(bad or "", s["alg"])
         kid = "ec-1" if alg == "ES256" else s["kid"]
         header = {"alg": alg, "typ": "JWT", "kid": "nobody" if bad == "unknown_kid" else kid}

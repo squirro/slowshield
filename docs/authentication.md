@@ -90,7 +90,7 @@ restart applies changes.
 
 The start fails on a configuration that can't work. That includes:
 
-- `http` UI URLs (allowed on loopback only);
+- `http` UI URLs (the session cookies are `Secure`; locally, use `https://localhost`);
 - an Entra ID issuer for `/common` or `/organizations`;
 - both a key file and a secret file, or neither;
 - role values without a roles claim;

@@ -403,6 +403,14 @@ class Gate:
             if due and request.method in ("GET", "HEAD"):
                 await self._to_idp(request, target, "none")(scope, receive, send)
                 return
+            if due:
+                # A change on a role the IdP may have taken away since: recheck first, then the person does it again.
+                if _is_htmx(request):
+                    resp: Response = self._to_idp(request, target, "none")
+                else:
+                    resp = RedirectResponse(auth.login_url("/ui/", prompt="none"), status_code=303)
+                await resp(scope, receive, send)
+                return
             if now - session.last_seen > store.LAST_SEEN_EVERY:
                 auth.ctx.db.writer.enqueue(partial(store.touch, id_hash=str(session.principal.session), now=now))
             who = session.principal

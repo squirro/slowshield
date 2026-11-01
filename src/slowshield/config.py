@@ -842,8 +842,8 @@ def _validate_auth(cfg: Config) -> None:
                 f"auth.ui_urls (SLOWSHIELD_UI_URLS, default public_url): {url!r} must be a plain https://host[:port] "
                 "URL, without a path"
             )
-        if parts.scheme != "https" and not _loopback_url(url):
-            raise ConfigError(f"auth.ui_urls: sign-in needs https, got {url!r} (plain http only on loopback)")
+        if parts.scheme != "https":  # __Host- cookies are Secure: a browser keeps none over plain http
+            raise ConfigError(f"auth.ui_urls: sign-in needs https, got {url!r} (locally, https://localhost)")
     hosts = [urlsplit(u).netloc.lower() for u in urls]
     if len(set(hosts)) != len(hosts):
         raise ConfigError("auth.ui_urls: each host only once")

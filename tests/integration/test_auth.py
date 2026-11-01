@@ -227,6 +227,7 @@ async def test_required_claims(start_auth: Callable[..., Any]) -> None:
         "wrong_iss",
         "wrong_nonce",
         "expired",
+        "future_nbf",
         "alg_none",
         "hs256",
         "unknown_kid",
@@ -405,6 +406,19 @@ async def test_recheck_waits_when_the_idp_is_down(start_auth: Callable[..., Any]
     assert (await run.client.get("/ui/")).status_code == 200  # usable; tries again in a minute
     advance(run, 61)
     assert (await run.client.get("/ui/")).status_code == 302
+
+
+async def test_a_change_waits_for_a_due_recheck(start_auth: Callable[..., Any]) -> None:
+    """A role the IdP took away can't be used for a POST either: a session due for a recheck goes to the IdP first."""
+    run = await start_auth()
+    await sign_in(run)
+    me = run.rows("SELECT id FROM users")[0][0]
+    advance(run, 16 * 60)
+    r = await run.client.post(f"/ui/users/{me + 1}/disable", headers=SAME_ORIGIN)
+    assert r.status_code == 303 and r.headers["location"] == "/ui/auth/login?next=%2Fui%2F&prompt=none"
+    r = await run.client.post(f"/ui/users/{me + 1}/disable", headers={**SAME_ORIGIN, "HX-Request": "true"})
+    assert r.status_code == 401 and "prompt=none" in r.headers["hx-redirect"]
+    assert [a[0] for a in audit(run)] == ["login"]
 
 
 async def test_sign_out_at_the_idp(start_auth: Callable[..., Any]) -> None:

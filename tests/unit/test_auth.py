@@ -257,6 +257,7 @@ def test_valid_auth_config() -> None:
         (_with(require_claims=["hd"]), "claim=value"),
         ({**OK, "admin_emails": ["not-an-email"]}, "address"),
         ({**OK, "ui_urls": ["http://slowshield.example.com"]}, "https"),
+        ({**OK, "ui_urls": ["http://127.0.0.1:8080"]}, "https"),
         ({**OK, "ui_urls": ["https://slowshield.example.com/sub"]}, "without a path"),
         ({**OK, "ui_urls": ["https://a.example", "https://A.example/"]}, "once"),
         ({**OK, "session_hours": 0}, "session_hours"),

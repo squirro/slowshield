@@ -171,8 +171,10 @@ python3 -c 'import getpass, hashlib, os; s = os.urandom(16); k = hashlib.scrypt(
 ```
 
 Either prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:6c1f…:9b2e…`. Use a long, random
-password, e.g. from a password manager. SlowShield also slows failed sign-ins down, and refuses more than 10 from one
-address, or 50 from all addresses together, in 15 minutes (counted in its database, so across all workers).
+password, e.g. from a password manager. SlowShield also slows failed sign-ins down: it refuses more than 10 from one
+address in 15 minutes, and past 50 from all addresses together it makes every attempt wait 3 seconds, without
+refusing any, so nobody can lock you out by failing on purpose. The counts are in its database, so they hold across
+all workers.
 
 ### 2. Configure SlowShield
 

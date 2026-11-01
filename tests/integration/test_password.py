@@ -135,13 +135,23 @@ def test_hash_password_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
     assert cli.main(["auth", "hash-password"]) == 2
 
 
-async def test_everyone_together_is_capped_too(start_password: Callable[..., Any]) -> None:
+async def test_many_addresses_slow_everyone_down_but_lock_nobody_out(
+    start_password: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(web.asyncio, "sleep", sleep)
     run = await start_password()
     for i in range(password.OVERALL):  # from many addresses, as a distributed guess would
         headers = {**FORM, "X-Forwarded-For": f"203.0.113.{i}"}
         r = await run.client.post("/ui/auth/login", content="username=admin&password=guess", headers=headers)
         assert r.status_code == 401
-    assert (await _login(run)).status_code == 429
+    assert password.SLOWDOWN not in slept
+    assert (await _login(run)).status_code == 303  # the Admin still gets in ...
+    assert password.SLOWDOWN in slept  # ... a little slower
 
 
 async def test_one_check_at_a_time(start_password: Callable[..., Any]) -> None:

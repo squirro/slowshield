@@ -7,9 +7,11 @@ fraction of a second per check):
 
 `slowshield auth hash-password` makes one, and so does a line of `python3` (docs/authentication.md#password-sign-in).
 
-Failed sign-ins are counted in the database, so every worker sees the same counts: at most `PER_ADDRESS` from one
-client address and `OVERALL` from all addresses together in `WINDOW`. Each worker checks one password at a time; a
-second attempt while one is being checked is turned away rather than queued.
+Failed sign-ins are counted in the database, so every worker sees the same counts. One client address gets at most
+`PER_ADDRESS` in `WINDOW`, then has to wait. Past `OVERALL` from all addresses together (a guess spread over many
+addresses), every attempt is slowed down by `SLOWDOWN` seconds instead: never refused, so nobody can lock the Admin
+out by failing on purpose. Each worker checks one password at a time; a second attempt while one is being checked is
+turned away rather than queued.
 """
 
 from __future__ import annotations
@@ -20,9 +22,10 @@ import re
 import secrets
 import sqlite3
 
-PER_ADDRESS = 10  # failed sign-ins from one client address ...
-OVERALL = 50  # ... or from everyone together ...
-WINDOW = 900.0  # ... in this many seconds, before sign-in waits
+PER_ADDRESS = 10  # failed sign-ins from one client address in WINDOW, before it has to wait
+OVERALL = 50  # failed sign-ins from everyone together in WINDOW, before every attempt is slowed down
+WINDOW = 900.0
+SLOWDOWN = 3.0  # seconds added to every attempt past OVERALL
 
 N, R, P = 2**17, 8, 1  # OWASP's minimum for scrypt
 SCRYPT = re.compile(r"scrypt:(\d{1,8}):(\d{1,2}):(\d{1,2}):([0-9a-fA-F]{16,128}):([0-9a-fA-F]{64})")
@@ -77,13 +80,16 @@ def _address_key(address: str) -> str:
 
 
 def throttled(conn: sqlite3.Connection, address: str, now: float) -> bool:
-    since = now - WINDOW
+    """This address failed too often: it waits."""
     mine = conn.execute(
-        "SELECT count(*) FROM login_failures WHERE address = ? AND ts > ?", (_address_key(address), since)
+        "SELECT count(*) FROM login_failures WHERE address = ? AND ts > ?", (_address_key(address), now - WINDOW)
     ).fetchone()[0]
-    if mine >= PER_ADDRESS:
-        return True
-    return conn.execute("SELECT count(*) FROM login_failures WHERE ts > ?", (since,)).fetchone()[0] >= OVERALL
+    return mine >= PER_ADDRESS
+
+
+def slowed(conn: sqlite3.Connection, now: float) -> bool:
+    """Many addresses failed: every attempt is slowed down, none refused."""
+    return conn.execute("SELECT count(*) FROM login_failures WHERE ts > ?", (now - WINDOW,)).fetchone()[0] >= OVERALL
 
 
 def failed(conn: sqlite3.Connection, address: str, now: float) -> None:

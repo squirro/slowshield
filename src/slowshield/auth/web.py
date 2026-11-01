@@ -206,6 +206,8 @@ class Auth:
         address = client_ip(request.scope, self.ctx.cfg.trusted_networks) or "?"
         now = self.ctx.clock.now()
         reader = self.ctx.db.readers
+        if await asyncio.to_thread(lambda: password.slowed(reader.get(), now)):
+            await asyncio.sleep(password.SLOWDOWN)  # a guess spread over many addresses: slower for all, not shut
         if await asyncio.to_thread(lambda: password.throttled(reader.get(), address, now)):
             await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "throttled"})
             return self.password_form(request, error="Too many failed attempts. Wait a few minutes.", status=429)

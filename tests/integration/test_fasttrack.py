@@ -55,7 +55,7 @@ async def test_an_admin_fast_tracks_and_revokes(people: Callable[..., Any]) -> N
     admin = await people("ada", ADMIN)
     await _held(admin)
     page = await admin.client.get("/ui/packages/npm/left-pad-ng")
-    assert "Fast-track…" in page.text
+    assert ">Fast-track</a>" in page.text
     form = await admin.client.get("/ui/fasttrack/new?eco=npm&name=left-pad-ng&version=2.0.0")
     assert form.status_code == 200 and "Fast-track now" in form.text
     assert (await _ask(admin, message="")).status_code == 400  # a reason is required
@@ -78,7 +78,7 @@ async def test_a_user_asks_and_a_second_person_approves(people: Callable[..., An
     uli = await people("uli", USER)
     await _held(uli)
     page = await uli.client.get("/ui/packages/npm/left-pad-ng")
-    assert "Request fast-track…" in page.text
+    assert ">Request fast-track</a>" in page.text
     assert (await _ask(uli)).status_code == 303
     assert (await uli.client.get(TARBALL)).status_code == 403  # not before someone else approves
     assert "fast-track requested" in (await uli.client.get("/ui/packages/npm/left-pad-ng")).text

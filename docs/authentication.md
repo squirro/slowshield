@@ -321,7 +321,7 @@ Keycloak, e.g. with an authentication flow that requires a role. You can also gi
 A version held back by its release-age delay can be released early, when it is needed before the delay is up (a
 security fix, say):
 
-- **An Admin fast-tracks it** with a message saying why, from the version's row on its package page ("Fast-track…").
+- **An Admin fast-tracks it** with a message saying why, with the Fast-track button on the version's row on its package page.
   It is released at once.
 - **A User requests a fast-track**, with a message. A second person, another User or an Admin, approves it with their
   own message (Fast-tracks page), and only then is it released. They can reject it instead. Nobody approves their own

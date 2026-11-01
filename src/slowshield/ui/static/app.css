@@ -341,3 +341,8 @@ td form { margin: 0; }
 .badge.fast-pending { background: var(--surface-2); color: var(--text); }
 .card.narrow { max-width: 420px; }
 .stack input[type="text"], .stack input[type="password"] { font: inherit; padding: 6px 8px; }
+/* A held version's countdown, then its fast-track button, apart and aligned on every row */
+.held-cell { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 230px; }
+.held-cell .countdown { white-space: nowrap; }
+.ft-action { white-space: nowrap; padding: 3px 12px; }
+a.button.ft-action:hover { text-decoration: none; border-color: var(--primary); color: var(--primary); }

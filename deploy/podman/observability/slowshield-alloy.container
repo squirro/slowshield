@@ -6,7 +6,7 @@ Description=SlowShield observability: Grafana Alloy
 [Container]
 # Pinned by digest (observability/images.env); bump in the repo instead of podman auto-update.
 ContainerName=slowshield-alloy
-Image=docker.io/grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+Image=docker.io/grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
 ReadOnly=true
 NoNewPrivileges=true
 DropCapability=ALL

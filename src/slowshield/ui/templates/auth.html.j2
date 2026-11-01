@@ -1,0 +1,7 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<div class="page-head"><div><h1>{{ heading }}</h1>
+  <p class="muted">{{ message }}</p>
+  {% if retry %}<p><a class="button primary" href="{{ retry }}">{{ retry_label|default("Sign in") }}</a></p>{% endif %}
+</div></div>
+{% endblock %}

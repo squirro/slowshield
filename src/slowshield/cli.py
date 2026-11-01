@@ -1,4 +1,5 @@
-"""`slowshield` command line: serve, healthcheck, migrate, import-legacy, version, check-config, shieldwall."""
+"""`slowshield` command line: serve, healthcheck, migrate, import-legacy, version, check-config, shieldwall, auth,
+users."""
 
 from __future__ import annotations
 
@@ -175,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
     from slowshield.shieldwall.cli import add_parser as add_wall
 
     add_wall(sub)
+
+    from slowshield.auth.cli import add_parsers as add_auth
+
+    add_auth(sub)
 
     args = parser.parse_args(argv)
     return int(args.fn(args))

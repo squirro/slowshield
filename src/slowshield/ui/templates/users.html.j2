@@ -1,0 +1,34 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Users</h1><p class="muted">Everyone who signed in to this instance. The identity provider decides each role, again at every sign-in and recheck; disabling someone here blocks them on this instance at once.</p></div>
+  <div class="controls"><a class="button" href="/ui/activity">Activity</a></div>
+</div>
+<section class="card">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Because</th><th>First sign-in</th><th>Last sign-in</th><th>Sessions</th>{% if instance_names %}<th>Instance</th>{% endif %}<th></th></tr></thead>
+    <tbody>
+    {% for u in rows %}
+      <tr{% if u.disabled %} class="muted"{% endif %}>
+        <td>{{ u.name or "—" }}</td>
+        <td>{% if u.email %}{{ u.email }}{% if not u.email_verified %} <span class="badge" title="The identity provider didn't say this address is verified">unverified</span>{% endif %}{% else %}—{% endif %}</td>
+        <td><span class="badge role-{{ u.role }}">{{ u.role|capitalize }}</span></td>
+        <td class="small mono">{{ u.role_source }}</td>
+        <td title="{{ u.first_login|ts }}">{{ ago(u.first_login) }}</td>
+        <td title="{{ u.last_login|ts }}">{{ ago(u.last_login) }}</td>
+        <td>{{ u.sessions }}</td>
+        {% if instance_names %}<td>{{ instance_names.get(u.instance, u.instance) }}</td>{% endif %}
+        <td>{% if u.instance == "" %}
+          {% if u.disabled %}<form method="post" action="/ui/users/{{ u.id }}/enable"><button type="submit" class="button">Enable</button></form>
+          {% elif u.id != me.user_id %}<form method="post" action="/ui/users/{{ u.id }}/disable"><button type="submit" class="button">Disable</button></form>{% endif %}
+        {% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">Nobody has signed in yet.</p>{% endif %}
+</section>
+{% endblock %}

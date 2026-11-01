@@ -377,6 +377,45 @@ class ShieldwallConfig(msgspec.Struct, forbid_unknown_fields=True):
     leader_ca_file: str | None = None  # SLOWSHIELD_LEADER_CA_FILE: for a leader behind Caddy's internal CA
 
 
+AuthMode = Literal["none", "oidc"]
+UiRole = Literal["viewer", "user", "admin"]
+
+
+class OidcConfig(msgspec.Struct, forbid_unknown_fields=True):
+    """UI sign-in with OpenID Connect (docs/authentication.md). Usually set through the environment."""
+
+    issuer: str | None = None  # SLOWSHIELD_OIDC_ISSUER: one tenant or realm, exactly as the IdP's `iss`
+    client_id: str | None = None  # SLOWSHIELD_OIDC_CLIENT_ID
+    # Exactly one: a private key (PEM, EC P-256 or RSA, optionally followed by its certificate) for private_key_jwt,
+    # or a client secret for client_secret_basic. Every node of a deployment uses the same one.
+    client_key_file: str | None = None  # SLOWSHIELD_OIDC_CLIENT_KEY_FILE
+    client_secret_file: str | None = None  # SLOWSHIELD_OIDC_CLIENT_SECRET_FILE
+    par: Literal["auto", "required", "off"] = "auto"  # SLOWSHIELD_OIDC_PAR: pushed authorization requests
+    scopes: list[str] = msgspec.field(default_factory=lambda: ["openid", "email", "profile"])
+    roles_claim: str | None = None  # SLOWSHIELD_OIDC_ROLES_CLAIM: a list-valued claim, dotted paths allowed
+    admin_values: list[str] = []  # SLOWSHIELD_OIDC_ADMIN_VALUES
+    user_values: list[str] = []  # SLOWSHIELD_OIDC_USER_VALUES
+    require_claims: list[str] = []  # SLOWSHIELD_OIDC_REQUIRE_CLAIMS: claim=value, all must match (hd=example.com)
+
+
+class AuthConfig(msgspec.Struct, forbid_unknown_fields=True):
+    """Who may use the UI (docs/authentication.md). The package proxy never needs a sign-in."""
+
+    mode: AuthMode = "none"  # SLOWSHIELD_AUTH: none keeps the UI public and read-only
+    require_login: bool = False  # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI without signing in
+    ui_urls: list[str] = []  # SLOWSHIELD_UI_URLS: every URL the UI is reached at (default: public_url)
+    default_role: Literal["viewer", "user"] = "viewer"  # SLOWSHIELD_AUTH_DEFAULT_ROLE
+    admin_emails: list[str] = []  # SLOWSHIELD_AUTH_ADMIN_EMAILS: verified addresses or *@domain
+    user_emails: list[str] = []  # SLOWSHIELD_AUTH_USER_EMAILS
+    session_hours: float = 12  # SLOWSHIELD_SESSION_HOURS: absolute lifetime
+    recheck_minutes: float = 15  # SLOWSHIELD_SESSION_RECHECK_MINUTES: ask the IdP again (prompt=none)
+    oidc: OidcConfig = msgspec.field(default_factory=OidcConfig)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode != "none"
+
+
 class Config(msgspec.Struct, forbid_unknown_fields=True):
     bind_address: str = "0.0.0.0:8080"
     # Externally visible base URL of the UI host (e.g. https://slowshield.example.com).
@@ -408,6 +447,7 @@ class Config(msgspec.Struct, forbid_unknown_fields=True):
     exceptions: list[ExceptionRule] = []
     blocks: list[BlockRule] = []
     shieldwall: ShieldwallConfig = msgspec.field(default_factory=ShieldwallConfig)
+    auth: AuthConfig = msgspec.field(default_factory=AuthConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,6 +522,11 @@ class LoadedConfig:
     def setup_base(self) -> str:
         """Base of the URLs the Setup page gives clients: `setup_url`, else `public_url`."""
         return self.raw.setup_url.rstrip("/") if self.raw.setup_url else self.public_base()
+
+    def ui_urls(self) -> list[str]:
+        """Every base URL the UI is reached at (sign-in redirect URIs): `auth.ui_urls`, else `public_url`."""
+        urls = self.raw.auth.ui_urls or [self.public_base()]
+        return [u.rstrip("/") for u in urls]
 
 
 def _read_secret(name: str, warnings: list[str]) -> tuple[str | None, str]:
@@ -602,6 +647,7 @@ def _apply_env(cfg: Config) -> set[str]:
                 explicit.add(name.removeprefix("SLOWSHIELD_").lower())
     if _apply_shieldwall_env(cfg.shieldwall):
         explicit.add(ROLE_KEY)
+    _apply_auth_env(cfg.auth)
     if v := env.get("SLOWSHIELD_ARTIFACT_CACHE_MAX_GB", "").strip():
         try:
             cfg.cache.artifacts_max_gb = float(v)
@@ -658,6 +704,67 @@ def _apply_shieldwall_env(sw: ShieldwallConfig) -> bool:
     return role_set
 
 
+def _split_commas(raw: str) -> list[str]:
+    """Comma-separated, each item trimmed: role and group names keep their spaces and dashes."""
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _env_number(name: str) -> float | None:
+    v = os.environ.get(name, "").strip()
+    if not v:
+        return None
+    try:
+        return float(v)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number, got {v!r}") from exc
+
+
+def _apply_auth_env(auth: AuthConfig) -> None:
+    """Apply the UI sign-in environment (docs/authentication.md). Empty values change nothing."""
+    env = os.environ
+    if v := env.get("SLOWSHIELD_AUTH", "").strip().lower():
+        if v not in ("none", "oidc"):
+            raise ConfigError(f"SLOWSHIELD_AUTH must be none or oidc, got {v!r}")
+        auth.mode = v
+    b = _env_bool("SLOWSHIELD_UI_REQUIRE_LOGIN")
+    if b is not None:
+        auth.require_login = b
+    if v := env.get("SLOWSHIELD_AUTH_DEFAULT_ROLE", "").strip().lower():
+        if v not in ("viewer", "user"):
+            raise ConfigError(f"SLOWSHIELD_AUTH_DEFAULT_ROLE must be viewer or user, got {v!r}")
+        auth.default_role = v
+    lists = (
+        ("SLOWSHIELD_UI_URLS", auth, "ui_urls"),
+        ("SLOWSHIELD_AUTH_ADMIN_EMAILS", auth, "admin_emails"),
+        ("SLOWSHIELD_AUTH_USER_EMAILS", auth, "user_emails"),
+        ("SLOWSHIELD_OIDC_SCOPES", auth.oidc, "scopes"),
+        ("SLOWSHIELD_OIDC_ADMIN_VALUES", auth.oidc, "admin_values"),
+        ("SLOWSHIELD_OIDC_USER_VALUES", auth.oidc, "user_values"),
+        ("SLOWSHIELD_OIDC_REQUIRE_CLAIMS", auth.oidc, "require_claims"),
+    )
+    for name, target, attr in lists:
+        if v := env.get(name, "").strip():
+            # Scopes are space-separated in OAuth; commas work too.
+            setattr(target, attr, _split_list(v) if attr == "scopes" else _split_commas(v))
+    for name, attr in (("SLOWSHIELD_SESSION_HOURS", "session_hours"),
+                       ("SLOWSHIELD_SESSION_RECHECK_MINUTES", "recheck_minutes")):  # fmt: skip
+        if (n := _env_number(name)) is not None:
+            setattr(auth, attr, n)
+    for name, attr in (
+        ("SLOWSHIELD_OIDC_ISSUER", "issuer"),
+        ("SLOWSHIELD_OIDC_CLIENT_ID", "client_id"),
+        ("SLOWSHIELD_OIDC_CLIENT_KEY_FILE", "client_key_file"),
+        ("SLOWSHIELD_OIDC_CLIENT_SECRET_FILE", "client_secret_file"),
+        ("SLOWSHIELD_OIDC_ROLES_CLAIM", "roles_claim"),
+    ):
+        if v := env.get(name, "").strip():
+            setattr(auth.oidc, attr, v)
+    if v := env.get("SLOWSHIELD_OIDC_PAR", "").strip().lower():
+        if v not in ("auto", "required", "off"):
+            raise ConfigError(f"SLOWSHIELD_OIDC_PAR must be auto, required or off, got {v!r}")
+        auth.oidc.par = v
+
+
 def keep_role(cfg: LoadedConfig, stored: str | None) -> bool:
     """An instance that nothing gives a shield wall role (no SLOWSHIELD_SHIELDWALL_ROLE, no `shieldwall.role` in the
     file, no join string) keeps the role it had: `stored`, as the database recorded it at the last start. Only an
@@ -706,8 +813,80 @@ _HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)*")
 _OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 
+_EMAIL_RULE = re.compile(r"(?:[^@\s,]+|\*)@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_ENTRA_MULTI = re.compile(r"^/(?:common|organizations|consumers)(?:/|$)", re.IGNORECASE)
+
+
+def _loopback_url(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_auth(cfg: Config) -> None:
+    auth = cfg.auth
+    if not auth.enabled:
+        if auth.require_login:
+            raise ConfigError("auth.require_login (SLOWSHIELD_UI_REQUIRE_LOGIN) needs sign-in: SLOWSHIELD_AUTH=oidc")
+        return
+    oidc = auth.oidc
+    urls = auth.ui_urls or [cfg.public_url or ""]
+    for url in urls:
+        parts = urlsplit(url)
+        if not _PUBLIC_URL.fullmatch(url) or parts.path not in ("", "/"):
+            raise ConfigError(
+                f"auth.ui_urls (SLOWSHIELD_UI_URLS, default public_url): {url!r} must be a plain https://host[:port] "
+                "URL, without a path"
+            )
+        if parts.scheme != "https" and not _loopback_url(url):
+            raise ConfigError(f"auth.ui_urls: sign-in needs https, got {url!r} (plain http only on loopback)")
+    hosts = [urlsplit(u).netloc.lower() for u in urls]
+    if len(set(hosts)) != len(hosts):
+        raise ConfigError("auth.ui_urls: each host only once")
+    if not oidc.issuer or not oidc.client_id:
+        raise ConfigError("SLOWSHIELD_AUTH=oidc needs SLOWSHIELD_OIDC_ISSUER and SLOWSHIELD_OIDC_CLIENT_ID")
+    issuer = urlsplit(oidc.issuer)
+    if issuer.query or issuer.fragment or not issuer.hostname:
+        raise ConfigError(f"auth.oidc.issuer must be a plain URL, got {oidc.issuer!r}")
+    if issuer.scheme != "https" and not (issuer.scheme == "http" and _loopback_url(oidc.issuer)):
+        raise ConfigError(f"auth.oidc.issuer must be https, got {oidc.issuer!r}")
+    if issuer.hostname.lower() == "login.microsoftonline.com" and _ENTRA_MULTI.match(issuer.path):
+        raise ConfigError(
+            "auth.oidc.issuer: Entra ID's /common, /organizations and /consumers accept any tenant; use your own "
+            "tenant's issuer (https://login.microsoftonline.com/<tenant id>/v2.0)"
+        )
+    if bool(oidc.client_key_file) == bool(oidc.client_secret_file):
+        raise ConfigError(
+            "SLOWSHIELD_AUTH=oidc needs exactly one of SLOWSHIELD_OIDC_CLIENT_KEY_FILE (private_key_jwt) and "
+            "SLOWSHIELD_OIDC_CLIENT_SECRET_FILE (client_secret_basic)"
+        )
+    if "openid" not in oidc.scopes:
+        raise ConfigError("auth.oidc.scopes must include openid")
+    if (oidc.admin_values or oidc.user_values) and not oidc.roles_claim:
+        raise ConfigError("auth.oidc.admin_values and user_values need roles_claim (SLOWSHIELD_OIDC_ROLES_CLAIM)")
+    if oidc.roles_claim and not re.fullmatch(r"[^.\s]+(?:\.[^.\s]+)*", oidc.roles_claim):
+        raise ConfigError(f"auth.oidc.roles_claim must be a claim name or a dotted path, got {oidc.roles_claim!r}")
+    for rule in oidc.require_claims:
+        name, sep, value = rule.partition("=")
+        if not sep or not name.strip() or not value.strip():
+            raise ConfigError(f"auth.oidc.require_claims: expected claim=value, got {rule!r}")
+    for what, rules in (("admin_emails", auth.admin_emails), ("user_emails", auth.user_emails)):
+        for rule in rules:
+            if not _EMAIL_RULE.fullmatch(rule):
+                raise ConfigError(f"auth.{what}: expected an address or *@domain, got {rule!r}")
+    if not 0 < auth.session_hours <= 24 * 30:
+        raise ConfigError("auth.session_hours must be above 0 and at most 720")
+    if not 1 <= auth.recheck_minutes <= auth.session_hours * 60:
+        raise ConfigError("auth.recheck_minutes must be at least 1 and at most the session lifetime")
+
+
 def _validate(cfg: Config) -> None:
     _validate_shieldwall(cfg.shieldwall)
+    _validate_auth(cfg)
     if cfg.default_delay_days < 0:
         raise ConfigError("default_delay_days must be >= 0")
     if cfg.metadata_cache_ttl_hours <= 0:
@@ -966,6 +1145,7 @@ RESTART_ONLY = (
     "workers",
     "public_url",
     "shieldwall",
+    "auth",
 )
 
 

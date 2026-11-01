@@ -25,6 +25,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from slowshield import __version__, build_info
+from slowshield.auth.web import principal
 from slowshield.blocklist import PackageBlocks
 from slowshield.config import LoadedConfig
 from slowshield.context import AppContext
@@ -35,7 +36,7 @@ from slowshield.ui import expect as X
 from slowshield.ui import queries as Q
 from slowshield.ui import snippets as S
 from slowshield.ui import svg
-from slowshield.web import is_loopback_host, local_http_origin, request_scheme
+from slowshield.web import client_ip, is_loopback_host, local_http_origin, request_scheme
 
 log = logging.getLogger(__name__)
 
@@ -198,6 +199,10 @@ class UI:
             Route("/ui/shieldwall", self.shieldwall),
             Route("/ui/shieldwall/join", self.shieldwall_join, methods=["POST"]),
             Route("/ui/about", self.about),
+            Route("/ui/users", self.users),
+            Route("/ui/users/{user_id:int}/{action}", self.user_action, methods=["POST"]),
+            Route("/ui/activity", self.activity),
+            Route("/ui/activity.csv", self.activity_csv),
             Route("/favicon.ico", lambda r: RedirectResponse("/ui/static/brand/favicon.ico", 301)),
         ]
 
@@ -227,10 +232,35 @@ class UI:
             "shieldwall_role": cfg.raw.shieldwall.role,
             "shieldwall_join": self._shieldwall_join_pending(),
             "instance_names": self._instance_names(),
+            "auth_on": self.ctx.auth is not None,
+            "me": principal(request),
+            "login_url": self._login_link(request),
         }
         base.update(context)
         html = tpl.render(base)
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    render = _render  # for slowshield.auth.web's pages
+
+    def _login_link(self, request: Request) -> str:
+        if self.ctx.auth is None:
+            return ""
+        path = request.url.path
+        target = path if path.startswith("/ui") and not path.startswith("/ui/auth/") else "/ui/"
+        query = f"?{request.url.query}" if request.url.query and target == path else ""
+        return self.ctx.auth.login_url(target + query)
+
+    def _allowed(self, request: Request, role: str) -> bool:
+        """Without sign-in everything stays as it was (the UI is read-only); with it, the role decides."""
+        return self.ctx.auth is None or principal(request).can(role)
+
+    def _forbidden(self, request: Request) -> Response:
+        me = principal(request)
+        message = "This page is for administrators." if me.signed_in else "Sign in to see this page."
+        resp = self._render("auth.html.j2", request, title="Not allowed", heading="Not allowed", message=message,
+                            retry=None if me.signed_in else self._login_link(request))  # fmt: skip
+        resp.status_code = 403
+        return resp
 
     def _shieldwall_join_pending(self) -> dict[str, Any] | None:
         """A follower waiting for the operator to confirm its leader (the banner on every page)."""
@@ -626,25 +656,126 @@ class UI:
 
     async def shieldwall_join(self, request: Request) -> Response:
         """The operator confirms the leader the join string names: the only thing this page can change. It can't
-        pick another leader, leave, or lower anything."""
+        pick another leader, leave, or lower anything. With sign-in on, only an Admin can, and it records who."""
         if self.ctx.cfg.raw.shieldwall.role != "follower":
             return PlainTextResponse("not a shield wall follower", status_code=404)
-        if not _same_origin(request, self.ctx.cfg.trusted_networks):
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
             return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
         body = await request.body()
         form = parse_qs(body[:4096].decode("latin-1"))
         leader_id = (form.get("leader") or [""])[0]
+        me = principal(request)
+        by = f"user:{me.user_id}" if me.signed_in else "ui"
+        now = self.ctx.clock.now()
 
         def op(conn: Any) -> int:
-            return conn.execute(
-                "UPDATE shieldwall_leader SET confirmed_by = 'ui' WHERE id = 1 AND state = 'pending' "
+            n = conn.execute(
+                "UPDATE shieldwall_leader SET confirmed_by = ? WHERE id = 1 AND state = 'pending' "
                 "AND confirmed_by IS NULL AND leader_id = ?",
-                (leader_id,),
+                (by, leader_id),
             ).rowcount
+            if n and me.signed_in:
+                from slowshield.auth.store import audit
+
+                audit(conn, now=now, action="shieldwall_confirmed", principal=me, target=leader_id,
+                      client_ip=self._client_ip(request))  # fmt: skip
+            return n
 
         if await self.ctx.db.writer.run(op):
-            log.info("shield wall leader confirmed in the UI", extra={"leader": leader_id})
+            log.info("shield wall leader confirmed in the UI", extra={"leader": leader_id, "user_id": me.user_id})
         return RedirectResponse("/ui/shieldwall", status_code=303)
+
+    def _client_ip(self, request: Request) -> str | None:
+        cfg = self.ctx.cfg
+        return client_ip(request.scope, cfg.trusted_networks) if cfg.raw.record_client_ip else None
+
+    # ---- users and activity (sign-in on, admins only) ----------------------------------------------------------------
+
+    async def users(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        rows = await self._q(Q.users, self.ctx.clock.now())
+        return self._render("users.html.j2", request, title="Users", rows=rows)
+
+    async def user_action(self, request: Request) -> Response:
+        """An admin disables (at once: sessions dropped) or enables a user on this instance."""
+        if self.ctx.auth is None:
+            return PlainTextResponse("not found", status_code=404)
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        action = request.path_params["action"]
+        if action not in ("disable", "enable"):
+            return PlainTextResponse("not found", status_code=404)
+        user_id = int(request.path_params["user_id"])
+        me = principal(request)
+        if action == "disable" and user_id == me.user_id:
+            return PlainTextResponse("refused: you can't disable yourself", status_code=409)
+        now = self.ctx.clock.now()
+        ip = self._client_ip(request)
+
+        def op(conn: Any) -> bool:
+            from slowshield.auth.store import audit, set_disabled
+
+            changed = set_disabled(conn, user_id, action == "disable", now)
+            if changed:
+                target = conn.execute("SELECT coalesce(email, name, id) FROM users WHERE id = ?", (user_id,)).fetchone()
+                audit(conn, now=now, action=f"user_{action}d", principal=me, client_ip=ip,
+                      target=str(target[0]) if target else str(user_id))  # fmt: skip
+            return changed
+
+        if await self.ctx.db.writer.run(op):
+            log.info(f"user {action}d in the UI", extra={"user_id": me.user_id, "target": user_id})
+        return RedirectResponse("/ui/users", status_code=303)
+
+    async def activity(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return self._render("not_found.html.j2", request, what="page")
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        w = Q.window(request.query_params.get("range") or "30d", self.ctx.clock.now())
+        action = (request.query_params.get("action") or "").strip()[:40] or None
+        page = self._page(request)
+        rows = await self._q(Q.audit_page, w, action=action, page=page)
+        dec = msgspec.json.Decoder()
+        out = []
+        for r in rows[:50]:
+            try:
+                details = dec.decode(r["details"]) if r["details"] else {}
+            except msgspec.DecodeError:
+                details = {}
+            out.append({**dict(r), "details": details})
+        return self._render("activity.html.j2", request, title="Activity", rows=out, has_next=len(rows) > 50,
+                            page=page, action=action, actions=Q.AUDIT_ACTIONS, w=w, range=w.key)  # fmt: skip
+
+    async def activity_csv(self, request: Request) -> Response:
+        if self.ctx.auth is None:
+            return PlainTextResponse("not found", status_code=404)
+        if not self._allowed(request, "admin"):
+            return self._forbidden(request)
+        w = Q.window(request.query_params.get("range") or "30d", self.ctx.clock.now())
+        rows = await self._q(Q.audit_page, w, per_page=50_000)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["time_utc", "action", "user", "target", "client_ip", "details", "instance"])
+        for r in rows:
+            writer.writerow([
+                fmt_ts(r["ts"]), r["action"], _csv_safe(r["actor"] or ""), _csv_safe(r["target"] or ""),
+                r["client_ip"] or "", _csv_safe(r["details"] or ""), _csv_safe(r["instance"]),
+            ])  # fmt: skip
+        return Response(
+            buf.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="slowshield-activity.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     # ---- static-ish pages -------------------------------------------------------------------------
 
@@ -785,7 +916,7 @@ def _client_os(request: Request) -> str:
     return ""
 
 
-def _same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
+def same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
     """A browser's POST from this UI: `Sec-Fetch-Site` and `Origin`, where sent, must name this site, scheme
     included (behind Caddy, the scheme the browser used comes from X-Forwarded-Proto). Our `Referrer-Policy:
     no-referrer` makes browsers send `Origin: null` on a form POST, so then only `Sec-Fetch-Site` can vouch."""

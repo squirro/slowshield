@@ -35,6 +35,7 @@ class AppContext:
     feeds: dict[str, FeedStatus] = field(default_factory=dict)
     is_leader: bool = False
     started_at: float = 0.0
+    auth: Any = None  # slowshield.auth.web.Auth when UI sign-in is on
 
     @property
     def cfg(self) -> LoadedConfig:

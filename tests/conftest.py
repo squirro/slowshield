@@ -143,12 +143,19 @@ async def start_app(
 ) -> AsyncIterator[Callable[..., Any]]:
     started: list[Running] = []
 
-    async def start(extra: str = "", *, clock: FrozenClock | None = None, host: str = "slowshield.test") -> Running:
-        cfg = make_config(extra)
+    async def start(
+        extra: str = "",
+        *,
+        clock: FrozenClock | None = None,
+        host: str = "slowshield.test",
+        scheme: str = "http",
+        data_dir: Path | None = None,
+    ) -> Running:
+        cfg = make_config(extra, data_dir=data_dir)
         clk = clock or FrozenClock(NOW)
         app = create_app(cfg, clock=clk, background=False)
         await app.startup()
-        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{host}")
+        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"{scheme}://{host}")
         run = Running(app, client, clk, upstream)
         started.append(run)
         return run

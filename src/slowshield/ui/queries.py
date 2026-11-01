@@ -187,8 +187,17 @@ def shieldwall_choices(
 def shieldwall_follower(conn: sqlite3.Connection) -> dict[str, Any]:
     leader = conn.execute("SELECT * FROM shieldwall_leader WHERE id = 1").fetchone()
     error = conn.execute("SELECT value FROM meta WHERE key = 'shieldwall_error'").fetchone()
+    confirmed = None
+    if leader and leader["confirmed_by"]:
+        by = str(leader["confirmed_by"])
+        if by.startswith("user:"):  # an Admin, with UI sign-in on
+            row = conn.execute("SELECT coalesce(name, email) FROM users WHERE id = ?", (by[5:],)).fetchone()
+            confirmed = row[0] if row and row[0] else by
+        else:
+            confirmed = {"ui": "in the UI", "auto": "automatically (SLOWSHIELD_JOIN_CONFIRM=auto)"}.get(by, by)
     return {
         "leader": dict(leader) if leader else None,
+        "confirmed_by": confirmed,
         "error": error[0] if error and not leader else None,
         "pending": _rows(conn, "SELECT kind, key, due FROM shieldwall_pending ORDER BY due"),
         "outbox": conn.execute("SELECT count(*), min(created) FROM shieldwall_outbox").fetchone(),
@@ -587,3 +596,41 @@ def blocklist_counts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def feed_states(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return _rows(conn, "SELECT * FROM feed_state ORDER BY source")
+
+
+# ---- users and the audit log (UI sign-in) ----------------------------------------------------------------------------
+
+AUDIT_ACTIONS = {
+    "login": "Signed in",
+    "login_refused": "Sign-in refused",
+    "logout": "Signed out",
+    "session_ended": "Session ended at the IdP",
+    "role_changed": "Role changed",
+    "user_disabled": "User disabled",
+    "user_enabled": "User enabled",
+    "shieldwall_confirmed": "Shield wall leader confirmed",
+}
+
+
+def users(conn: sqlite3.Connection, now: float) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT u.id, u.instance, u.email, u.email_verified, u.name, u.role, u.role_source, u.first_login, "
+        "u.last_login, u.disabled, (SELECT count(*) FROM ui_sessions s WHERE s.user_id = u.id AND s.expires > ?) "
+        "AS sessions FROM users u ORDER BY u.last_login DESC LIMIT 1000",
+        (now,),
+    ).fetchall()
+
+
+def audit_page(
+    conn: sqlite3.Connection, w: Window, *, action: str | None = None, page: int = 1, per_page: int = 50
+) -> list[sqlite3.Row]:
+    where: list[str] = ["ts >= ?"]
+    params: list[Any] = [w.start]
+    if action:
+        where.append("action = ?")
+        params.append(action)
+    return conn.execute(
+        f"SELECT ts, action, actor, user_id, target, details, client_ip, instance FROM audit_log "
+        f"WHERE {' AND '.join(where)} ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?",
+        (*params, per_page + 1, (page - 1) * per_page),
+    ).fetchall()

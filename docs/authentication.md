@@ -1,7 +1,13 @@
 # UI sign-in
 
-SlowShield's UI can let people sign in with their company identity over OpenID Connect. Each person gets a role from
-the identity provider (IdP):
+SlowShield's UI can let people sign in in one of two ways:
+
+- **With their company identity over OpenID Connect** (`SLOWSHIELD_AUTH=oidc`), for teams. Each person gets a role from
+  the identity provider (IdP), as below.
+- **With a password** (`SLOWSHIELD_AUTH=password`), for a single-user deployment where an IdP is overkill. There is one
+  account, and signing in with it makes you an Admin ([Password sign-in](#password-sign-in)).
+
+With OIDC, the roles are:
 
 | Role | Who | Can |
 |---|---|---|
@@ -137,6 +143,72 @@ itself.
   straight back.
 - With sign-in on, only an Admin can confirm a follower's leader on its Shield wall page. The page shows who did.
 
+## Password sign-in
+
+For one person running SlowShield for themselves, e.g. on a laptop or a home server. The UI stays public and read-only,
+as without sign-in, and the header gets a **Sign in** button. Signing in with the configured username and password
+makes you an Admin: fast-tracks, the Users and Activity pages. With `SLOWSHIELD_UI_REQUIRE_LOGIN=true`, the UI shows
+the sign-in form to anyone not signed in instead. The package proxy never asks for it.
+
+SlowShield never stores the password, only a salted SHA-256 hash of it: `sha256:<salt>:<hex digest>`, where the
+digest is SHA-256 of the salt followed by the password.
+
+### 1. Make the hash
+
+`openssl` is on every macOS and almost every Linux. Paste this into a terminal (bash or zsh); it asks for the password
+without showing it:
+
+```sh
+printf 'Password: '; stty -echo; read -r pw; stty echo; echo
+salt=$(openssl rand -hex 16)
+echo "SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:$salt:$(printf '%s%s' "$salt" "$pw" | openssl dgst -sha256 | sed 's/^.*= //')"
+unset pw
+```
+
+It prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:6c1f…:9b2e…`.
+
+<details>
+<summary>Without openssl, or with SlowShield's own command</summary>
+
+Linux, with coreutils:
+
+```sh
+printf 'Password: '; stty -echo; read -r pw; stty echo; echo
+salt=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
+echo "SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:$salt:$(printf '%s%s' "$salt" "$pw" | sha256sum | cut -d' ' -f1)"
+unset pw
+```
+
+On macOS, `shasum -a 256` takes the place of `sha256sum`.
+
+SlowShield prints one too. It asks twice on a terminal, or reads one line from stdin:
+
+```sh
+docker run --rm -it ghcr.io/squirro/slowshield slowshield auth hash-password
+```
+
+</details>
+
+Use a long, random password, e.g. from a password manager. SHA-256 is fast, so a hash that leaks is only as safe as
+the password is long; SlowShield also slows failed sign-ins down and refuses more than 10 from one address in 15
+minutes.
+
+### 2. Configure SlowShield
+
+```sh
+SLOWSHIELD_AUTH=password
+SLOWSHIELD_AUTH_USERNAME=admin
+SLOWSHIELD_AUTH_PASSWORD_HASH=sha256:…:…      # or SLOWSHIELD_AUTH_PASSWORD_HASH_FILE=/run/secrets/…
+SLOWSHIELD_UI_REQUIRE_LOGIN=false             # true: no UI at all without signing in
+```
+
+The UI must be served over `https`, e.g. by the bundled Caddy at `https://localhost`, because the session cookie is
+`Secure`. `SLOWSHIELD_UI_URLS` defaults to `SLOWSHIELD_PUBLIC_URL`, as with OIDC.
+
+Sessions last `SLOWSHIELD_SESSION_HOURS` (12); there is no IdP to recheck with. To change the password, set a new hash
+and restart. `slowshield users logout-all` ends every session at once. The Activity page records sign-ins and failed
+attempts, with the client address unless `record_client_ip` is off.
+
 ## Keycloak (tested)
 
 This sets up a hardened client for SlowShield in Keycloak 26. Replace `slowshield.example.com` with each of your UI
@@ -265,8 +337,14 @@ and tamper checks also still apply when a fast-tracked version is served, so an 
 it as before.
 
 Every step, with its message, is in the Activity log, and the package page shows the history. A fast-track applies
-on the instance it was made on (every worker within seconds). A shield wall follower takes its policy from its
-leader and offers no fast-tracks; fast-tracks made on a leader don't reach its followers yet.
+on the instance it was made on within seconds (every worker).
+
+On a shield wall, fast-tracks are made on the leader, and its followers release those versions too. They come with
+the leader's signed policy: a new fast-track loosens the policy, so a follower waits out the hour's hold-down before
+applying it, and a revoked one stops there at once. The follower's floor (`SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS`)
+doesn't hold a fast-track back, as it is one version decided with a reason. A follower that shouldn't take them sets
+`SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off`. A follower's own UI offers no fast-tracks; its Fast-tracks page lists the
+leader's.
 
 ## Pages, records and commands
 

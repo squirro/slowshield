@@ -61,3 +61,12 @@ def test_ui_sign_in() -> None:
     assert "SLOWSHIELD_OIDC_CLIENT_SECRET_FILE" not in out
     r = _render(*oidc, "auth.oidc.clientSecretSecret=slowshield-oidc")
     assert "value: /run/secrets/oidc/secret" in r.stdout
+
+
+def test_password_sign_in() -> None:
+    r = _render("auth.mode=password", "auth.username=admin")
+    assert r.returncode != 0 and "auth.passwordHashSecret" in r.stderr
+    r = _render("auth.mode=password", "auth.username=admin", "auth.passwordHashSecret=slowshield-password")
+    assert r.returncode == 0, r.stderr
+    assert "SLOWSHIELD_AUTH_PASSWORD_HASH" in r.stdout and "name: slowshield-password" in r.stdout
+    assert "SLOWSHIELD_OIDC_ISSUER" not in r.stdout and "/run/secrets/oidc" not in r.stdout

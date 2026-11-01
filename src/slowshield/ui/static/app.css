@@ -339,3 +339,5 @@ td form { margin: 0; }
 .stack textarea { width: 100%; font: inherit; }
 .badge.fast, .badge.fast-active { background: var(--primary-soft); color: var(--primary); }
 .badge.fast-pending { background: var(--surface-2); color: var(--text); }
+.card.narrow { max-width: 420px; }
+.stack input[type="text"], .stack input[type="password"] { font: inherit; padding: 6px 8px; }

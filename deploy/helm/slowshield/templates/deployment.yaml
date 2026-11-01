@@ -119,6 +119,10 @@ spec:
             - name: SLOWSHIELD_INSTANCE_LOCATION
               value: {{ .location | quote }}
             {{- end }}
+            {{- if not .fastTracks }}
+            - name: SLOWSHIELD_SHIELDWALL_FAST_TRACKS
+              value: "off"
+            {{- end }}
             {{- if .leaderCaSecret }}
             - name: SLOWSHIELD_LEADER_CA_FILE
               value: /run/secrets/leader-ca/{{ .leaderCaSecretKey }}
@@ -136,6 +140,15 @@ spec:
               value: {{ .requireLogin | quote }}
             - name: SLOWSHIELD_AUTH_DEFAULT_ROLE
               value: {{ .defaultRole | quote }}
+            {{- if eq .mode "password" }}
+            - name: SLOWSHIELD_AUTH_USERNAME
+              value: {{ required "auth.mode=password needs auth.username" .username | quote }}
+            - name: SLOWSHIELD_AUTH_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "auth.mode=password needs auth.passwordHashSecret" .passwordHashSecret }}
+                  key: {{ .passwordHashSecretKey }}
+            {{- end }}
             {{- with .uiUrls }}
             - name: SLOWSHIELD_UI_URLS
               value: {{ join "," . | quote }}
@@ -156,6 +169,7 @@ spec:
             - name: SLOWSHIELD_SESSION_RECHECK_MINUTES
               value: {{ . | quote }}
             {{- end }}
+            {{- if eq .mode "oidc" }}
             {{- with .oidc }}
             - name: SLOWSHIELD_OIDC_ISSUER
               value: {{ .issuer | quote }}
@@ -189,6 +203,7 @@ spec:
             {{- with .requireClaims }}
             - name: SLOWSHIELD_OIDC_REQUIRE_CLAIMS
               value: {{ join "," . | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- end }}

@@ -374,10 +374,13 @@ class ShieldwallConfig(msgspec.Struct, forbid_unknown_fields=True):
     # A follower never takes a delay below this from its leader, exceptions for single versions included.
     min_delay_days: float = 1.0  # SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS
     via_leader: bool = True  # SLOWSHIELD_SHIELDWALL_VIA_LEADER: fetch package files through the leader when it's up
+    # SLOWSHIELD_SHIELDWALL_FAST_TRACKS: a follower releases the versions its leader fast-tracked (after the hour's
+    # hold-down). Off: it keeps holding them back like any other version.
+    fast_tracks: bool = True
     leader_ca_file: str | None = None  # SLOWSHIELD_LEADER_CA_FILE: for a leader behind Caddy's internal CA
 
 
-AuthMode = Literal["none", "oidc"]
+AuthMode = Literal["none", "oidc", "password"]
 UiRole = Literal["viewer", "user", "admin"]
 
 
@@ -401,7 +404,11 @@ class OidcConfig(msgspec.Struct, forbid_unknown_fields=True):
 class AuthConfig(msgspec.Struct, forbid_unknown_fields=True):
     """Who may use the UI (docs/authentication.md). The package proxy never needs a sign-in."""
 
-    mode: AuthMode = "none"  # SLOWSHIELD_AUTH: none keeps the UI public and read-only
+    mode: AuthMode = "none"  # SLOWSHIELD_AUTH: none keeps the UI public and read-only; oidc; password
+    # SLOWSHIELD_AUTH=password: one local Admin, for single-user deployments. The hash is sha256:<salt>:<hex of
+    # SHA-256(salt + password)> (docs/authentication.md shows how to make it with openssl).
+    username: str | None = None  # SLOWSHIELD_AUTH_USERNAME
+    password_hash: str | None = None  # SLOWSHIELD_AUTH_PASSWORD_HASH or SLOWSHIELD_AUTH_PASSWORD_HASH_FILE
     require_login: bool = False  # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI without signing in
     ui_urls: list[str] = []  # SLOWSHIELD_UI_URLS: every URL the UI is reached at (default: public_url)
     default_role: Literal["viewer", "user"] = "viewer"  # SLOWSHIELD_AUTH_DEFAULT_ROLE
@@ -512,6 +519,9 @@ class LoadedConfig:
 
     def fast_tracked(self, ecosystem: str, name: str, version: str) -> bool:
         return (ecosystem, name, version) in self._fast
+
+    def fast_track_keys(self) -> list[tuple[str, str, str]]:
+        return sorted(self._fast)
 
     def npm_public_base(self, *, via_hostname: bool = False) -> str:
         """Base for npm tarball URLs: `upstreams.npm.public_url`, else `<public_url>/npm`. Only requests that
@@ -706,6 +716,9 @@ def _apply_shieldwall_env(sw: ShieldwallConfig) -> bool:
     b = _env_bool("SLOWSHIELD_SHIELDWALL_VIA_LEADER")
     if b is not None:
         sw.via_leader = b
+    b = _env_bool("SLOWSHIELD_SHIELDWALL_FAST_TRACKS")
+    if b is not None:
+        sw.fast_tracks = b
     if v := env.get("SLOWSHIELD_LEADER_CA_FILE", "").strip():
         sw.leader_ca_file = v
     return role_set
@@ -730,8 +743,8 @@ def _apply_auth_env(auth: AuthConfig) -> None:
     """Apply the UI sign-in environment (docs/authentication.md). Empty values change nothing."""
     env = os.environ
     if v := env.get("SLOWSHIELD_AUTH", "").strip().lower():
-        if v not in ("none", "oidc"):
-            raise ConfigError(f"SLOWSHIELD_AUTH must be none or oidc, got {v!r}")
+        if v not in ("none", "oidc", "password"):
+            raise ConfigError(f"SLOWSHIELD_AUTH must be none, oidc or password, got {v!r}")
         auth.mode = v
     b = _env_bool("SLOWSHIELD_UI_REQUIRE_LOGIN")
     if b is not None:
@@ -766,6 +779,15 @@ def _apply_auth_env(auth: AuthConfig) -> None:
     ):
         if v := env.get(name, "").strip():
             setattr(auth.oidc, attr, v)
+    if v := env.get("SLOWSHIELD_AUTH_USERNAME", "").strip():
+        auth.username = v
+    if v := env.get("SLOWSHIELD_AUTH_PASSWORD_HASH_FILE", "").strip():
+        try:
+            auth.password_hash = Path(v).read_text(encoding="utf-8").strip() or None
+        except OSError as exc:
+            raise ConfigError(f"SLOWSHIELD_AUTH_PASSWORD_HASH_FILE: cannot read {v}: {exc.strerror}") from exc
+    if v := env.get("SLOWSHIELD_AUTH_PASSWORD_HASH", "").strip():
+        auth.password_hash = v
     if v := env.get("SLOWSHIELD_OIDC_PAR", "").strip().lower():
         if v not in ("auto", "required", "off"):
             raise ConfigError(f"SLOWSHIELD_OIDC_PAR must be auto, required or off, got {v!r}")
@@ -820,6 +842,7 @@ _HOST_PATTERN = re.compile(r"[A-Za-z0-9*-]+(?:\.[A-Za-z0-9*-]+)*")
 _OCI_REGISTRY = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::[0-9]{1,5})?|localhost(?::[0-9]{1,5})?")
 
 
+_PASSWORD_HASH = re.compile(r"sha256:[A-Za-z0-9._-]{8,128}:[0-9a-fA-F]{64}")
 _EMAIL_RULE = re.compile(r"(?:[^@\s,]+|\*)@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 _ENTRA_MULTI = re.compile(r"^/(?:common|organizations|consumers)(?:/|$)", re.IGNORECASE)
 
@@ -838,7 +861,9 @@ def _validate_auth(cfg: Config) -> None:
     auth = cfg.auth
     if not auth.enabled:
         if auth.require_login:
-            raise ConfigError("auth.require_login (SLOWSHIELD_UI_REQUIRE_LOGIN) needs sign-in: SLOWSHIELD_AUTH=oidc")
+            raise ConfigError(
+                "auth.require_login (SLOWSHIELD_UI_REQUIRE_LOGIN) needs sign-in: SLOWSHIELD_AUTH=oidc or password"
+            )
         return
     oidc = auth.oidc
     urls = auth.ui_urls or [cfg.public_url or ""]
@@ -854,6 +879,15 @@ def _validate_auth(cfg: Config) -> None:
     hosts = [urlsplit(u).netloc.lower() for u in urls]
     if len(set(hosts)) != len(hosts):
         raise ConfigError("auth.ui_urls: each host only once")
+    if auth.mode == "password":
+        if not auth.username or len(auth.username) > 100 or any(ord(c) < 33 for c in auth.username):
+            raise ConfigError("SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_USERNAME (no spaces)")
+        if not _PASSWORD_HASH.fullmatch(auth.password_hash or ""):
+            raise ConfigError(
+                "SLOWSHIELD_AUTH=password needs SLOWSHIELD_AUTH_PASSWORD_HASH as sha256:<salt>:<64 hex digits> "
+                "(docs/authentication.md#password-sign-in shows how to make one)"
+            )
+        return
     if not oidc.issuer or not oidc.client_id:
         raise ConfigError("SLOWSHIELD_AUTH=oidc needs SLOWSHIELD_OIDC_ISSUER and SLOWSHIELD_OIDC_CLIENT_ID")
     issuer = urlsplit(oidc.issuer)
@@ -1242,7 +1276,8 @@ class ConfigHolder:
     def _swap(self) -> None:
         self._generation += 1
         merged = self.local if self._overlay is None else self._overlay(self.local)
-        self.current = dataclasses.replace(merged, generation=self._generation, _fast=self._fast)
+        # This instance's own fast-tracks, and on a follower its leader's (`effective` puts those in).
+        self.current = dataclasses.replace(merged, generation=self._generation, _fast=merged._fast | self._fast)
 
     @staticmethod
     def _file_stamp(path: Path | None) -> tuple[float, int] | None:

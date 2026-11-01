@@ -157,3 +157,44 @@ async def test_fast_tracks_need_sign_in(running: Running, start_auth: Callable[.
     assert (await _ask(anon)).status_code == 400
     cross = {**FORM, "Sec-Fetch-Site": "cross-site"}
     assert (await anon.client.post("/ui/fasttrack", content="eco=npm", headers=cross)).status_code == 403
+
+
+async def test_the_list_is_for_users_and_admins(people: Callable[..., Any], start_auth: Callable[..., Any]) -> None:
+    anon = await start_auth()
+    r = await anon.client.get("/ui/fasttrack")
+    assert r.status_code == 403 and "Sign in" in r.text
+    vera = await people("vera", VIEWER)
+    assert (await vera.client.get("/ui/fasttrack")).status_code == 403
+    uli = await people("uli", USER)
+    assert (await uli.client.get("/ui/fasttrack")).status_code == 200
+
+
+async def test_an_integrity_failure_stops_a_fast_track(people: Callable[..., Any]) -> None:
+    """How a container image digest that didn't match is remembered: an event, not an artifact row."""
+    ada = await people("ada", ADMIN)
+    await _held(ada)
+    await ada.ctx.db.writer.run(
+        lambda c: c.execute(
+            "INSERT INTO events (ts, type, ecosystem, package, version, count) "
+            "VALUES (?, 'integrity_mismatch', 'npm', 'left-pad-ng', '2.0.0', 1)",
+            (ada.clock.now(),),
+        )
+    )
+    r = await _ask(ada)
+    assert r.status_code == 400 and "tampered" in r.text
+
+
+async def test_a_blocklist_change_in_between_means_checking_again(people: Callable[..., Any]) -> None:
+    from functools import partial
+
+    from slowshield import fasttrack as F
+    from slowshield.auth import Principal
+
+    ada = await people("ada", ADMIN)
+    await _held(ada)
+    me = Principal(role="admin", user_id=1, name="Ada Admin")
+    stale = partial(F.create, eco="npm", name="left-pad-ng", version="2.0.0", who=me, text="now", now=0.0,
+                    client_ip=None, blocklist_generation="stale")  # fmt: skip
+    with pytest.raises(F.FastTrackError, match="blocklist changed"):
+        await ada.ctx.db.writer.run(stale)
+    assert ada.rows("SELECT count(*) FROM fast_tracks") == [(0,)]

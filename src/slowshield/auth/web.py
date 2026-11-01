@@ -22,8 +22,9 @@ from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from slowshield.auth import ANONYMOUS, Principal, jose, roles, store
+from slowshield.auth import ANONYMOUS, Principal, jose, password, roles, store
 from slowshield.auth.oidc import OidcError, Provider, pkce
+from slowshield.auth.password import Throttle
 from slowshield.context import AppContext
 from slowshield.telemetry import instruments
 from slowshield.web import client_ip
@@ -33,6 +34,7 @@ log = logging.getLogger(__name__)
 SESSION_COOKIE = "__Host-slowshield_session"
 LOGIN_COOKIE = "__Host-slowshield_login"
 LOGIN_MAX_AGE = 600
+FAILED_PASSWORD_DELAY = 0.5
 OPEN_PREFIXES = ("/ui/static/", "/ui/auth/")
 # The IdP's answers to prompt=none when it would have to ask the person: the IdP session is over.
 NO_SESSION = frozenset({"login_required", "interaction_required", "consent_required", "account_selection_required"})
@@ -88,10 +90,27 @@ def _decode(text: str | None) -> dict[str, Any] | None:
 class Auth:
     """Sign-in for one instance: its provider, its routes and its gate."""
 
-    def __init__(self, ctx: AppContext, provider: Provider, render: Render) -> None:
+    def __init__(self, ctx: AppContext, provider: Provider | None, render: Render) -> None:
+        """`provider` None: password sign-in (SLOWSHIELD_AUTH=password), one local Admin."""
         self.ctx = ctx
-        self.provider = provider
+        self._provider = provider
         self.render = render
+        self.throttle = Throttle()
+
+    @property
+    def provider(self) -> Provider:
+        if self._provider is None:  # pragma: no cover - the OIDC routes aren't there without one
+            raise RuntimeError("no OIDC provider")
+        return self._provider
+
+    @property
+    def rechecks(self) -> bool:
+        """Sessions go back to an IdP to be checked again: OIDC only."""
+        return self._provider is not None
+
+    async def close(self) -> None:
+        if self._provider is not None:
+            await self._provider.close()
 
     @property
     def settings(self) -> Any:
@@ -106,6 +125,13 @@ class Auth:
         return None
 
     def routes(self) -> list[Route]:
+        if self._provider is None:
+            return [
+                Route("/ui/auth/login", self.password_form, methods=["GET"]),
+                Route("/ui/auth/login", self.password_login, methods=["POST"]),
+                Route("/ui/auth/logout", self.logout, methods=["POST"]),
+                Route("/ui/auth/signed-out", self.signed_out, methods=["GET"]),
+            ]
         return [
             Route("/ui/auth/login", self.login, methods=["GET"]),
             Route("/ui/auth/callback", self.callback, methods=["GET"]),
@@ -153,6 +179,72 @@ class Auth:
         resp.delete_cookie(name, path="/", secure=True, httponly=True, samesite="lax")
 
     # ---- routes ----------------------------------------------------------------------------------------------------
+
+    # ---- password sign-in ----------------------------------------------------------------------------------------
+
+    def password_form(self, request: Request, *, error: str | None = None, status: int = 200) -> Response:
+        if self.ui_url(request.scope) is None:
+            return PlainTextResponse("this host name isn't one of the UI's URLs (SLOWSHIELD_UI_URLS)", 421)
+        next_path = safe_next(request.query_params.get("next"))
+        resp = self.render("auth_password.html.j2", request, title="Sign in", next=next_path, error=error)
+        resp.status_code = status
+        return resp
+
+    async def password_login(self, request: Request) -> Response:
+        """The one local Admin signs in. Refused from another site (login CSRF); failures are slowed down and capped
+        per client address."""
+        from slowshield.ui import same_origin
+
+        if not same_origin(request, self.ctx.cfg.trusted_networks):
+            return PlainTextResponse("refused: the request came from another site", status_code=403)
+        base = self.ui_url(request.scope)
+        if base is None:
+            return PlainTextResponse("this host name isn't one of the UI's URLs (SLOWSHIELD_UI_URLS)", 421)
+        form = parse_qs((await request.body())[:4096].decode("utf-8", "replace"))
+        username = (form.get("username") or [""])[0]
+        given = (form.get("password") or [""])[0]
+        next_path = safe_next((form.get("next") or [""])[0])
+        who_key = client_ip(request.scope, self.ctx.cfg.trusted_networks) or "?"
+        if self.throttle.blocked(who_key):
+            await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "throttled"})
+            return self.password_form(request, error="Too many failed attempts. Wait a few minutes.", status=429)
+        settings = self.settings
+        ok = password.same(username, settings.username or "") & password.verify(settings.password_hash or "", given)
+        if not ok:
+            self.throttle.failed(who_key)
+            instruments.auth_logins.add(1, {"result": "refused"})
+            await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "password"})
+            await asyncio.sleep(FAILED_PASSWORD_DELAY)  # slows guessing down; the throttle caps it
+            return self.password_form(request, error="Wrong username or password.", status=401)
+        self.throttle.succeeded(who_key)
+        ident = store.Identity(provider="password", issuer="local", subject=settings.username, email=None,
+                               email_verified=False, name=settings.username, role="admin",
+                               role_source="password")  # fmt: skip
+        now = self.ctx.clock.now()
+        token = store.new_session_token()
+        old = await self.session(request)
+        replaces = old.principal.session if old is not None else None
+
+        def op(conn: Any) -> store.Upserted:
+            up = store.upsert_user(conn, ident, now)
+            if not up.disabled:
+                store.create_session(conn, token=token, user_id=up.user_id, host=base, idp_sid=None, id_token=None,
+                                     now=now, hours=settings.session_hours, replaces=replaces)  # fmt: skip
+            return up
+
+        up = await self.ctx.db.writer.run(op)
+        who = Principal(role="admin", user_id=up.user_id, name=settings.username)
+        if up.disabled:  # `slowshield users enable <id>` lets them back in
+            await self._audit(request, "login_refused", principal=who, details={"reason": "disabled"})
+            return self.password_form(request, error="This account is disabled.", status=403)
+        instruments.auth_logins.add(1, {"result": "ok"})
+        await self._audit(request, "login", principal=who, details={"role": "admin", "source": "password"})
+        log.info("signed in", extra={"user_id": up.user_id, "role": "admin"})
+        resp = RedirectResponse(next_path, status_code=303, headers={"Cache-Control": "no-store"})
+        self._set_session_cookie(resp, token)
+        return resp
+
+    # ---- OIDC sign-in ----------------------------------------------------------------------------------------------
 
     async def login(self, request: Request) -> Response:
         """Start a sign-in: to the IdP, with the state in a cookie. `prompt=none` is the silent recheck."""
@@ -362,7 +454,7 @@ class Auth:
         if current is not None:
             await self.ctx.db.writer.run(partial(store.delete_session, id_hash=str(current.principal.session)))
             await self._audit(request, "logout", principal=current.principal)
-            if base is not None:
+            if base is not None and self._provider is not None:
                 end_url = await self.provider.end_session_url(
                     id_token=current.id_token, post_logout_redirect_uri=f"{base}/ui/auth/signed-out"
                 )
@@ -399,7 +491,7 @@ class Gate:
         target = path + (f"?{scope['query_string'].decode('latin-1')}" if scope.get("query_string") else "")
         if session is not None:
             now = auth.ctx.clock.now()
-            due = now - session.last_recheck > settings.recheck_minutes * 60
+            due = auth.rechecks and now - session.last_recheck > settings.recheck_minutes * 60
             if due and request.method in ("GET", "HEAD"):
                 await self._to_idp(request, target, "none")(scope, receive, send)
                 return

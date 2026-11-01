@@ -58,6 +58,8 @@ services:
       # UI sign-in (docs/authentication.md): off unless SLOWSHIELD_AUTH=oidc. The client's key or secret is the
       # oidc_client secret (OIDC_CLIENT_SECRET_FILE, secrets/README.md); point one of the two _FILE settings at it.
       SLOWSHIELD_AUTH: ${SLOWSHIELD_AUTH:-}
+      SLOWSHIELD_AUTH_USERNAME: ${SLOWSHIELD_AUTH_USERNAME:-}  # password sign-in
+      SLOWSHIELD_AUTH_PASSWORD_HASH: ${SLOWSHIELD_AUTH_PASSWORD_HASH:-}
       SLOWSHIELD_UI_REQUIRE_LOGIN: ${SLOWSHIELD_UI_REQUIRE_LOGIN:-}
       SLOWSHIELD_UI_URLS: ${SLOWSHIELD_UI_URLS:-}
       SLOWSHIELD_AUTH_DEFAULT_ROLE: ${SLOWSHIELD_AUTH_DEFAULT_ROLE:-}

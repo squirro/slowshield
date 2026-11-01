@@ -298,7 +298,7 @@ def test_auth_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert auth.admin_emails == ["root@example.com", "*@sec.example.com"]
     assert (auth.session_hours, auth.recheck_minutes) == (8, 5)
     monkeypatch.setenv("SLOWSHIELD_AUTH", "saml")
-    with pytest.raises(config_mod.ConfigError, match="none or oidc"):
+    with pytest.raises(config_mod.ConfigError, match="none, oidc or password"):
         config_mod.load(None)
 
 
@@ -345,3 +345,36 @@ def test_users_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys:
     assert cli.main(["users", "logout-all"]) == 0
     actions = [r[0] for r in conn.execute("SELECT action FROM audit_log ORDER BY id")]
     assert actions == ["user_disabled", "user_enabled", "logout_all"]
+
+
+@pytest.mark.parametrize(
+    ("auth", "message"),
+    [
+        ({"mode": "password", "password_hash": "sha256:0123456789abcdef:" + "a" * 64}, "USERNAME"),
+        ({"mode": "password", "username": "admin"}, "PASSWORD_HASH"),
+        ({"mode": "password", "username": "admin", "password_hash": "sha256:short:" + "a" * 64}, "PASSWORD_HASH"),
+        ({"mode": "password", "username": "admin", "password_hash": "md5:0123456789abcdef:" + "a" * 32}, "sha256"),
+        (
+            {"mode": "password", "username": "my admin", "password_hash": "sha256:0123456789abcdef:" + "a" * 64},
+            "spaces",
+        ),
+    ],
+)
+def test_invalid_password_config(auth: dict[str, Any], message: str) -> None:
+    with pytest.raises(config_mod.ConfigError, match=message):
+        _cfg(auth)
+
+
+def test_password_config_from_the_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from slowshield.auth.password import make_hash, verify
+
+    stored = make_hash("correct horse battery staple")
+    (tmp_path / "hash").write_text(stored + "\n")
+    monkeypatch.setenv("SLOWSHIELD_PUBLIC_URL", "https://localhost")
+    monkeypatch.setenv("SLOWSHIELD_AUTH", "password")
+    monkeypatch.setenv("SLOWSHIELD_AUTH_USERNAME", "admin")
+    monkeypatch.setenv("SLOWSHIELD_AUTH_PASSWORD_HASH_FILE", str(tmp_path / "hash"))
+    auth = config_mod.load(None).raw.auth
+    assert auth.mode == "password" and auth.password_hash == stored
+    assert verify(stored, "correct horse battery staple") and not verify(stored, "wrong")
+    assert not verify("sha256:salt:short", "x") and not verify("garbage", "x")

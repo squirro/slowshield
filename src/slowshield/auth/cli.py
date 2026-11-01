@@ -59,6 +59,26 @@ def cmd_client_cert(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hash_password(args: argparse.Namespace) -> int:
+    """SLOWSHIELD_AUTH_PASSWORD_HASH for a password: asked twice on a terminal, else read from stdin."""
+    import getpass
+
+    from slowshield.auth.password import make_hash
+
+    if sys.stdin.isatty():
+        first = getpass.getpass("Password: ")
+        if getpass.getpass("Again: ") != first:
+            print("the passwords differ", file=sys.stderr)
+            return 2
+    else:
+        first = sys.stdin.readline().rstrip("\n")
+    if len(first) < 12:
+        print("use a password of 12 characters or more (SHA-256 is fast to guess at)", file=sys.stderr)
+        return 2
+    print(make_hash(first))
+    return 0
+
+
 def _when(ts: float | None) -> str:
     return "—" if not ts else datetime.datetime.fromtimestamp(ts, datetime.UTC).strftime("%Y-%m-%d %H:%M")
 
@@ -122,7 +142,7 @@ def cmd_users_logout_all(args: argparse.Namespace) -> int:
 
 
 def add_parsers(sub: argparse._SubParsersAction) -> None:
-    auth = sub.add_parser("auth", help="UI sign-in: the client key for private_key_jwt")
+    auth = sub.add_parser("auth", help="UI sign-in: the client key for private_key_jwt, the password hash")
     asub = auth.add_subparsers(dest="auth_cmd", required=True)
     p = asub.add_parser("client-cert", help="print a certificate for the client key, to register at the IdP")
     p.add_argument("--key", required=True, help="the key file (SLOWSHIELD_OIDC_CLIENT_KEY_FILE)")
@@ -131,6 +151,8 @@ def add_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--days", type=int, default=730)
     p.add_argument("--jwk", action="store_true", help="print a JWKS instead of a certificate")
     p.set_defaults(fn=cmd_client_cert)
+    p = asub.add_parser("hash-password", help="print SLOWSHIELD_AUTH_PASSWORD_HASH for a password (password sign-in)")
+    p.set_defaults(fn=cmd_hash_password)
 
     users = sub.add_parser("users", help="people who signed in to the UI")
     usub = users.add_subparsers(dest="users_cmd", required=True)

@@ -130,6 +130,7 @@ def test_unsafe_methods_rejected(stack: Stack) -> None:
     assert exc.value.code == 405
     # The UI's few forms get through Caddy to SlowShield (sign-in is off here: it answers 404 itself).
     for path in (
+        "/ui/auth/login",
         "/ui/auth/logout",
         "/ui/users/1/disable",
         "/ui/users/1/enable",

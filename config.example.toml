@@ -134,13 +134,16 @@ enabled = true
 # labels = { env = "prod" }            # SLOWSHIELD_INSTANCE_LABELS=env=prod,team=ml
 # min_delay_days = 1                   # SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS: no delay from the leader goes lower
 # via_leader = true                    # SLOWSHIELD_SHIELDWALL_VIA_LEADER: package files through the leader
+# fast_tracks = true                   # SLOWSHIELD_SHIELDWALL_FAST_TRACKS: release what the leader fast-tracked
 # leader_ca_file = "/certs/leader.pem" # SLOWSHIELD_LEADER_CA_FILE: a leader whose certificate a private CA signed
 
 # --- UI sign-in ----------------------------------------------------------------------------------
 # Off by default: the UI stays public and read-only. The package proxy never needs a sign-in, whatever is set here.
 # Usually set through the environment; see docs/authentication.md. A restart applies changes.
 # [auth]
-# mode = "none"                        # SLOWSHIELD_AUTH: none | oidc
+# mode = "none"                        # SLOWSHIELD_AUTH: none | oidc | password
+# username = "admin"                   # SLOWSHIELD_AUTH_USERNAME (password sign-in: one Admin)
+# password_hash = "sha256:<salt>:<hex>"  # SLOWSHIELD_AUTH_PASSWORD_HASH(_FILE): docs/authentication.md#password-sign-in
 # require_login = false                # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI at all without signing in
 # ui_urls = []                         # SLOWSHIELD_UI_URLS: every URL the UI is reached at (default: public_url)
 # default_role = "viewer"              # SLOWSHIELD_AUTH_DEFAULT_ROLE: viewer | user, for anyone no rule maps

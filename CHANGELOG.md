@@ -15,12 +15,18 @@ All notable changes to this project are documented here. The format is based on
   sign-in. `SLOWSHIELD_UI_REQUIRE_LOGIN=true` sends anyone not signed in straight to the IdP. Sessions live in the
   database, and a silent check with the IdP every 15 minutes ends a session the IdP ended. Built only on what
   Keycloak, Okta, Entra ID and Google Workspace all support; tested end to end with Keycloak.
+- Password sign-in (`SLOWSHIELD_AUTH=password`) for single-user deployments: the UI stays read-only, and a Sign in
+  button makes the one configured user an Admin. The password is stored as a salted SHA-256 hash, made with `openssl`
+  as docs/authentication.md shows, or with `slowshield auth hash-password`. Failed sign-ins are slowed down and capped
+  per address.
 - Users and Activity pages for Admins: who signed in, with which role and why; sign-ins, refused sign-ins, sign-outs
   and admin actions, with a CSV export. Admins can disable a user on an instance (their sessions end at once).
 - Fast-tracks: an Admin releases a held-back version before its delay is up, with a message saying why; a User
   requests one with a message, and a second person (a User or an Admin) approves or rejects it with theirs. Versions
   with an advisory or block, or seen tampered with, can't be fast-tracked, and blocks and tamper checks still apply
-  when a fast-tracked version is served. Admins can revoke a fast-track. Every step is in the Activity log.
+  when a fast-tracked version is served. Admins can revoke a fast-track. Every step is in the Activity log. A shield
+  wall leader's fast-tracks reach its followers with its policy, after the hour's hold-down
+  (`SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off` refuses them).
 - With sign-in on, confirming a shield wall leader takes an Admin, and the Shield wall page shows who confirmed it.
 - `slowshield auth client-cert` creates the client key and prints the certificate to register at the IdP;
   `slowshield users list|disable|enable|logout-all`.

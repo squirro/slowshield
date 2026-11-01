@@ -11,6 +11,16 @@
   <div><h1>Fast-tracks</h1><p class="muted">Held-back versions released before their delay is up. An Admin fast-tracks a version with a reason; a User asks, and a second person approves. Advisories, operator blocks and tamper checks still apply to every fast-tracked version.</p></div>
 </div>
 {% if problem %}<div class="banners"><div class="banner warn" role="status">{{ problem }}</div></div>{% endif %}
+{% if shieldwall_role == "follower" %}
+<section class="card">
+  <header class="card-head"><h2>From the leader</h2></header>
+  {% if not cfg.shieldwall.fast_tracks %}<p class="muted">This instance doesn't take its leader's fast-tracks (<code>SLOWSHIELD_SHIELDWALL_FAST_TRACKS=off</code>): it holds those versions back like any other.</p>
+  {% elif from_leader %}
+  <ul class="fast-list">{% for eco, pkg, ver in from_leader %}<li>{{ m.eco(eco) }} <a href="{{ package_href(eco, pkg) }}"><code>{{ pkg }}</code></a> {{ m.ver(ver) }}</li>{% endfor %}</ul>
+  <p class="muted small">Who asked and why is on the leader's Fast-tracks page. New fast-tracks apply here an hour after the leader makes them; revoked ones stop at once.</p>
+  {% else %}<p class="empty">The leader hasn't fast-tracked anything, or its fast-tracks are still in the hour's hold-down.</p>{% endif %}
+</section>
+{% else %}
 
 <section class="card">
   <header class="card-head"><h2>Waiting for approval</h2></header>
@@ -52,6 +62,7 @@
   {% else %}<p class="empty">Nothing fast-tracked.</p>{% endif %}
 </section>
 
+{% endif %}
 {% if closed %}
 <section class="card">
   <header class="card-head"><h2>Rejected and revoked</h2></header>

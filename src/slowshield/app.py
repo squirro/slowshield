@@ -252,6 +252,13 @@ class SlowShield:
         from slowshield.auth.oidc import OidcError, Provider
         from slowshield.auth.web import Auth
 
+        if self.cfg.raw.auth.mode == "password":
+            auth = self.cfg.raw.auth
+            log.info(
+                "UI sign-in with a password", extra={"username": auth.username, "require_login": auth.require_login}
+            )
+            return Auth(ctx, None, ui.render)
+
         try:
             provider = Provider(self.cfg.raw.auth, self.clock)
         except OidcError as exc:
@@ -314,7 +321,7 @@ class SlowShield:
             if self.ctx.artifacts.via is not None:
                 await self.ctx.artifacts.via.transport.close()
             if self.ctx.auth is not None:
-                await self.ctx.auth.provider.close()
+                await self.ctx.auth.close()
             await asyncio.to_thread(self.ctx.db.close)
             self.ctx.metadata_store.close()
         self._leader.release()

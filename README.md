@@ -96,8 +96,8 @@ On a tailnet, all of them can serve one Tailscale Service name, and each client 
 ([docs/tailscale.md](docs/tailscale.md)).
 
 The UI is public and read-only unless you turn on sign-in: people then sign in with your identity provider over
-OpenID Connect and get a Viewer, User or Admin role from it; the package proxy never asks anyone to sign in
-([docs/authentication.md](docs/authentication.md)).
+OpenID Connect and get a Viewer, User or Admin role from it, or, on a single-user deployment, one Admin signs in with a
+password. The package proxy never asks anyone to sign in ([docs/authentication.md](docs/authentication.md)).
 
 ## Point your clients at it
 

@@ -156,6 +156,7 @@ shieldwall:
   leaderCaSecret: ""
   leaderCaSecretKey: ca.crt
   leaderPubliclyTrusted: false
+  fastTracks: true  # a follower releases the versions its leader fast-tracked (after the hour's hold-down)
   # With networkPolicy enabled, egress rules to a leader that isn't on the public internet, e.g.
   #   - ports: [{port: 443, protocol: TCP}]
   #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]
@@ -165,7 +166,10 @@ shieldwall:
 # needs a sign-in. The client's key or secret comes from a Secret, e.g.
 #   kubectl create secret generic slowshield-oidc --from-file=key.pem=slowshield_oidc_key.pem
 auth:
-  mode: ""  # oidc turns sign-in on
+  mode: ""  # oidc, or password (one Admin; the hash from a Secret: passwordHashSecret)
+  username: ""  # password sign-in
+  passwordHashSecret: ""  # kubectl create secret generic slowshield-password --from-literal=hash='sha256:…:…'
+  passwordHashSecretKey: hash
   requireLogin: false  # true: no UI at all without signing in
   uiUrls: []  # every URL the UI is reached at (default: publicUrl), e.g. [https://slowshield.example.com]
   defaultRole: viewer  # viewer | user

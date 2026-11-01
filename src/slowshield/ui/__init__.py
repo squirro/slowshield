@@ -493,7 +493,10 @@ class UI:
         if self.ctx.auth is None:
             return "Fast-tracks need UI sign-in (docs/authentication.md)."
         if self.ctx.cfg.raw.shieldwall.role == "follower":
-            return "A shield wall follower takes its policy from its leader: fast-track on the leader."
+            return (
+                "This instance follows a shield wall leader: fast-tracks are made on the leader, and apply here an "
+                "hour later."
+            )
         if not principal(request).can("user"):
             return "Fast-tracks are for Users and Admins." if principal(request).signed_in else "Sign in first."
         return None
@@ -508,16 +511,18 @@ class UI:
             return "This version is blocked by an advisory or an operator block; a fast-track can't release it."
 
         def collect(conn: Any) -> Any:
+            if F.tampered(conn, eco, name, version):
+                return "tampered"
             if eco == "oci":
                 return Q.oci_tags(conn, name)
             return conn.execute(
-                "SELECT v.published, (SELECT max(tampered) FROM artifacts a WHERE a.ecosystem = v.ecosystem AND "
-                "a.package = v.name AND a.version = v.version) FROM package_versions v WHERE v.ecosystem = ? AND "
-                "v.name = ? AND v.version = ?",
+                "SELECT published FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
                 (eco, name, version),
             ).fetchone()
 
         found = await self._q(collect)
+        if found == "tampered":
+            return "This version was detected as tampered; a fast-track can't release it."
         if eco == "oci":
             held = [t for t in _oci_tags(found, name, cfg, blocks, now) if t["digest"] == version]
             if not held:
@@ -525,14 +530,17 @@ class UI:
             return None if any(t["status"] == "held" for t in held) else "This digest isn't held back."
         if found is None:
             return "SlowShield hasn't seen this version."
-        published, tampered = found[0], found[1]
-        if tampered:
-            return "This version was detected as tampered; a fast-track can't release it."
+        published = found[0]
         if published is None:
             return "SlowShield doesn't know when this version was published."
         if now - published >= cfg.delay_days_for(eco, name, version) * DAY:
             return "This version isn't held back."
         return None
+
+    def _blocklist_generation(self) -> str:
+        """The blocklist as of now, so the write that grants a fast-track can tell whether it changed in between."""
+        self.ctx.blocklist.refresh_generation(force=True)
+        return self.ctx.blocklist.generation
 
     def _fast_track_refused(self, request: Request, message: str, back: str) -> Response:
         resp = self._render("auth.html.j2", request, title="Fast-track", heading="Can't fast-track", message=message,
@@ -547,6 +555,8 @@ class UI:
     async def fast_tracks(self, request: Request) -> Response:
         if self.ctx.auth is None:
             return self._render("not_found.html.j2", request, what="page")
+        if not principal(request).can("user"):  # who asked for what, and why: not for anonymous visitors
+            return self._forbidden(request)
 
         def collect(conn: Any) -> dict[str, Any]:
             return {"pending": F.listing(conn, ("pending",)), "active": F.listing(conn, ("active",)),
@@ -554,7 +564,9 @@ class UI:
 
         data = await self._q(collect)
         problem = self._fast_track_problem(request)
-        return self._render("fasttrack.html.j2", request, title="Fast-tracks", problem=problem,
+        cfg = self.ctx.cfg
+        from_leader = cfg.fast_track_keys() if cfg.raw.shieldwall.role == "follower" else []
+        return self._render("fasttrack.html.j2", request, title="Fast-tracks", problem=problem, from_leader=from_leader,
                             package_href=self._package_href, **data)  # fmt: skip
 
     async def fast_track_new(self, request: Request) -> Response:
@@ -577,14 +589,16 @@ class UI:
         back = self._package_href(eco, name) if eco in ECOSYSTEMS else "/ui/fasttrack"
         if problem := self._fast_track_problem(request):
             return self._fast_track_refused(request, problem, back)
+        gen = self._blocklist_generation()
         if eco not in ECOSYSTEMS or (problem := await self._held_problem(eco, name, version)):
             return self._fast_track_refused(request, problem or "Unknown ecosystem.", back)
         try:
             text = F.message((form.get("message") or [""])[0])
             me, now, ip = principal(request), self.ctx.clock.now(), self._client_ip(request)
             change = await self.ctx.db.writer.run(
-                partial(F.create, eco=eco, name=name, version=version, who=me, text=text, now=now, client_ip=ip)
-            )
+                partial(F.create, eco=eco, name=name, version=version, who=me, text=text, now=now, client_ip=ip,
+                        blocklist_generation=gen)
+            )  # fmt: skip
         except F.FastTrackError as exc:
             return self._fast_track_refused(request, str(exc), back)
         what = "granted" if change.state == "active" else "requested"
@@ -606,13 +620,23 @@ class UI:
         track_id = int(request.path_params["track_id"])
         try:
             text = F.message((form.get("message") or [""])[0])
+            gen = self._blocklist_generation()
             if action == "approve":  # still held, and still clean: an advisory may have come in since
                 sql = "SELECT ecosystem, package, version FROM fast_tracks WHERE id = ?"
                 row = await self._q(lambda c: c.execute(sql, (track_id,)).fetchone())
                 if row is not None and (problem := await self._held_problem(row[0], row[1], row[2])):
                     raise F.FastTrackError(problem)
             await self.ctx.db.writer.run(
-                partial(F.decide, track_id=track_id, action=action, who=me, text=text, now=now, client_ip=ip)
+                partial(
+                    F.decide,
+                    track_id=track_id,
+                    action=action,
+                    who=me,
+                    text=text,
+                    now=now,
+                    client_ip=ip,
+                    blocklist_generation=gen,
+                )
             )
         except F.FastTrackError as exc:
             return self._fast_track_refused(request, str(exc), "/ui/fasttrack")

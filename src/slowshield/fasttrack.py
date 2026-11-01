@@ -42,6 +42,28 @@ def message(text: str | None) -> str:
     return clean
 
 
+def tampered(conn: sqlite3.Connection, eco: str, name: str, version: str) -> bool:
+    """Whether SlowShield saw this version tampered with: a file whose bytes changed (`artifacts.tampered`), or a
+    tamper or integrity event for it, which is how a container image digest that didn't match is remembered."""
+    row = conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM artifacts WHERE ecosystem = ? AND package = ? AND version = ? AND tampered = 1) "
+        "OR EXISTS (SELECT 1 FROM events WHERE ecosystem = ? AND package = ? AND version = ? "
+        "AND type IN ('tampered', 'integrity_mismatch'))",
+        (eco, name, version, eco, name, version),
+    ).fetchone()
+    return bool(row[0])
+
+
+def still_clean(conn: sqlite3.Connection, eco: str, name: str, version: str, blocklist_generation: str) -> None:
+    """In the transaction that grants or approves: nothing changed since the checks before it. A blocklist update in
+    between (a feed sync) means checking again; a tamper mark means no."""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'blocklist_generation'").fetchone()
+    if (row[0] if row else "0") != blocklist_generation:
+        raise FastTrackError("The blocklist changed just now: please try again.")
+    if tampered(conn, eco, name, version):
+        raise FastTrackError("This version was detected as tampered; a fast-track can't release it.")
+
+
 def _bump(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'fast_track_generation'")
 
@@ -65,8 +87,10 @@ def create(
     text: str,
     now: float,
     client_ip: str | None,
+    blocklist_generation: str,
 ) -> Change:
     """An Admin's fast-track (active at once) or a User's request (pending until someone else approves)."""
+    still_clean(conn, eco, name, version, blocklist_generation)
     existing = _open(conn, eco, name, version)
     if existing is not None:
         raise FastTrackError(
@@ -100,6 +124,7 @@ def decide(
     text: str,
     now: float,
     client_ip: str | None,
+    blocklist_generation: str | None = None,
 ) -> tuple[str, str, str]:
     """Approve or reject a pending request (not one's own), or revoke an active fast-track (Admins). Returns the
     version it was for."""
@@ -114,6 +139,8 @@ def decide(
             raise FastTrackError("This request was decided already.")
         if requested_by is not None and requested_by == who.user_id:
             raise FastTrackError("Someone else has to approve or reject your own request.")
+        if action == "approve" and blocklist_generation is not None:
+            still_clean(conn, *target, blocklist_generation)
         state = "active" if action == "approve" else "rejected"
         conn.execute(
             "UPDATE fast_tracks SET state = ?, decided_by = ?, decider = ?, decided_at = ?, decision_message = ? "

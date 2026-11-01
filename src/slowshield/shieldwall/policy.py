@@ -7,6 +7,9 @@ The follower merges the leader's bundle into its own config (`effective`):
   leader for the same package still applies.
 - **The floor** (`shieldwall.min_delay_days`, 1 day by default) bounds every delay from the leader, exceptions for
   single versions included.
+- **Fast-tracks** from the leader (versions released before their delay is up, each decided with a reason in its UI)
+  apply here too, floor or not, unless `shieldwall.fast_tracks` is off. A new one loosens the policy, so it waits out
+  the hold-down like any loosening; a revoked one is gone at once.
 
 A bundle that loosens what applies now (`loosens`) waits out a hold-down; meanwhile the stricter of both applies
 (`tightest`). Tightening never waits.
@@ -42,6 +45,7 @@ class Bundle(msgspec.Struct, forbid_unknown_fields=False):
     issued: float = 0.0
     fail_open_by_ecosystem: dict[str, bool] = {}
     exceptions: list[ExceptionRule] = []
+    fast_tracks: list[tuple[str, str, str]] = []  # (ecosystem, package, version), as the leader keeps them
 
     @classmethod
     def parse(cls, doc: Any) -> Bundle:
@@ -55,8 +59,10 @@ class Bundle(msgspec.Struct, forbid_unknown_fields=False):
         delays = [b.default_delay_days, *(e.delay_days for e in b.exceptions)]
         if not all(math.isfinite(d) and 0 <= d <= MAX_DELAY_DAYS for d in delays):
             raise BundleError("policy delay out of range")
-        if len(b.exceptions) > 10_000 or b.version < 1:
+        if len(b.exceptions) > 10_000 or len(b.fast_tracks) > 10_000 or b.version < 1:
             raise BundleError("policy out of bounds")
+        if not all(all(0 < len(part) <= 300 for part in key) for key in b.fast_tracks):
+            raise BundleError("malformed fast-track")
         if unknown:
             log.warning(
                 "the leader's policy has settings for an ecosystem this instance doesn't know: skipped, the rest "
@@ -95,6 +101,11 @@ def _known_ecosystems_only(doc: Any) -> tuple[Any, list[str]]:
 
         unknown |= {r["ecosystem"] for r in rules if foreign(r)}
         doc["exceptions"] = [r for r in rules if not foreign(r)]
+    fast = doc.get("fast_tracks")
+    if isinstance(fast, list):
+        theirs = {k[0] for k in fast if isinstance(k, list) and k and isinstance(k[0], str) and k[0] not in ECOSYSTEMS}
+        unknown |= theirs
+        doc["fast_tracks"] = [k for k in fast if not (isinstance(k, list) and k and k[0] in theirs)]
     return doc, sorted(str(e)[:40] for e in unknown)[:20]
 
 
@@ -139,6 +150,7 @@ def loosens(old: Bundle, new: Bundle, oci: OciUpstream) -> list[str]:
         if b.delay(key) < a.delay(key)
     )
     out.extend(f"fail open for {eco}" for eco in ECOSYSTEMS if new.fail_open_for(eco) and not old.fail_open_for(eco))
+    out.extend(f"fast-track {'/'.join(key)}" for key in sorted(set(new.fast_tracks) - set(old.fast_tracks)))
     if old.enforce_age_on_download and not new.enforce_age_on_download:
         out.append("no age check on downloads")
     return out
@@ -160,6 +172,7 @@ def tightest(old: Bundle, new: Bundle, oci: OciUpstream) -> Bundle:
         fail_open_by_ecosystem={eco: old.fail_open_for(eco) and new.fail_open_for(eco) for eco in ECOSYSTEMS},
         enforce_age_on_download=old.enforce_age_on_download or new.enforce_age_on_download,
         exceptions=rules,
+        fast_tracks=sorted(set(old.fast_tracks) & set(new.fast_tracks)),
     )
 
 
@@ -208,7 +221,8 @@ def effective(local: LoadedConfig, bundle: Bundle) -> LoadedConfig:
             for k, d in sorted({**pkg, **ver}.items())
         ],
     )
-    return dataclasses.replace(local, raw=new_raw, _pkg_rules=pkg, _ver_rules=ver)
+    fast = frozenset(bundle.fast_tracks) if raw.shieldwall.fast_tracks else frozenset()
+    return dataclasses.replace(local, raw=new_raw, _pkg_rules=pkg, _ver_rules=ver, _fast=local._fast | fast)
 
 
 def describe(local: LoadedConfig, bundle: Bundle | None) -> list[dict[str, Any]]:

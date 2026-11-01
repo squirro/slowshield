@@ -27,3 +27,13 @@ docker compose up -d
 ```
 
 A leader with a publicly trusted certificate (ACME) needs none of this.
+
+`oidc-client.empty` is the same for UI sign-in (docs/authentication.md): the client's private key (for
+`private_key_jwt`) or its client secret.
+
+```sh
+docker compose run --rm --no-deps -v "$PWD/secrets:/out" slowshield \
+  slowshield auth client-cert --new ec --key /out/oidc-client.pem > slowshield-oidc.crt   # register the .crt at the IdP
+echo 'OIDC_CLIENT_SECRET_FILE=./secrets/oidc-client.pem' >> .env
+echo 'SLOWSHIELD_OIDC_CLIENT_KEY_FILE=/run/secrets/oidc_client' >> .env
+```

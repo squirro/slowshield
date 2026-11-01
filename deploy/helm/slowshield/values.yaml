@@ -161,6 +161,33 @@ shieldwall:
   #     to: [{ipBlock: {cidr: 10.20.0.0/16}}]
   leaderEgress: []
 
+# UI sign-in (docs/authentication.md). Off by default: the UI stays public and read-only. The package proxy never
+# needs a sign-in. The client's key or secret comes from a Secret, e.g.
+#   kubectl create secret generic slowshield-oidc --from-file=key.pem=slowshield_oidc_key.pem
+auth:
+  mode: ""  # oidc turns sign-in on
+  requireLogin: false  # true: no UI at all without signing in
+  uiUrls: []  # every URL the UI is reached at (default: publicUrl), e.g. [https://slowshield.example.com]
+  defaultRole: viewer  # viewer | user
+  adminEmails: []  # verified addresses or *@domain
+  userEmails: []
+  sessionHours: ""  # default 12
+  recheckMinutes: ""  # default 15
+  oidc:
+    issuer: ""  # e.g. https://idp.example.com/realms/example
+    clientId: ""
+    # Exactly one: a Secret with the private key (private_key_jwt), or one with the client secret.
+    clientKeySecret: ""
+    clientKeySecretKey: key.pem
+    clientSecretSecret: ""
+    clientSecretSecretKey: secret
+    par: auto  # auto | required | off
+    scopes: []  # default [openid, email, profile]
+    rolesClaim: ""  # e.g. slowshield_roles, groups, roles, realm_access.roles
+    adminValues: []  # e.g. [SlowShield Admins]
+    userValues: []
+    requireClaims: []  # e.g. [hd=example.com]
+
 # OpenTelemetry (traces, metrics, logs via OTLP/HTTP), e.g. an in-cluster Alloy:
 #   otlpEndpoint: http://alloy.observability.svc.cluster.local:4318
 telemetry:

@@ -21,8 +21,12 @@ All notable changes to this project are documented here. The format is based on
 - go-chi/chi v5.4.0 in the Caddy build (GHSA-j6qf-3m9c-vwj3: client IP spoofing in `ClientIPFromXFF`, reached
   through Caddy's ACME server module), and the build module's `go` line names Go 1.26.10, the toolchain it is
   built with.
-- go-jose/go-jose v4.1.6 in the Caddy build (CVE-2026-116587: a crafted RSA key in a JWK costs cubic CPU time to
-  validate; reached through the OIDC provisioner of Caddy's PKI module).
+- go-jose/go-jose v4.1.7 in the Caddy build (reached through the OIDC provisioner of Caddy's PKI module):
+  CVE-2026-116587 (a crafted RSA key in a JWK costs cubic CPU time to validate), and GHSA-p9j4-2j95-j4rv,
+  GHSA-27pc-rm86-68pq, GHSA-r39w-98wm-9pp6, GHSA-c67m-wr4h-2ccg and GHSA-v6h2-qj3f-2h6v (header override, panics and
+  denial of service). v4.1.7 is taken inside the 7-day cooldown as a security exception. go-jose v3, which Caddy's
+  PKI module also pulls in through smallstep, has no fixed release; SlowShield's Caddy never gives it untrusted input
+  (docs/security.md).
 
 ## [0.0.13] - 2026-10-25
 

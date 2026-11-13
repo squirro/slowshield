@@ -47,7 +47,7 @@ services:
   # ---- collector -----------------------------------------------------------------------------------
   alloy:
     <<: *hardening
-    image: docker.io/grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
+    image: docker.io/grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     user: "473:473"
     # Caddy (UID/GID 65532) writes the access log; membership of its group lets Alloy read it when the
     # log file mode is 0640 (containers/caddy/logs/on.caddy).
@@ -77,7 +77,7 @@ services:
   # ---- metrics -------------------------------------------------------------------------------------
   prometheus:
     <<: *hardening
-    image: docker.io/prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    image: docker.io/prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     user: "65534:65534"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -131,7 +131,7 @@ services:
   # ---- dashboards & alerting ----------------------------------------------------------------------------
   grafana:
     <<: *hardening
-    image: docker.io/grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    image: docker.io/grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     user: "472:472"
     environment:
       GF_SECURITY_ADMIN_USER: admin

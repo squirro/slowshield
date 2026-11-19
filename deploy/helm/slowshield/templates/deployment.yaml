@@ -1,5 +1,12 @@
 {{- $fullname := include "slowshield.fullname" . -}}
 {{- $github := include "slowshield.githubSecretName" . -}}
+{{- $oidcSecret := ternary (default .Values.auth.oidc.clientSecretSecret .Values.auth.oidc.clientKeySecret) "" (eq .Values.auth.mode "oidc") -}}
+{{- if and (eq .Values.auth.mode "oidc") (not (or .Values.auth.oidc.clientKeySecret .Values.auth.oidc.clientSecretSecret)) }}
+{{- fail "auth.mode=oidc needs auth.oidc.clientKeySecret or auth.oidc.clientSecretSecret" }}
+{{- end }}
+{{- if and .Values.auth.oidc.clientKeySecret .Values.auth.oidc.clientSecretSecret }}
+{{- fail "auth.oidc: set clientKeySecret or clientSecretSecret, not both" }}
+{{- end }}
 {{- if not (has .Values.tls.mode (list "internal" "acme" "files")) }}
 {{- fail "tls.mode must be one of: internal, acme, files" }}
 {{- end }}
@@ -112,6 +119,10 @@ spec:
             - name: SLOWSHIELD_INSTANCE_LOCATION
               value: {{ .location | quote }}
             {{- end }}
+            {{- if not .fastTracks }}
+            - name: SLOWSHIELD_SHIELDWALL_FAST_TRACKS
+              value: "off"
+            {{- end }}
             {{- if .leaderCaSecret }}
             - name: SLOWSHIELD_LEADER_CA_FILE
               value: /run/secrets/leader-ca/{{ .leaderCaSecretKey }}
@@ -119,6 +130,82 @@ spec:
             {{- with .labels }}
             - name: SLOWSHIELD_INSTANCE_LABELS
               value: {{ $pairs := list }}{{ range $k, $v := . }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}{{ join "," $pairs | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.auth }}
+            {{- if .mode }}
+            - name: SLOWSHIELD_AUTH
+              value: {{ .mode | quote }}
+            - name: SLOWSHIELD_UI_REQUIRE_LOGIN
+              value: {{ .requireLogin | quote }}
+            - name: SLOWSHIELD_AUTH_DEFAULT_ROLE
+              value: {{ .defaultRole | quote }}
+            {{- if eq .mode "password" }}
+            - name: SLOWSHIELD_AUTH_USERNAME
+              value: {{ required "auth.mode=password needs auth.username" .username | quote }}
+            - name: SLOWSHIELD_AUTH_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "auth.mode=password needs auth.passwordHashSecret" .passwordHashSecret }}
+                  key: {{ .passwordHashSecretKey }}
+            {{- end }}
+            {{- with .uiUrls }}
+            - name: SLOWSHIELD_UI_URLS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .adminEmails }}
+            - name: SLOWSHIELD_AUTH_ADMIN_EMAILS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .userEmails }}
+            - name: SLOWSHIELD_AUTH_USER_EMAILS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .sessionHours }}
+            - name: SLOWSHIELD_SESSION_HOURS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .recheckMinutes }}
+            - name: SLOWSHIELD_SESSION_RECHECK_MINUTES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq .mode "oidc" }}
+            {{- with .oidc }}
+            - name: SLOWSHIELD_OIDC_ISSUER
+              value: {{ .issuer | quote }}
+            - name: SLOWSHIELD_OIDC_CLIENT_ID
+              value: {{ .clientId | quote }}
+            - name: SLOWSHIELD_OIDC_PAR
+              value: {{ .par | quote }}
+            {{- if .clientKeySecret }}
+            - name: SLOWSHIELD_OIDC_CLIENT_KEY_FILE
+              value: /run/secrets/oidc/{{ .clientKeySecretKey }}
+            {{- else if .clientSecretSecret }}
+            - name: SLOWSHIELD_OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/oidc/{{ .clientSecretSecretKey }}
+            {{- end }}
+            {{- with .scopes }}
+            - name: SLOWSHIELD_OIDC_SCOPES
+              value: {{ join " " . | quote }}
+            {{- end }}
+            {{- with .rolesClaim }}
+            - name: SLOWSHIELD_OIDC_ROLES_CLAIM
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .adminValues }}
+            - name: SLOWSHIELD_OIDC_ADMIN_VALUES
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .userValues }}
+            - name: SLOWSHIELD_OIDC_USER_VALUES
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .requireClaims }}
+            - name: SLOWSHIELD_OIDC_REQUIRE_CLAIMS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- if $github }}
@@ -184,6 +271,11 @@ spec:
             {{- if .Values.shieldwall.leaderCaSecret }}
             - name: leader-ca
               mountPath: /run/secrets/leader-ca
+              readOnly: true
+            {{- end }}
+            {{- if $oidcSecret }}
+            - name: oidc
+              mountPath: /run/secrets/oidc
               readOnly: true
             {{- end }}
         {{- if .Values.caddy.enabled }}
@@ -311,6 +403,12 @@ spec:
           secret:
             secretName: {{ .Values.shieldwall.leaderCaSecret }}
             defaultMode: 0444
+        {{- end }}
+        {{- if $oidcSecret }}
+        - name: oidc
+          secret:
+            secretName: {{ $oidcSecret }}
+            defaultMode: 0400
         {{- end }}
         {{- if .Values.caddy.enabled }}
         - name: caddy-data

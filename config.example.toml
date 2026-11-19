@@ -134,7 +134,34 @@ enabled = true
 # labels = { env = "prod" }            # SLOWSHIELD_INSTANCE_LABELS=env=prod,team=ml
 # min_delay_days = 1                   # SLOWSHIELD_SHIELDWALL_MIN_DELAY_DAYS: no delay from the leader goes lower
 # via_leader = true                    # SLOWSHIELD_SHIELDWALL_VIA_LEADER: package files through the leader
+# fast_tracks = true                   # SLOWSHIELD_SHIELDWALL_FAST_TRACKS: release what the leader fast-tracked
 # leader_ca_file = "/certs/leader.pem" # SLOWSHIELD_LEADER_CA_FILE: a leader whose certificate a private CA signed
+
+# --- UI sign-in ----------------------------------------------------------------------------------
+# Off by default: the UI stays public and read-only. The package proxy never needs a sign-in, whatever is set here.
+# Usually set through the environment; see docs/authentication.md. A restart applies changes.
+# [auth]
+# mode = "none"                        # SLOWSHIELD_AUTH: none | oidc | password
+# username = "admin"                   # SLOWSHIELD_AUTH_USERNAME (password sign-in: one Admin)
+# password_hash = "scrypt:131072:8:1:<salt>:<key>"  # SLOWSHIELD_AUTH_PASSWORD_HASH(_FILE): docs/authentication.md#password-sign-in
+# require_login = false                # SLOWSHIELD_UI_REQUIRE_LOGIN: no UI at all without signing in
+# ui_urls = []                         # SLOWSHIELD_UI_URLS: every URL the UI is reached at (default: public_url)
+# default_role = "viewer"              # SLOWSHIELD_AUTH_DEFAULT_ROLE: viewer | user, for anyone no rule maps
+# admin_emails = []                    # SLOWSHIELD_AUTH_ADMIN_EMAILS: verified addresses or *@domain
+# user_emails = []                     # SLOWSHIELD_AUTH_USER_EMAILS
+# session_hours = 12                   # SLOWSHIELD_SESSION_HOURS: absolute session lifetime
+# recheck_minutes = 15                 # SLOWSHIELD_SESSION_RECHECK_MINUTES: silent recheck with the IdP
+# [auth.oidc]
+# issuer = "https://idp.example.com/realms/example"  # SLOWSHIELD_OIDC_ISSUER: exactly the IdP's `iss`
+# client_id = "slowshield"             # SLOWSHIELD_OIDC_CLIENT_ID
+# client_key_file = "/run/secrets/oidc_key.pem"  # SLOWSHIELD_OIDC_CLIENT_KEY_FILE: private_key_jwt, or
+# client_secret_file = "/run/secrets/oidc_secret"  # SLOWSHIELD_OIDC_CLIENT_SECRET_FILE: exactly one of the two
+# par = "auto"                         # SLOWSHIELD_OIDC_PAR: auto | required | off
+# scopes = ["openid", "email", "profile"]  # SLOWSHIELD_OIDC_SCOPES
+# roles_claim = "slowshield_roles"     # SLOWSHIELD_OIDC_ROLES_CLAIM: a list-valued claim, dotted paths allowed
+# admin_values = ["SlowShield Admins"] # SLOWSHIELD_OIDC_ADMIN_VALUES (comma-separated in the environment)
+# user_values = ["SlowShield Users"]   # SLOWSHIELD_OIDC_USER_VALUES
+# require_claims = []                  # SLOWSHIELD_OIDC_REQUIRE_CLAIMS: claim=value, e.g. hd=example.com
 
 # --- per-package exceptions ------------------------------------------------------------------------
 # Longer or shorter delays for specific packages, or release one specific version early.

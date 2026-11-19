@@ -1,0 +1,12 @@
+# UI sign-in (docs/authentication.md) with private_key_jwt. Create the key and print the certificate to register at
+# the IdP (once):
+#   podman run --rm -v "$PWD:/out:Z" ghcr.io/squirro/slowshield auth client-cert --new ec \
+#     --key /out/oidc-client.pem > slowshield-oidc.crt
+#   podman secret create slowshield_oidc_client oidc-client.pem && shred -u oidc-client.pem
+# then copy this file to slowshield.container.d/oidc-client.conf, set the SLOWSHIELD_AUTH and SLOWSHIELD_OIDC_*
+# settings in slowshield.env, and run
+#   systemctl --user daemon-reload && systemctl --user restart slowshield-pod
+# For a client secret instead, store the secret the same way and set SLOWSHIELD_OIDC_CLIENT_SECRET_FILE instead.
+[Container]
+Secret=slowshield_oidc_client,type=mount,target=/run/secrets/oidc_client,uid=65532,gid=65532,mode=0400
+Environment=SLOWSHIELD_OIDC_CLIENT_KEY_FILE=/run/secrets/oidc_client

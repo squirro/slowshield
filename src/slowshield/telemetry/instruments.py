@@ -76,6 +76,12 @@ shieldwall_blobs = meter.create_counter(
 shieldwall_syncs = meter.create_counter(
     "slowshield.shieldwall.syncs", unit="{sync}", description="A follower's syncs with its leader: ok, error."
 )
+auth_logins = meter.create_counter(
+    "slowshield.auth.logins", unit="{login}", description="UI sign-ins: ok, refused, error."
+)
+auth_rechecks = meter.create_counter(
+    "slowshield.auth.rechecks", unit="{recheck}", description="Silent session rechecks with the IdP: ok, ended, error."
+)
 
 
 GaugeCallback = Callable[[], Iterable[tuple[float, dict[str, str | int | float | bool]]]]

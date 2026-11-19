@@ -128,6 +128,25 @@ def test_unsafe_methods_rejected(stack: Stack) -> None:
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(req, context=stack.ssl_context(), timeout=10)
     assert exc.value.code == 405
+    # The UI's few forms get through Caddy to SlowShield (sign-in is off here: it answers 404 itself).
+    for path in (
+        "/ui/auth/login",
+        "/ui/auth/logout",
+        "/ui/users/1/disable",
+        "/ui/users/1/enable",
+        "/ui/fasttrack",
+        "/ui/fasttrack/1/approve",
+        "/ui/fasttrack/1/reject",
+        "/ui/fasttrack/1/revoke",
+    ):
+        req = urllib.request.Request(f"{stack.base}{path}", data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(req, context=stack.ssl_context(), timeout=10)
+        assert exc.value.code != 405, path
+    req = urllib.request.Request(f"{stack.base}/ui/users/1/delete", data=b"", method="POST")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, context=stack.ssl_context(), timeout=10)
+    assert exc.value.code == 405
 
 
 # ---- PyPI ---------------------------------------------------------------------------------------
@@ -594,3 +613,15 @@ def test_rubygems_installs_through_the_proxy(stack: Stack, tmp_path: Path) -> No
     status, headers, body = stack.get("/rubygems/info/fake_hello", headers={"Accept-Encoding": "gzip"})
     assert status == 200 and "content-encoding" not in headers
     assert headers["etag"] == '"' + hashlib.md5(body, usedforsecurity=False).hexdigest() + '"'
+
+
+def test_the_image_makes_password_hashes(stack: Stack) -> None:
+    """docs/authentication.md's first way to make SLOWSHIELD_AUTH_PASSWORD_HASH: the image's Python has scrypt."""
+    from slowshield.auth import password
+
+    image = os.environ.get("SLOWSHIELD_IMAGE", "slowshield:ci")
+    out = subprocess.run(
+        ["docker", "run", "--rm", "-i", image, "auth", "hash-password"],
+        input="correct horse battery staple\n", capture_output=True, text=True, check=True, timeout=120,
+    ).stdout.strip()  # fmt: skip
+    assert out.startswith("scrypt:131072:8:1:") and password.verify(out, "correct horse battery staple")

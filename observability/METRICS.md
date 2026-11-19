@@ -57,6 +57,9 @@ Each worker exports its own series, so aggregate across `instance` with `sum` (c
 | `slowshield_db_writer_flush_duration_seconds` | histogram | `slowshield.db.writer.flush.duration` | `s` | | Duration of one batched write transaction |
 | `slowshield_shieldwall_blobs_total` | counter | `slowshield.shieldwall.blobs` | `{file}` | `result` | Package files a shield wall leader served its followers. `result`: `hit` (from its cache), `miss` (fetched from the registry) |
 | `slowshield_shieldwall_syncs_total` | counter | `slowshield.shieldwall.syncs` | `{sync}` | `result` | A shield wall follower's syncs with its leader. `result`: `ok`, `error` |
+| `slowshield_auth_logins_total` | counter | `slowshield.auth.logins` | `{login}` | `result` | UI sign-ins (with UI sign-in on). `result`: `ok`, `refused` (a bad token, a disabled user, a required claim missing), `error` (the IdP unreachable) |
+| `slowshield_auth_rechecks_total` | counter | `slowshield.auth.rechecks` | `{recheck}` | `result` | Silent rechecks of UI sessions with the IdP. `result`: `ok`, `ended` (the IdP session was over), `error` (the IdP unreachable: tried again a minute later) |
+| `slowshield_auth_sessions_active` | gauge | `slowshield.auth.sessions.active` | `{session}` | | Signed-in UI sessions that haven't expired, on this instance |
 | `slowshield_eventloop_lag_seconds` | histogram | `slowshield.eventloop.lag` | `s` | | Event-loop scheduling lag, sampled every 0.5 s; sustained lag means blocking work on the loop |
 | `slowshield_leader` | gauge | `slowshield.leader` | | | 1 on the worker that runs feeds and housekeeping |
 | `slowshield_oci_ratelimit_remaining` | gauge | `slowshield.oci.ratelimit.remaining` | `{request}` | `registry` | Pulls the registry last said were left (Docker Hub's `ratelimit-remaining`), per worker; only registries that send the header. Only manifest `GET`s count against Docker Hub's limit |

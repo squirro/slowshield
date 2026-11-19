@@ -539,3 +539,35 @@ def test_the_leader_logs_a_listed_time_again_when_its_commit_changes(conn: sqlit
     assert _change_row(conn, "listed", "composer\nv/p\ndev-main") == {
         "ecosystem": "composer", "name": "v/p", "version": "dev-main", "first_listed": NOW + 60, "reference": "b" * 40,
     }  # fmt: skip
+
+
+def test_fast_tracks_in_the_bundle() -> None:
+    key = ("npm", "left-pad-ng", "2.0.0")
+    old, new = _bundle(), _bundle(fast_tracks=[list(key), ["helm", "chart", "1.0.0"]])  # helm: a newer leader's
+    assert new.fast_tracks == [key]
+    oci = config_mod.Config().upstreams.oci
+    assert loosens(old, new, oci) == ["fast-track npm/left-pad-ng/2.0.0"]
+    assert loosens(new, old, oci) == []  # a revoked one is tighter
+    assert tightest(old, new, oci).fast_tracks == []
+    local = config_mod.build(config_mod.Config(), path=None, warnings=[])
+    assert effective(local, new).fast_tracked(*key)
+    local.raw.shieldwall.fast_tracks = False
+    assert not effective(local, new).fast_tracked(*key)
+    for bad in ([["npm", "", "1"]], [["npm", "x"]], [["npm", "x" * 301, "1"]], [[["npm"], "x", "1"]], [[{}, "x", "1"]]):
+        with pytest.raises(BundleError):
+            _bundle(fast_tracks=bad)
+
+
+def test_fast_tracks_match_as_the_services_ask() -> None:
+    """Composer and NuGet ask in their versions' normal form, as version rules are keyed; the UI asks as listed."""
+    import dataclasses
+
+    local = config_mod.build(config_mod.Config(), path=None, warnings=[])
+    keys = frozenset({("composer", "acme/lib", "v2.0.0"), ("nuget", "acme.lib", "1.0"), ("npm", "x", "1.0.0")})
+    cfg = dataclasses.replace(local, _fast=keys)
+    assert cfg.delay_days_for("composer", "acme/lib", "2.0.0.0") == 0  # ComposerService._delay
+    assert cfg.delay_days_for("nuget", "acme.lib", "1.0.0") == 0
+    assert cfg.delay_days_for("npm", "x", "1.0.0") == 0
+    assert cfg.fast_tracked("composer", "acme/lib", "v2.0.0") and cfg.fast_tracked("nuget", "acme.lib", "1.0")
+    assert cfg.delay_days_for("composer", "acme/lib", "2.0.1.0") == local.raw.default_delay_days
+    assert cfg.fast_track_keys() == sorted(keys)  # shown as they were fast-tracked

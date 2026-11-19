@@ -28,6 +28,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response, Strea
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from fakeupstream import oidc as fake_oidc
 from fakeupstream.catalog import (
     DAY,
     NUGET_INLINE_MAX,
@@ -63,6 +64,7 @@ class State:
         self.last_headers: dict[str, dict[str, str]] = {}
         self.composer_advisories_asked: list[str] = []
         self.clock_offset = 0.0  # added to the catalog's `now` when the Go mirror stores a version
+        self.oidc = fake_oidc.OidcState()
 
 
 def _etag(body: bytes) -> str:
@@ -1235,6 +1237,7 @@ def create_app(*, now: float | None = None, seed: int = 1, perf: bool = False) -
         )
 
     routes = [
+        *fake_oidc.routes(state),
         Route("/pypi/simple/", simple_root),
         Route("/pypi/simple/{name}/", simple_project),
         Route("/files/packages/{path:path}", pypi_file),

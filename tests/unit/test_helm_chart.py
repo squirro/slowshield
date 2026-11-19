@@ -43,3 +43,30 @@ def test_host_aliases_reach_the_pod() -> None:
     assert r.returncode == 0, r.stderr
     assert "hostAliases:" in r.stdout and "ip: 172.20.31.7" in r.stdout and "- slowshield.example.com" in r.stdout
     assert "hostAliases" not in _render().stdout
+
+
+def test_ui_sign_in() -> None:
+    assert "SLOWSHIELD_AUTH" not in _render().stdout  # off by default
+    oidc = ("auth.mode=oidc", "auth.oidc.issuer=https://idp.example/realms/r", "auth.oidc.clientId=slowshield")
+    r = _render(*oidc)
+    assert r.returncode != 0 and "clientKeySecret or auth.oidc.clientSecretSecret" in r.stderr
+    both = ("auth.oidc.clientKeySecret=k", "auth.oidc.clientSecretSecret=s")
+    assert _render(*oidc, *both).returncode != 0
+    r = _render(*oidc, "auth.oidc.clientKeySecret=slowshield-oidc", "auth.requireLogin=true",
+                "auth.oidc.adminValues[0]=SlowShield Admins", "auth.oidc.adminValues[1]=Ops")  # fmt: skip
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "SLOWSHIELD_OIDC_CLIENT_KEY_FILE" in out and "value: /run/secrets/oidc/key.pem" in out
+    assert 'value: "SlowShield Admins,Ops"' in out and "secretName: slowshield-oidc" in out
+    assert "SLOWSHIELD_OIDC_CLIENT_SECRET_FILE" not in out
+    r = _render(*oidc, "auth.oidc.clientSecretSecret=slowshield-oidc")
+    assert "value: /run/secrets/oidc/secret" in r.stdout
+
+
+def test_password_sign_in() -> None:
+    r = _render("auth.mode=password", "auth.username=admin")
+    assert r.returncode != 0 and "auth.passwordHashSecret" in r.stderr
+    r = _render("auth.mode=password", "auth.username=admin", "auth.passwordHashSecret=slowshield-password")
+    assert r.returncode == 0, r.stderr
+    assert "SLOWSHIELD_AUTH_PASSWORD_HASH" in r.stdout and "name: slowshield-password" in r.stdout
+    assert "SLOWSHIELD_OIDC_ISSUER" not in r.stdout and "/run/secrets/oidc" not in r.stdout

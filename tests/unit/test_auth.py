@@ -394,3 +394,26 @@ def test_password_config_from_the_environment(monkeypatch: pytest.MonkeyPatch, t
     assert auth.mode == "password" and auth.password_hash == stored
     assert verify(stored, "correct horse battery staple") and not verify(stored, "wrong")
     assert not verify("sha256:0123456789abcdef:" + "a" * 64, "x") and not verify("garbage", "x")
+
+
+def test_held_since_follows_each_service() -> None:
+    from slowshield.ui import held_since
+
+    assert held_since("cargo", 100.0, 500.0) == 500.0  # the later clock, as Cargo, Composer and NuGet count
+    assert held_since("maven", 100.0, 500.0) == 100.0  # the earlier, as Maven's `_earliest`
+    assert held_since("maven", None, 500.0) == 500.0 and held_since("npm", None, None) is None
+
+
+def test_same_origin_ignores_the_default_port() -> None:
+    from starlette.requests import Request
+
+    from slowshield.ui import same_origin
+
+    def post(host: str, origin: str) -> Request:
+        headers = [(b"host", host.encode()), (b"origin", origin.encode()), (b"sec-fetch-site", b"same-origin")]
+        return Request({"type": "http", "method": "POST", "scheme": "https", "headers": headers, "path": "/ui/"})
+
+    assert same_origin(post("ui.example:443", "https://ui.example"), ())
+    assert same_origin(post("ui.example", "https://ui.example:443"), ())
+    assert not same_origin(post("ui.example:8443", "https://ui.example"), ())
+    assert not same_origin(post("ui.example", "https://evil.example"), ())

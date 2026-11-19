@@ -74,11 +74,14 @@ DECISION_LABEL = {
 }
 
 
-def held_since(published: float | None, first_listed: float | None) -> float | None:
-    """When a version's delay started, as the services count it: the later of its clocks (the publish time, and when
-    SlowShield first saw it listed without one; e.g. Cargo's `_published`). None without either."""
+def held_since(eco: str, published: float | None, first_listed: float | None) -> float | None:
+    """When a version's delay started, as the services count it. Cargo, Composer and NuGet take the later of the
+    publish time and when SlowShield first saw the version listed (e.g. Cargo's `_published`); Maven takes the earlier
+    (`_earliest`: the version was published before SlowShield first saw it). None without either."""
     clocks = [t for t in (published, first_listed) if t is not None]
-    return max(clocks) if clocks else None
+    if not clocks:
+        return None
+    return min(clocks) if eco == "maven" else max(clocks)
 
 
 def fmt_bytes(n: float | None) -> str:
@@ -444,7 +447,7 @@ class UI:
         for v in data["versions"]:
             delay = cfg.delay_days_for(eco, name, v["version"])
             block = blocks.match(eco, v["version"])
-            published = held_since(v["published"], v["first_listed"])
+            published = held_since(eco, v["published"], v["first_listed"])
             if block is not None:
                 status, until = "blocked", None
             elif v["tampered"]:
@@ -539,7 +542,7 @@ class UI:
             return None if any(t["status"] == "held" for t in held) else "This digest isn't held back."
         if found is None:
             return "SlowShield hasn't seen this version."
-        published = held_since(found[0], found[1])
+        published = held_since(eco, found[0], found[1])
         if published is None:
             return "SlowShield doesn't know when this version was published."
         if now - published >= cfg.delay_days_for(eco, name, version) * DAY:
@@ -1106,8 +1109,17 @@ def same_origin(request: Request, trusted: tuple[Any, ...]) -> bool:
         return site == "same-origin"
     if origin is not None:
         own = f"{request_scheme(request.scope, trusted)}://{request.headers.get('host', '')}"
-        return origin.lower() == own.lower()
+        return _plain_origin(origin) == _plain_origin(own)
     return True
+
+
+def _plain_origin(origin: str) -> str:
+    """`https://host:443` and `https://host` are one origin (as are `http://host:80` and `http://host`)."""
+    origin = origin.lower()
+    for scheme, port in (("https://", ":443"), ("http://", ":80")):
+        if origin.startswith(scheme) and origin.endswith(port):
+            return origin[: -len(port)]
+    return origin
 
 
 def _qs(base: dict[str, Any], **changes: Any) -> str:

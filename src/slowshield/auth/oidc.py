@@ -337,11 +337,17 @@ class Provider:
         keys = jose.candidates(jws, await self._jwks(refresh=False))
         if not keys:  # a key the IdP rotated in since we last looked
             keys = jose.candidates(jws, await self._jwks(refresh=True))
-        try:
-            if not any(jose.verify(jws, k) for k in keys):
-                raise OidcError("bad_token", "the ID token's signature doesn't verify" if keys else "no key fits")
-        except jose.JoseError as exc:
-            raise OidcError("bad_token", f"the IdP's key can't be used: {exc}") from exc
+        unusable: list[str] = []
+        for k in keys:  # without a `kid`, every key that fits is tried: one the IdP lists but can't be used is skipped
+            try:
+                if jose.verify(jws, k):
+                    break
+            except jose.JoseError as exc:
+                unusable.append(str(exc))
+        else:
+            if unusable:
+                raise OidcError("bad_token", f"the IdP's key can't be used: {unusable[0]}")
+            raise OidcError("bad_token", "the ID token's signature doesn't verify" if keys else "no key fits")
         c = jws.claims
         now = self.clock.now()
         aud = c.get("aud")

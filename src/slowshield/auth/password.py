@@ -9,9 +9,9 @@ fraction of a second per check):
 
 Failed sign-ins are counted in the database, so every worker sees the same counts. One client address gets at most
 `PER_ADDRESS` in `WINDOW`, then has to wait. Past `OVERALL` from all addresses together (a guess spread over many
-addresses), every attempt is slowed down by `SLOWDOWN` seconds instead: never refused, so nobody can lock the Admin
-out by failing on purpose. Each worker checks one password at a time; a second attempt while one is being checked is
-turned away rather than queued.
+addresses), every attempt is slowed down by `SLOWDOWN` seconds instead: never refused for that, so nobody can lock the
+Admin out by failing on purpose. Each worker lets at most `MAX_SLOWED` attempts wait at once and checks one password at
+a time; any attempt beyond those is turned away to try again rather than queued, so a flood can't pile up in a worker.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ PER_ADDRESS = 10  # failed sign-ins from one client address in WINDOW, before it
 OVERALL = 50  # failed sign-ins from everyone together in WINDOW, before every attempt is slowed down
 WINDOW = 900.0
 SLOWDOWN = 3.0  # seconds added to every attempt past OVERALL
+MAX_SLOWED = 8  # attempts one worker lets wait out SLOWDOWN at once; more are turned away (429)
 
 N, R, P = 2**17, 8, 1  # OWASP's minimum for scrypt
 SCRYPT = re.compile(r"scrypt:(\d{1,8}):(\d{1,2}):(\d{1,2}):([0-9a-fA-F]{16,128}):([0-9a-fA-F]{64})")

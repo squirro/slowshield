@@ -105,7 +105,9 @@ def _known_ecosystems_only(doc: Any) -> tuple[Any, list[str]]:
     if isinstance(fast, list):
         theirs = {k[0] for k in fast if isinstance(k, list) and k and isinstance(k[0], str) and k[0] not in ECOSYSTEMS}
         unknown |= theirs
-        doc["fast_tracks"] = [k for k in fast if not (isinstance(k, list) and k and k[0] in theirs)]
+        doc["fast_tracks"] = [
+            k for k in fast if not (isinstance(k, list) and k and isinstance(k[0], str) and k[0] in theirs)
+        ]
     return doc, sorted(str(e)[:40] for e in unknown)[:20]
 
 

@@ -502,3 +502,60 @@ async def test_confirming_a_shield_wall_leader_takes_an_admin(
     user_id = run.rows("SELECT id FROM users")[0][0]
     assert run.rows("SELECT confirmed_by FROM shieldwall_leader") == [(f"user:{user_id}",)]
     assert audit(run)[-1][:3] == ("shieldwall_confirmed", "Alice Example", "L1")
+
+
+async def test_an_idp_that_says_it_is_down_isnt_a_refusal(start_auth: Callable[..., Any]) -> None:
+    """`temporarily_unavailable` and `server_error` (RFC 6749): the recheck waits; a sign-in says try again."""
+    run = await start_auth()
+    await sign_in(run)
+    advance(run, 16 * 60)
+    idp(run, error="temporarily_unavailable")
+    r = await _recheck(run)
+    assert r.status_code == 303 and r.headers["location"] == "/ui/"
+    assert run.rows("SELECT count(*) FROM ui_sessions") == [(1,)]
+    assert (await run.client.get("/ui/")).status_code == 200  # usable; tries again in a minute
+    other = await start_auth()
+    idp(other, error="server_error")
+    r = await sign_in(other)
+    assert r.status_code == 503 and "Sign-in unavailable" in r.text
+    assert "login_refused" not in [a[0] for a in audit(other)]
+
+
+async def test_a_ui_url_with_its_default_port(start_auth: Callable[..., Any]) -> None:
+    """`https://host:443` is the host browsers send as `host`: listed either way, it's the same UI."""
+    run = await start_auth(ui_urls=[f"{UI}:443"], require_login=True)
+    assert (await run.client.get("/ui/")).status_code == 302  # to sign in, not 421
+    assert (await run.client.get("/ui/auth/login")).status_code == 302
+
+
+async def test_signing_in_over_someone_elses_session_starts_a_full_one(start_auth: Callable[..., Any]) -> None:
+    run = await start_auth(session_hours=1)
+    idp(run, sub="alice")
+    await sign_in(run)
+    advance(run, 50 * 60)
+    idp(run, sub="bob")
+    await sign_in(run)
+    (expires,) = run.rows("SELECT expires FROM ui_sessions")[0]
+    assert expires == run.clock.now() + 3600  # not alice's last 10 minutes
+
+
+async def test_switching_the_sign_in_mode_ends_the_old_sessions(
+    start_auth: Callable[..., Any], start_app: Callable[..., Any], tmp_path: Path
+) -> None:
+    from tests.integration.test_password import HASH
+
+    run = await start_auth(data_dir=tmp_path / "data")
+    await sign_in(run)
+    assert run.rows("SELECT count(*) FROM ui_sessions") == [(1,)]
+    again = await start_auth(data_dir=tmp_path / "data")  # a restart in the same mode keeps them
+    assert again.rows("SELECT count(*) FROM ui_sessions") == [(1,)]
+    extra = f'''
+[auth]
+mode = "password"
+ui_urls = ["{UI}"]
+username = "admin"
+password_hash = "{HASH}"
+'''
+    pw = await start_app(extra, scheme="https", data_dir=tmp_path / "data")
+    assert pw.rows("SELECT count(*) FROM ui_sessions") == [(0,)]  # no recheck would ever look at it again
+    assert "Sign out" not in (await run.client.get("/ui/")).text

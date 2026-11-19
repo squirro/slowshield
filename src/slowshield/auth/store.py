@@ -91,14 +91,15 @@ def create_session(
     now: float,
     hours: float,
     replaces: str | None = None,
+    keep_expiry: bool = False,
 ) -> None:
-    """A new session (a new ID at every sign-in and recheck: no fixation). A recheck keeps the absolute expiry of the
-    session it replaces."""
+    """A new session (a new ID at every sign-in and recheck: no fixation), ending the one it `replaces`. A recheck
+    (`keep_expiry`) keeps that session's absolute expiry; a sign-in, perhaps by someone else, starts a new one."""
     expires = now + hours * 3600
     if replaces:
         old = conn.execute("SELECT expires, created FROM ui_sessions WHERE id_hash = ?", (replaces,)).fetchone()
         conn.execute("DELETE FROM ui_sessions WHERE id_hash = ?", (replaces,))
-        if old is not None:
+        if old is not None and keep_expiry:
             expires = min(expires, float(old[0]))
     conn.execute(
         "INSERT INTO ui_sessions (id_hash, user_id, host, idp_sid, id_token, created, expires, last_seen, "
@@ -149,6 +150,15 @@ def set_disabled(conn: sqlite3.Connection, user_id: int, disabled: bool, now: fl
 
 def logout_all(conn: sqlite3.Connection) -> int:
     return conn.execute("DELETE FROM ui_sessions").rowcount
+
+
+def end_other_sessions(conn: sqlite3.Connection, provider: str, issuer: str) -> int:
+    """At start: sessions from another sign-in mode or IdP end. Nothing would check them again (password mode has no
+    rechecks), and the role they carry came from a source that no longer decides."""
+    return conn.execute(
+        "DELETE FROM ui_sessions WHERE user_id IN (SELECT id FROM users WHERE provider != ? OR issuer != ?)",
+        (provider, issuer),
+    ).rowcount
 
 
 def audit(

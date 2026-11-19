@@ -198,3 +198,48 @@ async def test_a_blocklist_change_in_between_means_checking_again(people: Callab
     with pytest.raises(F.FastTrackError, match="blocklist changed"):
         await ada.ctx.db.writer.run(stale)
     assert ada.rows("SELECT count(*) FROM fast_tracks") == [(0,)]
+
+
+async def test_a_composer_version_is_released_as_composer_asks_for_it(people: Callable[..., Any]) -> None:
+    """Composer asks for `1.2.0.0` (its normal form); the fast-track names `1.2.0`, as the package page lists it."""
+    from tests.integration.test_composer import HELLO, _dist, _versions
+
+    ada = await people("ada", ADMIN)
+    assert "1.2.0" not in _versions((await ada.client.get(HELLO)).json(), "fake/hello")  # published 2 days ago
+    await ada.drain()
+    body = "eco=composer&name=fake/hello&version=1.2.0&message=needed+now"
+    assert (await ada.client.post("/ui/fasttrack", content=body, headers=FORM)).status_code == 303
+    ada.ctx.metadata_cache.clear()
+    assert "1.2.0" in _versions((await ada.client.get(HELLO)).json(), "fake/hello")
+    assert (await ada.client.get(_dist(ada, "fake/hello", "1.2.0"))).status_code == 200
+
+
+async def test_a_version_held_by_when_it_was_first_listed(people: Callable[..., Any]) -> None:
+    """Without a publish time, the delay counts from when SlowShield first saw it listed (Maven, Cargo, Composer):
+    held back all the same, so it can be fast-tracked."""
+    ada = await people("ada", ADMIN)
+    await _held(ada)
+    await ada.ctx.db.writer.run(
+        lambda c: c.execute(
+            "INSERT INTO package_versions (ecosystem, name, version, published, first_listed) "
+            "VALUES ('npm', 'left-pad-ng', '3.0.0', NULL, ?)",
+            (ada.clock.now() - 86400,),
+        )
+    )
+    page = await ada.client.get("/ui/packages/npm/left-pad-ng")
+    assert "version=3.0.0" in page.text  # offered: it's held
+    assert (await _ask(ada, version="3.0.0")).status_code == 303
+
+
+async def test_the_package_page_shows_requests_to_users_and_admins_only(
+    people: Callable[..., Any], start_auth: Callable[..., Any], tmp_path: Path
+) -> None:
+    uli = await people("uli", USER)
+    await _held(uli)
+    await _ask(uli, message="private reason")
+    assert "private reason" in (await uli.client.get("/ui/packages/npm/left-pad-ng")).text
+    vera = await people("vera", VIEWER)
+    anon = await start_auth(data_dir=tmp_path / "data")
+    for who in (vera, anon):
+        page = await who.client.get("/ui/packages/npm/left-pad-ng")
+        assert page.status_code == 200 and "private reason" not in page.text and "Uli User" not in page.text

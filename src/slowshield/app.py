@@ -262,6 +262,7 @@ class SlowShield:
             fp = fingerprint(auth.username or "", auth.password_hash or "")
             if ended := await ctx.db.writer.run(partial(_new_password, fp=fp)):
                 log.warning("the password or username changed: %d earlier session(s) ended", ended)
+            await _end_other_sessions(ctx, "password", "local")
             return Auth(ctx, None, ui.render)
 
         try:
@@ -272,6 +273,7 @@ class SlowShield:
             await provider.metadata()
         except OidcError as exc:
             log.warning("UI sign-in: the IdP isn't reachable yet, trying again at the first sign-in: %s", exc)
+        await _end_other_sessions(ctx, "oidc", provider.issuer)
         log.info("UI sign-in", extra={"issuer": provider.issuer, "client_auth": provider.client_auth_method,
                                       "require_login": self.cfg.raw.auth.require_login})  # fmt: skip
         return Auth(ctx, provider, ui.render)
@@ -610,6 +612,13 @@ class SlowShield:
                 await self.shutdown()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
+
+
+async def _end_other_sessions(ctx: AppContext, provider: str, issuer: str) -> None:
+    from slowshield.auth import store
+
+    if ended := await ctx.db.writer.run(partial(store.end_other_sessions, provider=provider, issuer=issuer)):
+        log.warning("UI sign-in changed (now %s): %d session(s) from before ended", provider, ended)
 
 
 def _new_password(conn: Any, fp: str) -> int:

@@ -345,6 +345,9 @@ def test_users_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys:
     assert cli.main(["users", "logout-all"]) == 0
     actions = [r[0] for r in conn.execute("SELECT action FROM audit_log ORDER BY id")]
     assert actions == ["user_disabled", "user_enabled", "logout_all"]
+    from slowshield.ui.queries import AUDIT_ACTIONS
+
+    assert set(actions) <= set(AUDIT_ACTIONS)  # each has a label and a filter on the Activity page
 
 
 HASH = f"scrypt:16384:8:1:{'ab' * 16}:{'a' * 64}"

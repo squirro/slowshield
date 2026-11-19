@@ -74,6 +74,13 @@ DECISION_LABEL = {
 }
 
 
+def held_since(published: float | None, first_listed: float | None) -> float | None:
+    """When a version's delay started, as the services count it: the later of its clocks (the publish time, and when
+    SlowShield first saw it listed without one; e.g. Cargo's `_published`). None without either."""
+    clocks = [t for t in (published, first_listed) if t is not None]
+    return max(clocks) if clocks else None
+
+
 def fmt_bytes(n: float | None) -> str:
     n = float(n or 0)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -417,6 +424,8 @@ class UI:
         blocks = self.ctx.blocklist.for_package(eco, name)
         now = self.ctx.clock.now()
 
+        may_see_requests = principal(request).can("user")  # who asked for what, and why: as on /ui/fasttrack
+
         def collect(conn: Any) -> dict[str, Any]:
             return {
                 "pkg": Q.package(conn, eco, name),
@@ -425,7 +434,7 @@ class UI:
                 "events": Q.package_events(conn, eco, name, 50),
                 "blocks": Q.package_blocks(conn, eco, name),
                 "tags": Q.oci_tags(conn, name) if eco == "oci" else [],
-                "fast_tracks": F.for_package(conn, eco, name),
+                "fast_tracks": F.for_package(conn, eco, name) if may_see_requests else [],
             }
 
         data = await self._q(collect)
@@ -435,7 +444,7 @@ class UI:
         for v in data["versions"]:
             delay = cfg.delay_days_for(eco, name, v["version"])
             block = blocks.match(eco, v["version"])
-            published = v["published"]
+            published = held_since(v["published"], v["first_listed"])
             if block is not None:
                 status, until = "blocked", None
             elif v["tampered"]:
@@ -516,7 +525,7 @@ class UI:
             if eco == "oci":
                 return Q.oci_tags(conn, name)
             return conn.execute(
-                "SELECT published FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
+                "SELECT published, first_listed FROM package_versions WHERE ecosystem = ? AND name = ? AND version = ?",
                 (eco, name, version),
             ).fetchone()
 
@@ -530,7 +539,7 @@ class UI:
             return None if any(t["status"] == "held" for t in held) else "This digest isn't held back."
         if found is None:
             return "SlowShield hasn't seen this version."
-        published = found[0]
+        published = held_since(found[0], found[1])
         if published is None:
             return "SlowShield doesn't know when this version was published."
         if now - published >= cfg.delay_days_for(eco, name, version) * DAY:

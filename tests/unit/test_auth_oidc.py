@@ -159,3 +159,34 @@ async def test_private_key_jwt_assertion(tmp_path: Path) -> None:
     assert headers == {} and form["client_id"] == "slowshield"
     claims = jose.parse(form["client_assertion"]).claims
     assert claims["aud"] == f"{ISS}/token" and claims["exp"] - claims["iat"] == 60
+
+
+def _rs256(key: Any, claims: dict[str, Any]) -> str:
+    """An ID token without a `kid`, so every RSA key in the JWKS is a candidate."""
+    import json
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    def part(d: dict[str, Any]) -> str:
+        return jose.b64url(json.dumps(d).encode())
+
+    signing_input = f"{part({'alg': 'RS256', 'typ': 'JWT'})}.{part(claims)}"
+    sig = key.sign(signing_input.encode(), padding.PKCS1v15(), hashes.SHA256())
+    return f"{signing_input}.{jose.b64url(sig)}"
+
+
+async def test_an_unusable_key_in_the_jwks_is_skipped(tmp_path: Path) -> None:
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    good = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    weak = rsa.generate_private_key(public_exponent=65537, key_size=1024)  # noqa: S505 - the key the IdP shouldn't list
+    claims = {"iss": ISS, "sub": "alice", "aud": "slowshield", "exp": 1_000_300, "iat": 1_000_000, "nonce": "n"}
+    token = _rs256(good, claims)
+    weak_jwk, good_jwk = (jose.ClientKey(k).public_jwk() for k in (weak, good))
+    certs = ("GET", f"{ISS}/certs")
+    p = _provider(tmp_path, {DISCOVERY: (200, _doc()), certs: (200, {"keys": [weak_jwk, good_jwk]})})
+    assert (await p.check_id_token(token, "n"))["sub"] == "alice"
+    only_weak = _provider(tmp_path, {DISCOVERY: (200, _doc()), certs: (200, {"keys": [weak_jwk]})})
+    with pytest.raises(OidcError, match="can't be used"):
+        await only_weak.check_id_token(token, "n")

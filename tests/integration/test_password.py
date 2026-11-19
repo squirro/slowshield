@@ -182,3 +182,18 @@ password_hash = "{other}"
     changed = await start_app(extra, scheme="https", data_dir=tmp_path / "data")
     assert changed.rows("SELECT count(*) FROM ui_sessions") == [(0,)]
     assert "Sign out" not in (await run.client.get("/ui/")).text
+
+
+async def test_only_a_few_wait_out_the_slowdown(
+    start_password: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past OVERALL failures every attempt waits; a flood of them can't pile up in a worker."""
+    monkeypatch.setattr(password, "slowed", lambda conn, now: True)
+    run = await start_password()
+    run.ctx.auth._slowed = password.MAX_SLOWED  # that many are waiting already
+    r = await _login(run)
+    assert r.status_code == 429 and "Try again" in r.text
+    run.ctx.auth._slowed = 0
+    monkeypatch.setattr(password, "SLOWDOWN", 0)
+    assert (await _login(run)).status_code == 303
+    assert run.ctx.auth._slowed == 0

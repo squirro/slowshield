@@ -174,7 +174,8 @@ Either prints one line, e.g. `SLOWSHIELD_AUTH_PASSWORD_HASH=scrypt:131072:8:1:6c
 password, e.g. from a password manager. SlowShield also slows failed sign-ins down: it refuses more than 10 from one
 address in 15 minutes, and past 50 from all addresses together it makes every attempt wait 3 seconds, without
 refusing any, so nobody can lock you out by failing on purpose. The counts are in its database, so they hold across
-all workers.
+all workers. Each worker lets only a few attempts wait at once and checks one password at a time; an attempt beyond
+that is told to try again.
 
 ### 2. Configure SlowShield
 
@@ -194,7 +195,9 @@ The UI must be served over `https`, e.g. by the bundled Caddy at `https://localh
 `Secure`. `SLOWSHIELD_UI_URLS` defaults to `SLOWSHIELD_PUBLIC_URL`, as with OIDC.
 
 Sessions last `SLOWSHIELD_SESSION_HOURS` (12); there is no IdP to recheck with. To change the password, set a new hash
-and restart: sessions from before a new password or username end at that start. `slowshield users logout-all` ends every session at once. The Activity page records sign-ins and failed
+and restart: sessions from before a new password or username end at that start. Switching between password and OIDC
+sign-in (or to another IdP) ends the earlier mode's sessions the same way. `slowshield users logout-all` ends every
+session at once. The Activity page records sign-ins and failed
 attempts, with the client address unless `record_client_ip` is off.
 
 ## Keycloak (tested)

@@ -614,6 +614,7 @@ AUDIT_ACTIONS = {
     "fasttrack_approved": "Fast-track approved",
     "fasttrack_rejected": "Fast-track rejected",
     "fasttrack_revoked": "Fast-track revoked",
+    "logout_all": "Everyone signed out",
 }
 
 

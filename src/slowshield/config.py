@@ -463,6 +463,14 @@ class FeedTokenStatus:
     source: str  # "env", "file", "config" or "missing"
 
 
+def fast_key(ecosystem: str, name: str, version: str) -> tuple[str, str, str]:
+    """A fast-track keyed the way version rules are (`rule_tables`) and the services ask: NuGet and Composer versions
+    in their normal form, so `v1.2` fast-tracked in the UI is the `1.2.0.0` Composer asks about."""
+    if ecosystem in ("nuget", "composer"):
+        version = versions.canonical(ecosystem, version)
+    return (ecosystem, name, version)
+
+
 @dataclass(slots=True)
 class LoadedConfig:
     """A validated config plus derived lookup tables. Immutable by convention; swapped atomically on reload."""
@@ -479,6 +487,11 @@ class LoadedConfig:
     _networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = ()
     # Versions fast-tracked in the UI (slowshield.fasttrack): no delay, whatever the rules say.
     _fast: frozenset[tuple[str, str, str]] = frozenset()
+    # The same, keyed as the services ask (`fast_key`): derived, so `dataclasses.replace` rebuilds it.
+    _fast_match: frozenset[tuple[str, str, str]] = field(default=frozenset(), init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._fast_match = frozenset(fast_key(*k) for k in self._fast)
 
     @property
     def db_path(self) -> Path:
@@ -500,7 +513,7 @@ class LoadedConfig:
 
     def delay_days_for(self, ecosystem: str, name: str, version: str | None = None) -> float:
         """Delay for a package (already normalised name). A fast-track wins, then version rules, then package rules."""
-        if version is not None and self._fast and (ecosystem, name, version) in self._fast:
+        if version is not None and self._fast_match and (ecosystem, name, version) in self._fast_match:
             return 0.0
         if version is not None and self._ver_rules:
             v = self._ver_rules.get((ecosystem, name, version))
@@ -518,7 +531,8 @@ class LoadedConfig:
         return any(k[0] == ecosystem and k[1] == name for k in (*self._ver_rules, *self._fast))
 
     def fast_tracked(self, ecosystem: str, name: str, version: str) -> bool:
-        return (ecosystem, name, version) in self._fast
+        """For a version as `package_versions` holds it (the UI); the services ask `delay_days_for`."""
+        return fast_key(ecosystem, name, version) in self._fast_match
 
     def fast_track_keys(self) -> list[tuple[str, str, str]]:
         return sorted(self._fast)

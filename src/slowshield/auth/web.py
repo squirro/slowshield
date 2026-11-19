@@ -37,6 +37,8 @@ FAILED_PASSWORD_DELAY = 0.5
 OPEN_PREFIXES = ("/ui/static/", "/ui/auth/")
 # The IdP's answers to prompt=none when it would have to ask the person: the IdP session is over.
 NO_SESSION = frozenset({"login_required", "interaction_required", "consent_required", "account_selection_required"})
+# The IdP's answers when it's overloaded or broken (RFC 6749 4.1.2.1): nobody was refused, so like an unreachable IdP.
+IDP_DOWN = frozenset({"temporarily_unavailable", "server_error"})
 
 Render = Callable[..., Response]
 
@@ -60,12 +62,16 @@ def safe_next(value: str | None) -> str:
 def _host(scope: Scope) -> str:
     for k, v in scope.get("headers", ()):
         if k == b"host":
-            host = v.decode("latin-1").strip().lower()
-            for default in (":443", ":80"):
-                if host.endswith(default):
-                    return host[: -len(default)]
-            return host
+            return _without_default_port(v.decode("latin-1").strip().lower())
     return ""
+
+
+def _without_default_port(host: str) -> str:
+    """`example.com:443` and `example.com` are one host, in the Host header and in SLOWSHIELD_UI_URLS alike."""
+    for default in (":443", ":80"):
+        if host.endswith(default):
+            return host[: -len(default)]
+    return host
 
 
 def _is_htmx(request: Request) -> bool:
@@ -95,6 +101,7 @@ class Auth:
         self._provider = provider
         self.render = render
         self._checking = asyncio.Semaphore(1)  # one scrypt check at a time per worker: 128 MiB each
+        self._slowed = 0  # attempts waiting out the slowdown on this worker
 
     @property
     def provider(self) -> Provider:
@@ -119,7 +126,7 @@ class Auth:
         """The listed UI URL this request came in on: redirect URIs come from the list, never from the Host header."""
         host = _host(scope)
         for url in self.ctx.cfg.ui_urls():
-            if urlsplit(url).netloc.lower() == host:
+            if _without_default_port(urlsplit(url).netloc.lower()) == host:
                 return url
         return None
 
@@ -207,7 +214,15 @@ class Auth:
         now = self.ctx.clock.now()
         reader = self.ctx.db.readers
         if await asyncio.to_thread(lambda: password.slowed(reader.get(), now)):
-            await asyncio.sleep(password.SLOWDOWN)  # a guess spread over many addresses: slower for all, not shut
+            # A guess spread over many addresses: slower for all, not shut. Few wait at once, so a flood of them
+            # can't pile up in the worker; the rest are turned away and try again, like a check under way.
+            if self._slowed >= password.MAX_SLOWED:
+                return self.password_form(request, error="Another sign-in is being checked. Try again.", status=429)
+            self._slowed += 1
+            try:
+                await asyncio.sleep(password.SLOWDOWN)
+            finally:
+                self._slowed -= 1
         if await asyncio.to_thread(lambda: password.throttled(reader.get(), address, now)):
             await self._audit(request, "login_refused", actor=username[:100] or None, details={"reason": "throttled"})
             return self.password_form(request, error="Too many failed attempts. Wait a few minutes.", status=429)
@@ -307,6 +322,11 @@ class Auth:
         if error := params.get("error"):
             if silent and error in NO_SESSION:
                 return await self._ended(request, old, error, next_path)
+            if error in IDP_DOWN:
+                down = OidcError("idp_unavailable", f"the IdP answered {error}")
+                if silent and (deferred := await self._defer_recheck(request, next_path, down)):
+                    return deferred
+                return self._unavailable(request, down, next_path)
             return await self._refuse(request, f"idp:{error[:60]}", next_path, silent)
         code = params.get("code")
         if not code:
@@ -358,7 +378,8 @@ class Auth:
             up = store.upsert_user(conn, ident, now)
             if not up.disabled:
                 store.create_session(conn, token=token, user_id=up.user_id, host=base, idp_sid=sid, id_token=id_token,
-                                     now=now, hours=settings.session_hours, replaces=replaces)  # fmt: skip
+                                     now=now, hours=settings.session_hours, replaces=replaces,
+                                     keep_expiry=silent)  # fmt: skip
             elif replaces:
                 store.delete_session(conn, replaces)
             return up

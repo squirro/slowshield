@@ -47,7 +47,7 @@ services:
   # ---- collector -----------------------------------------------------------------------------------
   alloy:
     <<: *hardening
-    image: docker.io/grafana/alloy:v1.21.2@sha256:89a5a320168387336b9ac3c850609c3ba7757eadd4ae5f1d819deb35e9854b18
+    image: docker.io/grafana/alloy:v1.22.0@sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189
     user: "473:473"
     # Caddy (UID/GID 65532) writes the access log; membership of its group lets Alloy read it when the
     # log file mode is 0640 (containers/caddy/logs/on.caddy).
@@ -77,7 +77,7 @@ services:
   # ---- metrics -------------------------------------------------------------------------------------
   prometheus:
     <<: *hardening
-    image: docker.io/prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    image: docker.io/prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     user: "65534:65534"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -101,7 +101,7 @@ services:
   # ---- logs ------------------------------------------------------------------------------------------
   loki:
     <<: *hardening
-    image: docker.io/grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    image: docker.io/grafana/loki:3.7.10@sha256:b43c257ccfc925d4a50b8717cac61a3b51df8c48d01847936057e5c4075a24a7
     user: "10001:10001"
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
@@ -131,7 +131,7 @@ services:
   # ---- dashboards & alerting ----------------------------------------------------------------------------
   grafana:
     <<: *hardening
-    image: docker.io/grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    image: docker.io/grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
     user: "472:472"
     environment:
       GF_SECURITY_ADMIN_USER: admin
